@@ -114,3 +114,10 @@ Issues & Tasks:
     Task: Plan the migration: provision servers (e.g., on Hetzner), set up a Qdrant instance, and load the Stage 0 assets.
 
     Task: Execute the migration by switching the adapter in your live application.
+
+
+
+
+
+
+

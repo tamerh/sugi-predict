@@ -1,0 +1,27 @@
+mamba create --name tamer python=3.12
+
+mamba install -c pytorch faiss-cpu
+
+mamba install torchvision torchaudio cpuonly -c pytorch
+
+mamba install -c conda-forge sentence-transformers
+python -c "from sentence_transformers import SentenceTransformer; print('SentenceTransformers installed successfully!')"
+
+mamba install -c conda-forge requests tqdm pandas lxml
+
+
+# Library for high-performance XML parsing (we'll need this next)
+mamba install -c conda-forge lxml
+
+# Core libraries for AI/embedding models (from the PyTorch channel)
+mamba install pytorch torchvision torchaudio cpuonly -c pytorch
+
+# Hugging Face libraries for using open-source embedding models
+mamba install -c conda-forge transformers sentence-transformers
+
+
+alternatives
+https://scispace.com/
+https://www.semanticscholar.org/
+https://elicit.com/welcome
+https://scite.ai/pricing
