@@ -9,11 +9,31 @@ from sentence_transformers import SentenceTransformer
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
+# --- Load Configuration from pubmed.env ---
+def load_env_config():
+    """Load configuration from pubmed.env file."""
+    config = {}
+    env_file = os.path.join(os.path.dirname(__file__), 'pubmed.env')
+
+    if os.path.exists(env_file):
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    config[key.strip()] = value.strip().strip('"').strip("'")
+
+    return config
+
+# Load configuration
+env_config = load_env_config()
+
 # --- Configuration ---
-MODEL_NAME = 'all-MiniLM-L6-v2'
-VECTOR_DIMENSION = 384
+MODEL_NAME = env_config.get('MODEL_NAME', 'all-MiniLM-L6-v2')
+VECTOR_DIMENSION = int(env_config.get('VECTOR_DIMENSION', '384'))
+BASE_DATA_DIR = env_config.get('BASE_DATA_DIR', '/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/pubmed')
 # Point to the new sorted file for efficiency
-DELETED_PMIDS_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'raw', 'pubmed', 'deleted.pmids.sorted.gz')
+DELETED_PMIDS_PATH = os.path.join(BASE_DATA_DIR, 'deleted.pmids.sorted.gz')
 
 # --- Helper Functions ---
 def log_with_timestamp(message):

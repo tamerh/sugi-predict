@@ -1,3 +1,6 @@
+
+mamba env create -f /data/scc/ag-gruber/GROUP/tgur/x/bioyoda/tamer.yml
+
 mamba create --name tamer python=3.12
 
 mamba install -c pytorch faiss-cpu

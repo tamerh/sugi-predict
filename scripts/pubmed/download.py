@@ -3,9 +3,11 @@ import gzip
 import shutil
 from ftplib import FTP
 from tqdm import tqdm
+from config_loader import get_config
 
 # --- Configuration ---
-BASE_DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'raw', 'pubmed')
+config = get_config()
+BASE_DATA_DIR = str(config.get_path('RAW_PUBMED_DIR'))
 BASELINE_DIR = os.path.join(BASE_DATA_DIR, 'baseline')
 UPDATE_DIR = os.path.join(BASE_DATA_DIR, 'updatefiles')
 
@@ -24,6 +26,7 @@ def download_ftp_file_with_progress(ftp, remote_path, local_path):
     Handles potential issues with getting file size.
     """
     total_size = 0
+    print(f"Preparing to download {remote_path} to {local_path}...")
     base_name = os.path.basename(local_path)
     try:
         # Attempt to get the file size. This may fail on some servers/modes.

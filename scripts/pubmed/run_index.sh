@@ -6,31 +6,32 @@
 #$ -l h_vmem=8G             # Request 8GB of memory (adjusted based on our findings)
 #$ -pe smp 1                # Request 1 CPU core
 
+# Load configuration from pubmed.env (use absolute path since SGE copies script)
+source "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/scripts/pubmed/pubmed.env"
+
 # --- Main Logic ---
 echo "Job Array Task ${SGE_TASK_ID} running on host: $(hostname)"
 
 # 1. Get the input file for this specific task from the master list
-FILE_LIST="all_files_to_process.txt"
-INPUT_FILE=$(sed -n "${SGE_TASK_ID}p" $FILE_LIST)
+INPUT_FILE=$(sed -n "${SGE_TASK_ID}p" "$FILE_LIST")
 
 # 2. Determine the correct output directory based on the input path
-BASE_OUTPUT_DIR="/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/pubmed"
 if [[ $INPUT_FILE == *"baseline"* ]]; then
-    OUTPUT_DIR="${BASE_OUTPUT_DIR}/baseline"
+    OUTPUT_DIR="${PROCESSED_DIR}/baseline"
 else
-    OUTPUT_DIR="${BASE_OUTPUT_DIR}/updatefiles"
+    OUTPUT_DIR="${PROCESSED_DIR}/updatefiles"
 fi
 
 echo "Input file: ${INPUT_FILE}"
 echo "Output dir: ${OUTPUT_DIR}"
-mkdir -p $OUTPUT_DIR
+mkdir -p "$OUTPUT_DIR"
 
 # 3. Set up the Conda environment
-# IMPORTANT: Replace with the actual path to your Conda installation
 source /home/scc/tgur/programs/miniconda3/etc/profile.d/conda.sh
-conda activate biotech_engine
+conda activate "$CONDA_ENV"
 
-# 4. Execute the Python script
-python process_single_file.py "${INPUT_FILE}" "${OUTPUT_DIR}"
+# 4. Change to the script directory and execute the Python script
+cd "$SCRIPTS_DIR" || { echo "Failed to change directory to $SCRIPTS_DIR"; exit 1; }
+python index.py "${INPUT_FILE}" "${OUTPUT_DIR}"
 
 echo "Task ${SGE_TASK_ID} finished successfully."
