@@ -1,7 +1,79 @@
-logların yazıldığı yerleri düzenle....job parametrelerini düzenle...hangi dosyadan geldiğini......
+Excellent idea! With your cluster access, you should absolutely test multiple models. Here are the top biomedical
+   embedding models worth testing:
+
+  Tier 1: Must-Test Biomedical Models
+
+  1. S-BioBERT (already running) ✅
+  - pritamdeka/S-BioBERT-snli-multinli-stsb (768d)
+  - Strong biomedical domain adaptation
+
+  2. BioBERT variations:
+  - dmis-lab/biobert-base-cased-v1.1 (768d)
+  - dmis-lab/biobert-v1.1-pubmed (768d)
+  - Original BioBERT, excellent for PubMed
+
+  3. ClinicalBERT:
+  - emilyalsentzer/Bio_ClinicalBERT (768d)
+  - Trained on clinical notes + PubMed
+
+  4. SciBERT:
+  - allenai/scibert_scivocab_uncased (768d)
+  - Broader scientific domain, includes biomedical
+
+  Tier 2: Specialized Options
+
+  5. BioLinkBERT:
+  - michiyasunaga/BioLinkBERT-base (768d)
+  - Advanced pre-training with citation links
+
+  6. PubMedBERT:
+  - microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract (768d)
+  - Microsoft's domain-specific model
+
+  7. Sentence-BERT biomedical:
+  - pritamdeka/BioBERT-mnli-snli-scinli-scitail-mednli-stsb (768d)
+  - Multi-task trained for sentence similarity
+
+  Testing Strategy with Your Cluster:
+
+  # Set up parallel processing for 3-4 models
+  MODEL_NAME=dmis-lab/biobert-base-cased-v1.1 VECTOR_DIMENSION=768 ./submit_jobs.sh
+  MODEL_NAME=allenai/scibert_scivocab_uncased VECTOR_DIMENSION=768 ./submit_jobs.sh
+  MODEL_NAME=emilyalsentzer/Bio_ClinicalBERT VECTOR_DIMENSION=768 ./submit_jobs.sh
+
+  Quick Quality Comparison Framework:
+
+  Create a test suite with queries like:
+  - "glioblastoma treatment resistance"
+  - "CRISPR gene editing safety"
+  - "COVID-19 vaccine efficacy"
+  - "Alzheimer's disease biomarkers"
+  - "cancer immunotherapy"
+
+  My Recommendation: Start with BioBERT (dmis-lab/biobert-base-cased-v1.1) and SciBERT while S-BioBERT finishes.
+  These are proven performers in biomedical search tasks.
 
 
-variable to pritamdeka/S-BioBERT-snli-multinli-stsb and the VECTOR_DIMENSION to 768.
+
+  
+
+ My Recommendation: Hybrid Approach
+
+  Phase 1 (Now): Enhance your current FAISS setup with:
+  - Better search algorithms (query expansion, re-ranking)
+  - Metadata filtering capabilities
+  - Multi-vector search (title vs abstract vs full-text)
+
+  Phase 2 (Later): Migrate to Qdrant when you need:
+  - Remote access
+  - Advanced filtering
+  - Production deployment
+
+  Immediate Focus Areas:
+  1. S-BioBERT quality comparison
+  2. Better search result ranking (not just similarity scores)
+  3. Metadata-aware search (filter by date, journal, etc.)
+  4. Query enhancement (handle synonyms, expand abbreviations)
 
 
 

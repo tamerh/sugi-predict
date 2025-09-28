@@ -45,26 +45,6 @@
   - Validate file extensions and formats
   - Add path traversal protection
 
-### Configuration Management
-- [ ] **Create centralized config module (config.py)**
-  ```python
-  import os
-  from dataclasses import dataclass
-
-  @dataclass
-  class Config:
-      MODEL_NAME: str = os.getenv('MODEL_NAME', 'all-MiniLM-L6-v2')
-      VECTOR_DIMENSION: int = int(os.getenv('VECTOR_DIMENSION', '384'))
-      BASE_DATA_DIR: str = os.getenv('BASE_DATA_DIR', '../data')
-      # ... other configs
-  ```
-
-- [ ] **Replace hardcoded constants across all files**
-  - process_single_file.py: MODEL_NAME, VECTOR_DIMENSION, paths
-  - api.py: MODEL_NAME, paths
-  - data_download.py: FTP configs, paths
-  - merge.py: VECTOR_DIMENSION, paths
-
 ## SHORT-TERM (Month 1)
 
 ### Logging & Monitoring

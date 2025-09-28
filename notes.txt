@@ -1,3 +1,4 @@
+qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=4:00:00 
 
 mamba env create -f /data/scc/ag-gruber/GROUP/tgur/x/bioyoda/tamer.yml
 

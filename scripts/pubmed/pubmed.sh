@@ -35,7 +35,7 @@ download() {
     log "Starting download phase..."
 
     # Run data download
-    python download.py
+    #python download.py
 
     # Create file list (moved from create_file_list.sh)
     log "Creating file list..."

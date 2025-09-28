@@ -4,5 +4,8 @@ logs/
 logs.bkp/
 vibe/
 old/
+bkp
+data_test
 **/node_modules/
 .claude/
+results*
