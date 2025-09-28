@@ -1,2 +1,5 @@
 data/
 logs/
+vibe/
+old/
+**/node_modules/

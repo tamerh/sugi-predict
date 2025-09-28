@@ -1,10 +1,22 @@
 logların yazıldığı yerleri düzenle....job parametrelerini düzenle...hangi dosyadan geldiğini......
 
 
+variable to pritamdeka/S-BioBERT-snli-multinli-stsb and the VECTOR_DIMENSION to 768.
 
 
 
 
+Our Strategic Path
+
+Our modular pipeline is designed for exactly this. We don't need to do everything at once.
+
+    First, we finish the PubMed abstract engine. This is our foundational layer and our MVP.
+
+    Next, we add ClinicalTrials.gov. This is likely the highest-value addition.
+
+    Then, we add PubChem and DrugBank, followed by NIH grants.
+
+By layering these sources, we methodically increase the power and value of our insight engine, with a clear and manageable development path.
 
 
 
