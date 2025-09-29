@@ -9,6 +9,7 @@ import json
 import faiss
 import numpy as np
 import argparse
+import psutil
 from sentence_transformers import SentenceTransformer
 from datetime import datetime
 from typing import List, Dict, Tuple
@@ -20,18 +21,24 @@ class BioYodaSearchClient:
         self.index_path = index_path
         self.metadata_path = metadata_path
 
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Loading model: {model_name}")
+        def log_memory(stage: str) -> None:
+            memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [MEM: {memory_mb:.1f}MB] {stage}")
+
+        log_memory(f"Loading model: {model_name}")
         self.model = SentenceTransformer(model_name)
+        log_memory("Model loaded")
 
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Loading FAISS index: {index_path}")
+        log_memory(f"Loading FAISS index: {os.path.basename(index_path)}")
         self.index = faiss.read_index(index_path)
+        log_memory("FAISS index loaded")
 
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Loading metadata: {metadata_path}")
+        log_memory(f"Loading metadata: {os.path.basename(metadata_path)}")
         with open(metadata_path, 'r') as f:
             self.metadata = json.load(f)
+        log_memory("Metadata loaded")
 
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✓ Ready! Index contains {self.index.ntotal:,} vectors")
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✓ Metadata contains {len(self.metadata):,} entries")
+        log_memory(f"✓ Ready! Index: {self.index.ntotal:,} vectors, Metadata: {len(self.metadata):,} entries")
 
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
         """Perform semantic search on the FAISS index."""
@@ -134,11 +141,16 @@ class BioYodaSearchClient:
                     continue
 
                 if query.lower() == 'stats':
+                    memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+                    system_memory = psutil.virtual_memory()
                     print(f"\nIndex Statistics:")
                     print(f"  Total vectors: {self.index.ntotal:,}")
                     print(f"  Vector dimension: {self.index.d}")
                     print(f"  Metadata entries: {len(self.metadata):,}")
                     print(f"  Model: {self.model_name}")
+                    print(f"\nMemory Usage:")
+                    print(f"  Process memory: {memory_mb:.1f}MB")
+                    print(f"  System memory: {system_memory.used/1024**3:.1f}GB used / {system_memory.total/1024**3:.1f}GB total ({system_memory.percent:.1f}%)")
                     continue
 
                 if not query:
@@ -172,13 +184,13 @@ class BioYodaSearchClient:
 def main():
     parser = argparse.ArgumentParser(description="BioYoda Terminal Search Client")
     parser.add_argument("--index", "-i",
-                       default="../../results_all-MiniLM-L6-v2/pubmed/master_pubmed_merge3.index",
+                       default="../../data/final/pubmed/master_pubmed2.index",
                        help="Path to FAISS index file")
     parser.add_argument("--metadata", "-m",
-                       default="../../results_all-MiniLM-L6-v2/pubmed/master_metadata_mergee3.json",
+                       default="../../data/final/pubmed/master_metadata2.json",
                        help="Path to metadata JSON file")
     parser.add_argument("--model",
-                       default="all-MiniLM-L6-v2",
+                       default="pritamdeka/S-BioBERT-snli-multinli-stsb",
                        help="Sentence transformer model name")
     parser.add_argument("--query", "-q",
                        help="Single query to search (non-interactive mode)")

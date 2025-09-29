@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BioYoda is a biomedical AI-powered search and retrieval system that processes PubMed abstracts, PMC full-text articles, and preprint data to build semantic vector indices for intelligent query answering. The project implements a RAG (Retrieval-Augmented Generation) pipeline using FAISS for vector search and sentence transformers for embeddings.
+BioYoda is a biomedical AI-powered search and retrieval system that processes PubMed abstracts to build semantic vector indices for intelligent query answering. The project implements a RAG (Retrieval-Augmented Generation) pipeline using FAISS for vector search and biomedical sentence transformers for embeddings.
+
+**Current Status**: Successfully processing PubMed abstracts using S-BioBERT model on HPC cluster with optimized merge pipelines.
 
 ## Environment Setup
 
@@ -31,14 +33,18 @@ The core data processing pipeline is located in `scripts/pubmed/`:
 1. **Data Download**: `data_download.py` - Downloads PubMed baseline and update files
 2. **Single File Processing**: `process_single_file.py` - Processes individual XML files to create FAISS indices and metadata
 3. **Batch Processing**: Job submission system using SGE (Sun Grid Engine) for HPC clusters
-4. **Data Merging**: `merge.py` - Combines individual indices into master index files
+4. **Data Merging**: Multiple merge scripts available:
+   - `merge0.py` - **Recommended**: Simple, memory-efficient, fastest (57% faster than alternatives)
+   - `merge.py` - FAISS native approach (higher memory usage)
+   - `merge2.py` - Streaming batch approach (medium complexity)
 
-### Stage 1: API Backend
-`scripts/pubmed/api.py` contains a FastAPI application that:
-- Loads pre-built FAISS indices and metadata
-- Provides semantic search endpoints
-- Uses sentence-transformers model (all-MiniLM-L6-v2) for query embedding
-- Implements adapter pattern for vector database abstraction
+### Stage 1: API Backend & Search Testing
+- `api.py` - FastAPI application for production deployment
+- `test_search.py` - **Terminal-based search client** for testing and development:
+  - Interactive search interface with memory monitoring
+  - Direct FAISS index testing without web server
+  - Supports single queries and interactive mode
+  - Memory usage reporting and system statistics
 
 ## Data Organization
 
@@ -75,8 +81,17 @@ data/
 
 4. **Merge processed files**:
    ```bash
-   python merge.py
+   python merge0.py  # Recommended: fastest and most memory-efficient
    ```
+
+### Testing Search Results
+
+```bash
+cd scripts/pubmed
+python test_search.py --query "CRISPR gene editing" --top-k 10
+# Or interactive mode:
+python test_search.py
+```
 
 ### Running the API Server
 
@@ -96,10 +111,15 @@ npm install  # Installs @anthropic-ai/claude-code
 
 ## Key Configuration Constants
 
-- **Embedding Model**: `all-MiniLM-L6-v2` (384 dimensions)
-- **Vector Dimension**: 384
-- **Data Paths**: Relative paths from script locations to `../data/`
+**Current Production Configuration (pubmed.env):**
+- **Embedding Model**: `pritamdeka/S-BioBERT-snli-multinli-stsb` (768 dimensions)
+- **Vector Dimension**: 768
+- **Configuration File**: `scripts/pubmed/pubmed.env` (replaces bioyoda.env)
 - **Conda Environment**: `bioyoda` as defined in `tamer.yml`
+
+**Alternative Models Tested:**
+- `all-MiniLM-L6-v2` (384 dimensions) - General purpose
+- `dmis-lab/biobert-base-cased-v1.1` (768 dimensions) - Biomedical focus
 
 ## HPC Cluster Integration
 
@@ -109,9 +129,19 @@ The project is designed for HPC environments using SGE:
 - Parallel processing of individual PubMed XML files
 - Extensive logging system in `logs/` directory
 
+## Performance Benchmarks
+
+**Merge Script Performance (verified on HPC cluster):**
+- `merge0.py`: 695s runtime, 180MB peak memory, 249GB I/O ⭐ **Recommended**
+- `merge.py`: 1091s runtime, 264MB peak memory, 340GB I/O (57% slower)
+- All scripts produce identical 90GB index files
+
+**Memory Monitoring:** All scripts now include psutil-based memory logging for optimization.
+
 ## Notes
 
 - The project follows a modular architecture where new data sources can be added as plugins
 - FAISS indices are built per file and then merged for efficiency
 - The system implements deduplication using deleted PMID tracking
 - Processing logs are extensive due to the large-scale data processing requirements
+- Configuration moved from `bioyoda.env` to `scripts/pubmed/pubmed.env` for modularity

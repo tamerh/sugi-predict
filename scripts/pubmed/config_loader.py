@@ -17,7 +17,7 @@ class BioYodaConfig:
             # Look for bioyoda.env in project root
             current_dir = Path(__file__).parent
             project_root = current_dir.parent.parent  # Go up two levels to project root
-            env_file = project_root / "bioyoda.env"
+            env_file = project_root / "scripts/pubmed/pubmed.env"
 
         self.env_file = Path(env_file)
         self.config = self._load_env()

@@ -16,6 +16,6 @@ conda activate "$CONDA_ENV"
 
 # 4. Execute the Python script
 cd "$SCRIPTS_DIR" || { echo "Failed to change directory to $SCRIPTS_DIR"; exit 1; }
-python merge.py
+python merge0.py
 
 echo "Job submitted"
