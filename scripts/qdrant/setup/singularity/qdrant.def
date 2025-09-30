@@ -1,0 +1,29 @@
+Bootstrap: docker
+From: qdrant/qdrant:latest
+
+%help
+    Qdrant vector database for BioYoda project
+    Usage: singularity run qdrant.sif
+
+%environment
+    export QDRANT_CONFIG_PATH=/opt/qdrant/config.yaml
+
+%runscript
+    exec /qdrant/qdrant "$@"
+
+%post
+    # Create necessary directories
+    mkdir -p /opt/qdrant
+    mkdir -p /qdrant/storage
+
+    # Set permissions
+    chmod 755 /opt/qdrant
+    chmod 755 /qdrant/storage
+
+%files
+    config.yaml /opt/qdrant/config.yaml
+
+%labels
+    Author BioYoda Team
+    Version 1.0.0
+    Description Qdrant vector database container for HPC cluster

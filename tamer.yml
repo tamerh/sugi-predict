@@ -16,3 +16,4 @@ dependencies:
   - pandas
   - lxml
   - psutil
+  - qdrant-client

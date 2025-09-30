@@ -8,6 +8,9 @@ set -euo pipefail
 # Load configuration
 source "$(dirname "$0")/pubmed.env"
 
+# Load validation utilities
+source "$(dirname "$0")/validation_utils.sh"
+
 # Simple logging
 log() { echo "[$(date '+%H:%M:%S')] $1"; }
 
@@ -20,7 +23,8 @@ usage() {
     echo "  merge      - Merge all indices into master index"
     echo "  resubmit   - Resubmit stuck/failed indexing jobs"
     echo "  all        - Run complete pipeline (download + index + merge)"
-    echo "  status     - Show indexing status"
+    echo "  status     - Show indexing status with validation"
+    echo "  validate   - Run validation checks on existing data"
     echo ""
     echo "Options:"
     echo "  --debug    - Index only $DEBUG_SAMPLE_SIZE files"
@@ -199,7 +203,7 @@ wait_merge() {
 
     log "Merge completed"
 
-    # Check if outputs were created
+    # Check if outputs were created (standard paths)
     local final_index="${FINAL_DIR}/master_pubmed_${MERGE_METHOD}.index"
     local final_metadata="${FINAL_DIR}/master_metadata_${MERGE_METHOD}.json"
 
@@ -209,6 +213,8 @@ wait_merge() {
         log "  Metadata: $final_metadata"
     else
         log "Warning: Expected merge outputs not found"
+        log "  Expected index: $final_index"
+        log "  Expected metadata: $final_metadata"
     fi
 }
 
@@ -216,6 +222,9 @@ wait_merge() {
 status() {
     echo "PubMed Indexing Status"
     echo "======================"
+    echo "Model: $MODEL_NAME"
+    echo "Dimensions: $VECTOR_DIMENSION"
+    echo ""
 
     # Raw files
     if [[ -d "$BASE_DATA_DIR" ]]; then
@@ -237,19 +246,46 @@ status() {
     if [[ -d "$PROCESSED_DIR" ]]; then
         local indexed_count=$(find "$PROCESSED_DIR" -name "*.index" 2>/dev/null | wc -l)
         echo "Indexed files: $indexed_count"
+
+        # Sample validation on processed files
+        if [[ $indexed_count -gt 0 ]]; then
+            echo -n "Processing validation: "
+            local sample_files=($(find "$PROCESSED_DIR" -name "*.index" 2>/dev/null | head -3))
+            local validation_passed=0
+            for sample_file in "${sample_files[@]}"; do
+                if validate_faiss_dimensions "$sample_file" "$VECTOR_DIMENSION" 2>/dev/null; then
+                    ((validation_passed++))
+                fi
+            done
+            if [[ $validation_passed -eq ${#sample_files[@]} ]]; then
+                echo -e "${GREEN}✓ OK${NC} (sampled ${#sample_files[@]} files)"
+            else
+                echo -e "${RED}✗ ISSUES${NC} ($validation_passed/${#sample_files[@]} valid)"
+            fi
+        fi
     else
         echo "Indexed files: 0 (directory missing)"
     fi
 
     # Final files
+    echo ""
+    echo "Final files:"
     if [[ -d "$FINAL_DIR" ]]; then
         local final_count=$(find "$FINAL_DIR" -name "*.index" 2>/dev/null | wc -l)
-        echo "Final indices: $final_count"
+        echo "  Total indices: $final_count"
+
+        # List actual files with sizes
+        find "$FINAL_DIR" -name "*.index" -exec basename {} \; 2>/dev/null | while read index_name; do
+            local full_path="$FINAL_DIR/$index_name"
+            local size=$(du -h "$full_path" | cut -f1)
+            echo "    $index_name ($size)"
+        done
     else
-        echo "Final indices: 0 (directory missing)"
+        echo "  Directory: Not created"
     fi
 
     # Running jobs
+    echo ""
     if command -v qstat &> /dev/null; then
         local running_jobs=$(qstat -u "$USER" 2>/dev/null | grep -E "(pubmed_process|pubmed_merge)" | wc -l)
         echo "Running jobs: $running_jobs"
@@ -259,6 +295,79 @@ status() {
             echo "Active jobs:"
             qstat -u "$USER" 2>/dev/null | grep -E "(pubmed_process|pubmed_merge)" || true
         fi
+    fi
+}
+
+# Standalone validation command
+validate() {
+    log "Running comprehensive validation..."
+
+    local errors=0
+
+    # Validate configuration
+    log "Checking configuration..."
+    if [[ -z "$MODEL_NAME" || -z "$VECTOR_DIMENSION" ]]; then
+        validate_log "ERROR" "Model configuration missing"
+        ((errors++))
+    else
+        validate_log "INFO" "Model: $MODEL_NAME ($VECTOR_DIMENSION dimensions)"
+    fi
+
+    # Validate processed files (sample)
+    if [[ -d "$PROCESSED_DIR" ]]; then
+        log "Validating processed files..."
+        local sample_files=($(find "$PROCESSED_DIR" -name "*.index" 2>/dev/null | head -10))
+
+        if [[ ${#sample_files[@]} -gt 0 ]]; then
+            local valid_count=0
+            for sample_file in "${sample_files[@]}"; do
+                if validate_faiss_dimensions "$sample_file" "$VECTOR_DIMENSION"; then
+                    ((valid_count++))
+                else
+                    ((errors++))
+                fi
+            done
+            validate_log "INFO" "Processed validation: $valid_count/${#sample_files[@]} files valid"
+        else
+            validate_log "WARN" "No processed files to validate"
+        fi
+    fi
+
+    # Validate final outputs
+    if [[ -d "$FINAL_DIR" ]]; then
+        log "Validating final outputs..."
+        local final_files=($(find "$FINAL_DIR" -name "*.index" 2>/dev/null))
+
+        for index_file in "${final_files[@]}"; do
+            local metadata_file="${index_file%.index}.json"
+            local metadata_file="${metadata_file/pubmed/metadata}"
+
+            validate_log "INFO" "Validating $(basename "$index_file")..."
+
+            if ! validate_faiss_dimensions "$index_file" "$VECTOR_DIMENSION"; then
+                ((errors++))
+            fi
+
+            if [[ -f "$metadata_file" ]]; then
+                if ! validate_index_metadata_alignment "$index_file" "$metadata_file"; then
+                    ((errors++))
+                fi
+            else
+                validate_log "WARN" "Metadata file not found: $(basename "$metadata_file")"
+            fi
+        done
+    else
+        validate_log "WARN" "No final directory found: $FINAL_DIR"
+    fi
+
+    # Summary
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        validate_log "INFO" "All validations passed! ✓"
+        return 0
+    else
+        validate_log "ERROR" "Validation completed with $errors errors ✗"
+        return 1
     fi
 }
 
@@ -292,7 +401,7 @@ conda activate bioyoda
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug) DEBUG_MODE="true"; shift ;;
-        download|index|merge|resubmit|all|status) COMMAND="$1"; shift ;;
+        download|index|merge|resubmit|all|status|validate) COMMAND="$1"; shift ;;
         [0-9]*) TASK_IDS="$TASK_IDS $1"; shift ;;  # Collect numeric task IDs
         *) usage; exit 1 ;;
     esac
@@ -317,6 +426,9 @@ case "$COMMAND" in
         ;;
     status)
         status
+        ;;
+    validate)
+        validate
         ;;
     *)
         usage
