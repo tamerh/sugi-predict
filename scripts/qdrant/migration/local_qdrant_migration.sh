@@ -5,15 +5,24 @@
 
 set -e
 
-echo "=== Qdrant Migration ==="
-echo "Storage type: $STORAGE_TYPE"
-echo "Working directory: $LOCAL_STORAGE"
-
 # Configuration
 CONTAINER_PATH="/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/scripts/qdrant/setup/singularity/qdrant.sif"
 CONFIG_PATH="/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/scripts/qdrant/setup/singularity/config.yaml"
 PERMANENT_STORAGE="/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"  # Final storage location
 MIGRATION_SCRIPT="/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/scripts/qdrant/migration/migrate_faiss_to_qdrant.py"
+LOG_DIR="/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
+
+# Create log directory
+mkdir -p "$LOG_DIR/server"
+
+# Generate timestamped log filename
+TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+QDRANT_LOG="$LOG_DIR/server/qdrant_${TIMESTAMP}.log"
+
+echo "=== Qdrant Migration ==="
+echo "Storage type: $STORAGE_TYPE"
+echo "Working directory: $LOCAL_STORAGE"
+echo "Qdrant log: $QDRANT_LOG"
 
 # Storage options - choose between tmp (performance) or NFS (reliability)
 USE_TMP_STORAGE="${USE_TMP_STORAGE:-false}"  # Set to true to use /tmp
@@ -40,10 +49,11 @@ nohup singularity run \
     --bind "$LOCAL_STORAGE:/qdrant/storage" \
     --bind "$CONFIG_PATH:/opt/qdrant/config.yaml" \
     "$CONTAINER_PATH" \
-    --config-path /opt/qdrant/config.yaml > qdrant_local.log 2>&1 &
+    --config-path /opt/qdrant/config.yaml > "$QDRANT_LOG" 2>&1 &
 
 QDRANT_PID=$!
 echo "Qdrant started with PID: $QDRANT_PID"
+echo "Server logs: $QDRANT_LOG"
 
 # Wait for Qdrant to be ready
 echo "Waiting for Qdrant to start..."
@@ -131,13 +141,17 @@ conda activate bioyoda
 # Run migration
 echo ""
 echo "=== Starting Migration ==="
+MIGRATION_LOG="$LOG_DIR/migration/migration_${TIMESTAMP}.log"
+echo "Migration logs: $MIGRATION_LOG"
 python "$MIGRATION_SCRIPT" \
-    --index /data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed2.index \
-    --metadata /data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_metadata2.json \
+    --index /data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/current/master_pubmed.index \
+    --metadata /data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/current/master_metadata.json \
     --collection pubmed_abstracts \
     --qdrant-url http://localhost:6333 \
     --batch-size 1000 \
-    $RESUME_FLAG
+    $RESUME_FLAG 2>&1 | tee "$MIGRATION_LOG"
+
+echo "Migration complete. Logs saved to: $MIGRATION_LOG"
 
 # Cleanup function
 cleanup() {

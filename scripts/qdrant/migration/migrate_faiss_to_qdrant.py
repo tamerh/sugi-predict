@@ -7,13 +7,15 @@ Designed for HPC cluster environment with memory optimization.
 """
 
 import os
+import sys
 import json
 import faiss
 import numpy as np
 import argparse
 import psutil
 from datetime import datetime
-from typing import List, Dict, Any, Iterator
+from pathlib import Path
+from typing import List, Dict, Any, Iterator, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from qdrant_client.http import models
@@ -22,12 +24,33 @@ from qdrant_client.http import models
 DEFAULT_QDRANT_URL = "http://localhost:6333"
 DEFAULT_BATCH_SIZE = 1000
 DEFAULT_COLLECTION_NAME = "pubmed_abstracts"
+LOG_DIR = Path("/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant/migration")
+
+# Global log file handle
+_log_file: Optional[object] = None
+
+def init_logging(log_dir: Path = LOG_DIR) -> None:
+    """Initialize logging to file."""
+    global _log_file
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = log_dir / f"migration_{timestamp}.log"
+    _log_file = open(log_path, 'w', buffering=1)  # Line buffered
+    log_with_timestamp(f"Logging initialized to: {log_path}")
 
 def log_with_timestamp(message: str) -> None:
     """Prints a message with a prepended timestamp and memory usage."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
-    print(f"[{timestamp}] [MEM: {memory_mb:.1f}MB] {message}")
+    log_line = f"[{timestamp}] [MEM: {memory_mb:.1f}MB] {message}"
+
+    # Print to console
+    print(log_line)
+
+    # Write to file if initialized
+    if _log_file is not None:
+        _log_file.write(log_line + '\n')
+        _log_file.flush()
 
 def get_memory_usage() -> tuple:
     """Returns current memory usage in MB (used, available, percentage)."""
@@ -209,9 +232,10 @@ class FaissToQdrantMigrator:
                         points=points
                     )
 
-                    # Verify the response
-                    if hasattr(response, 'status') and response.status != 'ok':
-                        log_with_timestamp(f"WARNING: Batch {batch_num + 1} upload status: {response.status}")
+                    # Verify the response (both 'ok' and 'completed' are success statuses)
+                    if hasattr(response, 'status'):
+                        if response.status not in ['ok', 'completed']:
+                            log_with_timestamp(f"WARNING: Batch {batch_num + 1} upload status: {response.status}")
 
                     log_with_timestamp(f"Uploaded batch {batch_num + 1}: {len(points)} points")
 
@@ -301,6 +325,9 @@ def main():
     if not os.path.exists(args.metadata):
         log_with_timestamp(f"ERROR: Metadata file not found: {args.metadata}")
         return 1
+
+    # Initialize logging
+    init_logging()
 
     # System information
     memory = psutil.virtual_memory()

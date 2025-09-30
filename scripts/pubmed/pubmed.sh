@@ -36,10 +36,17 @@ usage() {
 
 # Download and create file list
 download() {
+    local debug_mode="$1"
     log "Starting download phase..."
 
     # Run data download
-    #python download.py
+    if [[ "$debug_mode" == "true" ]]; then
+        log "Running download in DEBUG mode (3 files only)..."
+        python download.py --debug 3
+    else
+        log "Running full download..."
+        python download.py
+    fi
 
     # Create file list (moved from create_file_list.sh)
     log "Creating file list..."
@@ -87,7 +94,12 @@ index() {
     local num_tasks=$total_files
 
     if [[ "$debug_mode" == "true" ]]; then
-        num_tasks=$DEBUG_SAMPLE_SIZE
+        # In debug mode, use actual file count (don't exceed available files)
+        if [[ $total_files -lt $DEBUG_SAMPLE_SIZE ]]; then
+            num_tasks=$total_files
+        else
+            num_tasks=$DEBUG_SAMPLE_SIZE
+        fi
         log "Debug mode: indexing $num_tasks files out of $total_files"
     else
         log "Indexing all $total_files files"
@@ -99,7 +111,7 @@ index() {
     # Submit job array (same as submit_jobs.sh)
     log "Submitting job array with $num_tasks tasks..."
 
-    qsub -r y -q "$CLUSTER_QUEUE" \
+    qsub -r y -q "$CLUSTER_QUEUE" -N pubmed_process \
          -l h_vmem="$PROCESS_MEMORY" \
          -l h_rt="$PROCESS_RUNTIME" \
          -o "${LOG_DIR}/index/index.\$JOB_ID.\$TASK_ID.out" \
@@ -114,13 +126,19 @@ index() {
 wait_indexing() {
     log "Waiting for indexing jobs to complete..."
 
-    while qstat -u "$USER" 2>/dev/null | grep -q "pubmed_process"; do
-        local running_jobs=$(qstat -u "$USER" 2>/dev/null | grep "pubmed_process" | wc -l)
+    # Wait a moment for jobs to appear in queue
+    sleep 2
+
+    while qstat -u "$USER" 2>/dev/null | grep -q "pubmed_pro"; do
+        local running_jobs=$(qstat -u "$USER" 2>/dev/null | grep "pubmed_pro" | wc -l)
         log "Waiting... $running_jobs jobs still running"
-        sleep 30
+        sleep 10
     done
 
     log "All indexing jobs completed"
+
+    # Give filesystem a moment to sync
+    sleep 2
 }
 
 # Merge indices
@@ -135,6 +153,17 @@ merge() {
     fi
 
     log "Found $indexed_count indexed files"
+
+    # Run pre-merge validation
+    if ! validate_pre_merge; then
+        log "Pre-merge validation failed. Aborting merge."
+        return 1
+    fi
+
+    # Create model-specific directories
+    local model_final_dir=$(create_model_directories)
+    export MODEL_FINAL_DIR="$model_final_dir"
+    log "Using model directory: $model_final_dir"
 
     # Create merge log directory
     local merge_log_dir="${LOG_DIR}/pubmed/merge"
@@ -196,25 +225,52 @@ resubmit() {
 wait_merge() {
     log "Waiting for merge to complete..."
 
-    while qstat -u "$USER" 2>/dev/null | grep -q "pubmed_merge"; do
+    # Wait a moment for job to appear in queue
+    sleep 2
+
+    while qstat -u "$USER" 2>/dev/null | grep -q "merge_bioy"; do
         log "Merge job still running..."
         sleep 30
     done
 
     log "Merge completed"
 
-    # Check if outputs were created (standard paths)
-    local final_index="${FINAL_DIR}/master_pubmed_${MERGE_METHOD}.index"
-    local final_metadata="${FINAL_DIR}/master_metadata_${MERGE_METHOD}.json"
+    # Give filesystem a moment to sync
+    sleep 2
+
+    # Determine output paths (check model-specific dir first, fallback to standard)
+    local model_dir=$(get_model_dir "$MODEL_NAME" "$VECTOR_DIMENSION")
+    local model_final_dir="$FINAL_DIR/$model_dir"
+
+    local final_index=""
+    local final_metadata=""
+
+    if [[ -d "$model_final_dir" ]]; then
+        final_index="${model_final_dir}/master_pubmed.index"
+        final_metadata="${model_final_dir}/master_metadata.json"
+    else
+        # Fallback to old paths
+        final_index="${FINAL_DIR}/master_pubmed.index"
+        final_metadata="${FINAL_DIR}/master_metadata.json"
+    fi
 
     if [[ -f "$final_index" && -f "$final_metadata" ]]; then
         log "Merge outputs created successfully:"
         log "  Index: $final_index"
         log "  Metadata: $final_metadata"
+
+        # Run post-merge validation
+        if validate_post_merge "$final_index" "$final_metadata"; then
+            log "Post-merge validation passed ✓"
+        else
+            log "Warning: Post-merge validation failed"
+            return 1
+        fi
     else
         log "Warning: Expected merge outputs not found"
         log "  Expected index: $final_index"
         log "  Expected metadata: $final_metadata"
+        return 1
     fi
 }
 
@@ -271,15 +327,33 @@ status() {
     echo ""
     echo "Final files:"
     if [[ -d "$FINAL_DIR" ]]; then
-        local final_count=$(find "$FINAL_DIR" -name "*.index" 2>/dev/null | wc -l)
-        echo "  Total indices: $final_count"
+        local model_dir=$(get_model_dir "$MODEL_NAME" "$VECTOR_DIMENSION")
+        local model_final_dir="$FINAL_DIR/$model_dir"
 
-        # List actual files with sizes
-        find "$FINAL_DIR" -name "*.index" -exec basename {} \; 2>/dev/null | while read index_name; do
-            local full_path="$FINAL_DIR/$index_name"
-            local size=$(du -h "$full_path" | cut -f1)
-            echo "    $index_name ($size)"
-        done
+        # Check for model-specific directory first
+        if [[ -d "$model_final_dir" ]]; then
+            echo "  Model directory: $model_dir"
+            local final_count=$(find "$model_final_dir" -name "*.index" 2>/dev/null | wc -l)
+            echo "  Total indices: $final_count"
+
+            # List files with sizes
+            find "$model_final_dir" -name "*.index" -exec basename {} \; 2>/dev/null | while read index_name; do
+                local full_path="$model_final_dir/$index_name"
+                local size=$(du -h "$full_path" | cut -f1)
+                echo "    $index_name ($size)"
+            done
+        else
+            # Fallback to old structure
+            local final_count=$(find "$FINAL_DIR" -maxdepth 1 -name "*.index" 2>/dev/null | wc -l)
+            echo "  Total indices: $final_count (legacy structure)"
+
+            # List actual files with sizes
+            find "$FINAL_DIR" -maxdepth 1 -name "*.index" -exec basename {} \; 2>/dev/null | while read index_name; do
+                local full_path="$FINAL_DIR/$index_name"
+                local size=$(du -h "$full_path" | cut -f1)
+                echo "    $index_name ($size)"
+            done
+        fi
     else
         echo "  Directory: Not created"
     fi
@@ -287,13 +361,13 @@ status() {
     # Running jobs
     echo ""
     if command -v qstat &> /dev/null; then
-        local running_jobs=$(qstat -u "$USER" 2>/dev/null | grep -E "(pubmed_process|pubmed_merge)" | wc -l)
+        local running_jobs=$(qstat -u "$USER" 2>/dev/null | grep -E "(pubmed_pro|merge_bioy)" | wc -l)
         echo "Running jobs: $running_jobs"
 
         if [[ $running_jobs -gt 0 ]]; then
             echo ""
             echo "Active jobs:"
-            qstat -u "$USER" 2>/dev/null | grep -E "(pubmed_process|pubmed_merge)" || true
+            qstat -u "$USER" 2>/dev/null | grep -E "(pubmed_pro|merge_bioy)" || true
         fi
     fi
 }
@@ -308,7 +382,7 @@ validate() {
     log "Checking configuration..."
     if [[ -z "$MODEL_NAME" || -z "$VECTOR_DIMENSION" ]]; then
         validate_log "ERROR" "Model configuration missing"
-        ((errors++))
+        errors=$((errors + 1))
     else
         validate_log "INFO" "Model: $MODEL_NAME ($VECTOR_DIMENSION dimensions)"
     fi
@@ -322,9 +396,9 @@ validate() {
             local valid_count=0
             for sample_file in "${sample_files[@]}"; do
                 if validate_faiss_dimensions "$sample_file" "$VECTOR_DIMENSION"; then
-                    ((valid_count++))
+                    valid_count=$((valid_count + 1))
                 else
-                    ((errors++))
+                    errors=$((errors + 1))
                 fi
             done
             validate_log "INFO" "Processed validation: $valid_count/${#sample_files[@]} files valid"
@@ -339,18 +413,18 @@ validate() {
         local final_files=($(find "$FINAL_DIR" -name "*.index" 2>/dev/null))
 
         for index_file in "${final_files[@]}"; do
-            local metadata_file="${index_file%.index}.json"
-            local metadata_file="${metadata_file/pubmed/metadata}"
+            # Metadata file is in same directory, just replace pubmed with metadata in filename
+            local metadata_file="$(dirname "$index_file")/$(basename "$index_file" .index | sed 's/pubmed/metadata/').json"
 
             validate_log "INFO" "Validating $(basename "$index_file")..."
 
             if ! validate_faiss_dimensions "$index_file" "$VECTOR_DIMENSION"; then
-                ((errors++))
+                errors=$((errors + 1))
             fi
 
             if [[ -f "$metadata_file" ]]; then
                 if ! validate_index_metadata_alignment "$index_file" "$metadata_file"; then
-                    ((errors++))
+                    errors=$((errors + 1))
                 fi
             else
                 validate_log "WARN" "Metadata file not found: $(basename "$metadata_file")"
@@ -377,7 +451,7 @@ run_all() {
     log "Running complete PubMed pipeline..."
 
     # Download
-    download
+    download "$debug_mode"
 
     # Index
     index "$debug_mode"
@@ -410,7 +484,7 @@ done
 # Execute command
 case "$COMMAND" in
     download)
-        download
+        download "$j"
         ;;
     index)
         index "$DEBUG_MODE"

@@ -30,8 +30,8 @@ MIGRATION_SCRIPT="$SCRIPT_DIR/migration/migrate_faiss_to_qdrant.py"
 CONNECTION_INFO="$SCRIPT_DIR/connection_info.txt"
 
 # Default paths (can be overridden with environment variables)
-FAISS_INDEX_PATH="${FAISS_INDEX_PATH:-/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed2.index}"
-METADATA_PATH="${METADATA_PATH:-/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_metadata2.json}"
+FAISS_INDEX_PATH="${FAISS_INDEX_PATH:-/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/current/master_pubmed.index}"
+METADATA_PATH="${METADATA_PATH:-/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/current/master_metadata.json}"
 COLLECTION_NAME="${COLLECTION_NAME:-pubmed_abstracts}"
 BATCH_SIZE="${BATCH_SIZE:-1000}"
 

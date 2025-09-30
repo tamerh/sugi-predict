@@ -9,6 +9,16 @@
 # --- Main Logic ---
 source "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/scripts/pubmed/pubmed.env"
 
+# Load validation utilities for get_model_dir function
+source "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/scripts/pubmed/validation_utils.sh"
+
+# Set up model-specific directory if not already set
+if [[ -z "$MODEL_FINAL_DIR" ]]; then
+    MODEL_DIR=$(get_model_dir "$MODEL_NAME" "$VECTOR_DIMENSION")
+    export MODEL_FINAL_DIR="$FINAL_DIR/$MODEL_DIR"
+    echo "Using model directory: $MODEL_FINAL_DIR"
+fi
+
 # 3. Set up the Conda environment
 # IMPORTANT: Replace with the actual path to your Conda installation
 source /home/scc/tgur/programs/miniconda3/etc/profile.d/conda.sh

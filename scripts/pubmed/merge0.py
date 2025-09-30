@@ -11,9 +11,12 @@ from config_loader import get_config
 # --- Configuration from .env ---
 config = get_config()
 BASE_PROCESSED_DIR = str(config.get_path('PROCESSED_DIR'))
-FINAL_OUTPUT_DIR = str(config.get_path('FINAL_DIR'))
-MASTER_INDEX_PATH = os.path.join(FINAL_OUTPUT_DIR, 'master_pubmed2.index')
-MASTER_METADATA_PATH = os.path.join(FINAL_OUTPUT_DIR, 'master_metadata2.json')  # Fixed typo
+
+# Check if MODEL_FINAL_DIR is set (for model-specific directory structure)
+FINAL_OUTPUT_DIR = os.environ.get('MODEL_FINAL_DIR', str(config.get_path('FINAL_DIR')))
+
+MASTER_INDEX_PATH = os.path.join(FINAL_OUTPUT_DIR, 'master_pubmed.index')
+MASTER_METADATA_PATH = os.path.join(FINAL_OUTPUT_DIR, 'master_metadata.json')
 VECTOR_DIMENSION = config.get_int('VECTOR_DIMENSION', 384)
 
 # --- Helper Functions ---
