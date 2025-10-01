@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """
-AACT Database Download and Setup for Clinical Trials Pipeline
+AACT Flat Files Download for Clinical Trials Pipeline
 
-Downloads the latest AACT PostgreSQL snapshot and sets up the database
-for text extraction and processing.
+Downloads the latest AACT flat file export (pipe-delimited TSV files)
+and extracts them for processing.
 """
 
 import os
 import sys
 import json
 import time
+import zipfile
 import requests
-import subprocess
 import psutil
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import argparse
 
@@ -35,9 +34,9 @@ def get_memory_usage() -> tuple:
     )
 
 class AACTDownloader:
-    """Downloads and manages AACT database snapshots."""
+    """Downloads and manages AACT flat file exports."""
 
-    def __init__(self, base_url: str = "https://aact.ctti-clinicaltrials.org/snapshots"):
+    def __init__(self, base_url: str = "https://aact.ctti-clinicaltrials.org/downloads"):
         """Initialize the AACT downloader."""
         self.base_url = base_url
         self.session = requests.Session()
@@ -46,35 +45,69 @@ class AACTDownloader:
         })
 
     def get_latest_snapshot_info(self) -> dict:
-        """Get information about the latest AACT snapshot."""
+        """Get information about the latest AACT flat file snapshot."""
         log_with_timestamp(f"Fetching snapshot information from {self.base_url}")
 
         try:
             response = self.session.get(self.base_url, timeout=30)
             response.raise_for_status()
 
-            # Parse HTML to find the latest snapshot
+            # Parse HTML to find the flat file export link
             soup = BeautifulSoup(response.content, 'html.parser')
 
-            # Look for download links (AACT typically provides .dmp files)
-            snapshot_links = []
-            for link in soup.find_all('a', href=True):
-                href = link['href']
-                if href.endswith('.dmp') or href.endswith('.zip'):
-                    snapshot_links.append({
-                        'filename': os.path.basename(href),
-                        'url': urljoin(self.base_url, href),
-                        'text': link.get_text().strip()
-                    })
+            # AACT page structure: find sections with headers, then get the download link
+            # Look for "Flat Text Files" section
+            flat_files_section = None
+            for heading in soup.find_all(['h2', 'h3', 'h4', 'strong', 'b']):
+                if 'flat' in heading.get_text().lower() and 'text' in heading.get_text().lower():
+                    flat_files_section = heading
+                    break
 
-            if not snapshot_links:
-                raise ValueError("No snapshot files found on the downloads page")
+            if not flat_files_section:
+                # Fallback: find all DigitalOcean Spaces links and take the second one
+                # (first is PostgreSQL dump, second is flat files, third is COVID)
+                all_links = []
+                for link in soup.find_all('a', href=True):
+                    href = link['href']
+                    if 'digitaloceanspaces.com' in href and 'Download File' in link.get_text():
+                        all_links.append(href)
 
-            # Sort by filename (usually contains date) to get latest
-            latest_snapshot = sorted(snapshot_links, key=lambda x: x['filename'])[-1]
+                if len(all_links) >= 2:
+                    flat_file_url = all_links[1]  # Second link is flat files
+                    log_with_timestamp(f"Found flat file link (position-based): {flat_file_url}")
 
-            log_with_timestamp(f"Found latest snapshot: {latest_snapshot['filename']}")
-            return latest_snapshot
+                    snapshot_info = {
+                        'filename': f"aact_flat_files_{datetime.now().strftime('%Y%m%d')}.zip",
+                        'url': flat_file_url,
+                        'text': 'Flat Text Files',
+                        'type': 'flat_files'
+                    }
+
+                    log_with_timestamp(f"Found flat file snapshot: {snapshot_info['filename']}")
+                    return snapshot_info
+                else:
+                    raise ValueError(f"Could not find flat file link. Found {len(all_links)} DigitalOcean links.")
+
+            # If we found the section, look for download link near it
+            parent = flat_files_section.find_parent()
+            download_link = None
+            for link in parent.find_all('a', href=True):
+                if 'digitaloceanspaces.com' in link['href']:
+                    download_link = link['href']
+                    break
+
+            if not download_link:
+                raise ValueError("Found flat file section but no download link")
+
+            snapshot_info = {
+                'filename': f"aact_flat_files_{datetime.now().strftime('%Y%m%d')}.zip",
+                'url': download_link,
+                'text': 'Flat Text Files',
+                'type': 'flat_files'
+            }
+
+            log_with_timestamp(f"Found flat file snapshot: {snapshot_info['filename']}")
+            return snapshot_info
 
         except requests.RequestException as e:
             log_with_timestamp(f"ERROR: Failed to fetch snapshot information: {e}")
@@ -84,7 +117,7 @@ class AACTDownloader:
             raise
 
     def download_snapshot(self, snapshot_info: dict, download_dir: str) -> str:
-        """Download the AACT snapshot file."""
+        """Download the AACT flat file snapshot."""
         filename = snapshot_info['filename']
         url = snapshot_info['url']
         local_path = os.path.join(download_dir, filename)
@@ -95,7 +128,7 @@ class AACTDownloader:
             log_with_timestamp(f"Snapshot already exists: {local_path} ({file_size/1024/1024:.1f}MB)")
             return local_path
 
-        log_with_timestamp(f"Downloading snapshot from {url}")
+        log_with_timestamp(f"Downloading flat file snapshot from {url}")
         log_with_timestamp(f"Saving to: {local_path}")
 
         try:
@@ -108,6 +141,7 @@ class AACTDownloader:
 
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
+            last_log_mb = 0
 
             with open(local_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -116,12 +150,14 @@ class AACTDownloader:
                         downloaded += len(chunk)
 
                         # Log progress every 100MB
-                        if downloaded % (100 * 1024 * 1024) == 0:
+                        current_mb = downloaded / (1024 * 1024)
+                        if current_mb - last_log_mb >= 100:
                             if total_size > 0:
                                 progress = (downloaded / total_size) * 100
-                                log_with_timestamp(f"Downloaded {downloaded/1024/1024:.1f}MB ({progress:.1f}%)")
+                                log_with_timestamp(f"Downloaded {current_mb:.1f}MB ({progress:.1f}%)")
                             else:
-                                log_with_timestamp(f"Downloaded {downloaded/1024/1024:.1f}MB")
+                                log_with_timestamp(f"Downloaded {current_mb:.1f}MB")
+                            last_log_mb = current_mb
 
             final_size = os.path.getsize(local_path)
             log_with_timestamp(f"Download complete: {final_size/1024/1024:.1f}MB")
@@ -138,261 +174,86 @@ class AACTDownloader:
                 os.remove(local_path)
             raise
 
-class PostgreSQLManager:
-    """Manages PostgreSQL database operations for AACT."""
-
-    def __init__(self, host: str = "localhost", port: str = "5432",
-                 user: str = None, password: str = ""):
-        """Initialize PostgreSQL manager."""
-        self.host = host
-        self.port = port
-        self.user = user or os.getenv('USER')
-        self.password = password
-
-    def check_postgres_connection(self) -> bool:
-        """Check if PostgreSQL is accessible."""
-        log_with_timestamp("Checking PostgreSQL connection...")
+    def extract_snapshot(self, zip_path: str, extract_dir: str) -> dict:
+        """Extract the AACT flat file snapshot and return info about extracted files."""
+        log_with_timestamp(f"Extracting snapshot to {extract_dir}")
 
         try:
-            cmd = [
-                'psql',
-                f'--host={self.host}',
-                f'--port={self.port}',
-                f'--username={self.user}',
-                '--command=SELECT version();',
-                '--quiet',
-                'postgres'
-            ]
+            os.makedirs(extract_dir, exist_ok=True)
 
-            env = os.environ.copy()
-            if self.password:
-                env['PGPASSWORD'] = self.password
+            extracted_files = {}
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                file_list = zip_ref.namelist()
+                log_with_timestamp(f"Archive contains {len(file_list)} files")
 
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+                # Extract all files
+                for file_info in zip_ref.infolist():
+                    zip_ref.extract(file_info, extract_dir)
 
-            if result.returncode == 0:
-                log_with_timestamp("PostgreSQL connection successful")
-                return True
-            else:
-                log_with_timestamp(f"PostgreSQL connection failed: {result.stderr}")
-                return False
+                    # Track important table files
+                    filename = file_info.filename
+                    if filename.endswith('.txt'):
+                        table_name = os.path.splitext(os.path.basename(filename))[0]
+                        file_path = os.path.join(extract_dir, filename)
+                        file_size = os.path.getsize(file_path)
+                        extracted_files[table_name] = {
+                            'path': file_path,
+                            'size_mb': file_size / 1024 / 1024
+                        }
 
-        except FileNotFoundError:
-            log_with_timestamp("ERROR: psql command not found. Please install PostgreSQL client.")
-            return False
+            log_with_timestamp(f"Extracted {len(extracted_files)} table files")
+
+            # Log important tables
+            important_tables = ['studies', 'brief_summaries', 'detailed_descriptions',
+                               'design_outcomes', 'eligibilities', 'interventions']
+            for table in important_tables:
+                if table in extracted_files:
+                    info = extracted_files[table]
+                    log_with_timestamp(f"  {table}: {info['size_mb']:.1f}MB")
+
+            return extracted_files
+
+        except zipfile.BadZipFile as e:
+            log_with_timestamp(f"ERROR: Invalid zip file: {e}")
+            raise
         except Exception as e:
-            log_with_timestamp(f"ERROR: Unexpected error checking PostgreSQL: {e}")
-            return False
+            log_with_timestamp(f"ERROR: Failed to extract snapshot: {e}")
+            raise
 
-    def database_exists(self, database_name: str) -> bool:
-        """Check if database exists."""
-        try:
-            cmd = [
-                'psql',
-                f'--host={self.host}',
-                f'--port={self.port}',
-                f'--username={self.user}',
-                '--tuples-only',
-                '--quiet',
-                '--command=SELECT 1 FROM pg_database WHERE datname=\'{}\''.format(database_name),
-                'postgres'
-            ]
+    def save_extraction_info(self, extracted_files: dict, output_path: str) -> None:
+        """Save information about extracted files for use by other scripts."""
+        info = {
+            'extraction_date': datetime.now().isoformat(),
+            'tables': extracted_files,
+            'total_files': len(extracted_files),
+            'total_size_mb': sum(f['size_mb'] for f in extracted_files.values())
+        }
 
-            env = os.environ.copy()
-            if self.password:
-                env['PGPASSWORD'] = self.password
+        with open(output_path, 'w') as f:
+            json.dump(info, f, indent=2)
 
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-            return result.returncode == 0 and result.stdout.strip() == '1'
-
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Failed to check database existence: {e}")
-            return False
-
-    def create_database(self, database_name: str) -> bool:
-        """Create database if it doesn't exist."""
-        if self.database_exists(database_name):
-            log_with_timestamp(f"Database '{database_name}' already exists")
-            return True
-
-        log_with_timestamp(f"Creating database '{database_name}'...")
-
-        try:
-            cmd = [
-                'psql',
-                f'--host={self.host}',
-                f'--port={self.port}',
-                f'--username={self.user}',
-                '--command=CREATE DATABASE "{}";'.format(database_name),
-                'postgres'
-            ]
-
-            env = os.environ.copy()
-            if self.password:
-                env['PGPASSWORD'] = self.password
-
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-            if result.returncode == 0:
-                log_with_timestamp(f"Database '{database_name}' created successfully")
-                return True
-            else:
-                log_with_timestamp(f"ERROR: Failed to create database: {result.stderr}")
-                return False
-
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Unexpected error creating database: {e}")
-            return False
-
-    def drop_database(self, database_name: str) -> bool:
-        """Drop database if it exists."""
-        if not self.database_exists(database_name):
-            log_with_timestamp(f"Database '{database_name}' does not exist")
-            return True
-
-        log_with_timestamp(f"Dropping database '{database_name}'...")
-
-        try:
-            cmd = [
-                'psql',
-                f'--host={self.host}',
-                f'--port={self.port}',
-                f'--username={self.user}',
-                '--command=DROP DATABASE "{}";'.format(database_name),
-                'postgres'
-            ]
-
-            env = os.environ.copy()
-            if self.password:
-                env['PGPASSWORD'] = self.password
-
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-            if result.returncode == 0:
-                log_with_timestamp(f"Database '{database_name}' dropped successfully")
-                return True
-            else:
-                log_with_timestamp(f"ERROR: Failed to drop database: {result.stderr}")
-                return False
-
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Unexpected error dropping database: {e}")
-            return False
-
-    def restore_database(self, dump_file: str, database_name: str) -> bool:
-        """Restore database from dump file."""
-        if not os.path.exists(dump_file):
-            log_with_timestamp(f"ERROR: Dump file not found: {dump_file}")
-            return False
-
-        log_with_timestamp(f"Restoring database from {dump_file}")
-        log_with_timestamp(f"This may take 10-30 minutes depending on system performance...")
-
-        try:
-            cmd = [
-                'pg_restore',
-                f'--host={self.host}',
-                f'--port={self.port}',
-                f'--username={self.user}',
-                '--dbname={}'.format(database_name),
-                '--verbose',
-                '--clean',
-                '--no-owner',
-                '--no-privileges',
-                dump_file
-            ]
-
-            env = os.environ.copy()
-            if self.password:
-                env['PGPASSWORD'] = self.password
-
-            # Run restore process
-            start_time = time.time()
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-            end_time = time.time()
-
-            duration_minutes = (end_time - start_time) / 60
-
-            if result.returncode == 0:
-                log_with_timestamp(f"Database restoration completed successfully in {duration_minutes:.1f} minutes")
-                return True
-            else:
-                log_with_timestamp(f"ERROR: Database restoration failed: {result.stderr}")
-                # Print stdout as well, as pg_restore sometimes puts useful info there
-                if result.stdout:
-                    log_with_timestamp(f"Restore output: {result.stdout}")
-                return False
-
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Unexpected error during database restoration: {e}")
-            return False
-
-    def get_table_info(self, database_name: str) -> dict:
-        """Get information about tables in the database."""
-        log_with_timestamp(f"Getting table information from {database_name}")
-
-        try:
-            cmd = [
-                'psql',
-                f'--host={self.host}',
-                f'--port={self.port}',
-                f'--username={self.user}',
-                f'--dbname={database_name}',
-                '--tuples-only',
-                '--quiet',
-                '--command=SELECT table_name, table_type FROM information_schema.tables WHERE table_schema=\'public\' ORDER BY table_name;'
-            ]
-
-            env = os.environ.copy()
-            if self.password:
-                env['PGPASSWORD'] = self.password
-
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-            if result.returncode == 0:
-                tables = {}
-                for line in result.stdout.strip().split('\n'):
-                    if line.strip():
-                        parts = line.strip().split('|')
-                        if len(parts) >= 2:
-                            table_name = parts[0].strip()
-                            table_type = parts[1].strip()
-                            tables[table_name] = table_type
-
-                log_with_timestamp(f"Found {len(tables)} tables in database")
-                return tables
-            else:
-                log_with_timestamp(f"ERROR: Failed to get table info: {result.stderr}")
-                return {}
-
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Unexpected error getting table info: {e}")
-            return {}
+        log_with_timestamp(f"Extraction info saved to {output_path}")
 
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(
-        description="Download and setup AACT database for clinical trials processing"
+        description="Download and extract AACT flat files for clinical trials processing"
     )
     parser.add_argument(
         "--download-dir", default="./data/raw/clinical_trials",
         help="Directory to store downloaded files"
     )
     parser.add_argument(
-        "--database-name", default="aact_clinical_trials",
-        help="Name for the PostgreSQL database"
-    )
-    parser.add_argument(
-        "--recreate", action="store_true",
-        help="Drop and recreate database if it exists"
+        "--extract-dir", default="./data/raw/clinical_trials/extracted",
+        help="Directory to extract files to"
     )
     parser.add_argument(
         "--download-only", action="store_true",
-        help="Only download, don't restore database"
+        help="Only download, don't extract"
     )
     parser.add_argument(
-        "--restore-only",
-        help="Only restore database from existing file (provide file path)"
+        "--extract-only",
+        help="Only extract from existing file (provide file path)"
     )
 
     args = parser.parse_args()
@@ -402,21 +263,12 @@ def main():
     log_with_timestamp(f"System RAM: {memory.total / 1024**3:.1f}GB total, {memory.available / 1024**3:.1f}GB available")
 
     try:
-        # Initialize managers
         downloader = AACTDownloader()
-        postgres = PostgreSQLManager()
-
-        # Check PostgreSQL connection
-        if not args.download_only:
-            if not postgres.check_postgres_connection():
-                log_with_timestamp("ERROR: Cannot connect to PostgreSQL. Please ensure it's installed and running.")
-                return 1
-
         download_path = None
 
         # Download phase
-        if not args.restore_only:
-            log_with_timestamp("=== Starting AACT Download ===")
+        if not args.extract_only:
+            log_with_timestamp("=== Starting AACT Flat Files Download ===")
 
             # Get latest snapshot info
             snapshot_info = downloader.get_latest_snapshot_info()
@@ -425,46 +277,31 @@ def main():
             download_path = downloader.download_snapshot(snapshot_info, args.download_dir)
 
             if args.download_only:
-                log_with_timestamp("Download complete! Use --restore-only to restore the database.")
+                log_with_timestamp("Download complete! Use --extract-only to extract the files.")
                 return 0
 
-        # Restore phase
+        # Extract phase
         if not args.download_only:
-            log_with_timestamp("=== Starting Database Restoration ===")
+            log_with_timestamp("=== Starting Extraction ===")
 
-            restore_file = args.restore_only or download_path
-            if not restore_file or not os.path.exists(restore_file):
-                log_with_timestamp("ERROR: No dump file available for restoration")
+            extract_file = args.extract_only or download_path
+            if not extract_file or not os.path.exists(extract_file):
+                log_with_timestamp("ERROR: No zip file available for extraction")
                 return 1
 
-            # Handle database recreation
-            if args.recreate and postgres.database_exists(args.database_name):
-                if not postgres.drop_database(args.database_name):
-                    return 1
+            # Extract files
+            extracted_files = downloader.extract_snapshot(extract_file, args.extract_dir)
 
-            # Create database
-            if not postgres.create_database(args.database_name):
-                return 1
+            # Save extraction info for other scripts
+            info_path = os.path.join(args.extract_dir, 'extraction_info.json')
+            downloader.save_extraction_info(extracted_files, info_path)
 
-            # Restore database
-            if not postgres.restore_database(restore_file, args.database_name):
-                return 1
+            log_with_timestamp("=== Download and Extraction Complete ===")
+            log_with_timestamp(f"Extracted {len(extracted_files)} tables to {args.extract_dir}")
+            log_with_timestamp(f"Total size: {sum(f['size_mb'] for f in extracted_files.values()):.1f}MB")
 
-            # Get table information
-            tables = postgres.get_table_info(args.database_name)
-            key_tables = ['studies', 'design_outcomes', 'eligibilities', 'conditions', 'interventions']
-
-            log_with_timestamp("Database restoration verification:")
-            for table in key_tables:
-                status = "✓ Found" if table in tables else "✗ Missing"
-                log_with_timestamp(f"  {table}: {status}")
-
-        log_with_timestamp("=== AACT Setup Complete ===")
         return 0
 
-    except KeyboardInterrupt:
-        log_with_timestamp("Setup interrupted by user")
-        return 1
     except Exception as e:
         log_with_timestamp(f"ERROR during setup: {e}")
         return 1

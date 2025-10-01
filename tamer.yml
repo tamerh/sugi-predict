@@ -17,3 +17,6 @@ dependencies:
   - lxml
   - psutil
   - qdrant-client
+  - psycopg2-binary
+  - beautifulsoup4
+  - postgresql

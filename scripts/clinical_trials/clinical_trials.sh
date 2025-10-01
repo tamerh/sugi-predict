@@ -1,4 +1,4 @@
-#!/bin/bash
+jj#!/bin/bash
 ##############################################################################
 # Clinical Trials Processing Pipeline
 ##############################################################################
@@ -15,8 +15,8 @@ log() { echo "[$(date '+%H:%M:%S')] $1"; }
 usage() {
     echo "Usage: $0 <command> [--debug] [options...]"
     echo "Commands:"
-    echo "  download   - Download AACT database snapshot"
-    echo "  extract    - Extract text from AACT database"
+    echo "  download   - Download and extract AACT flat files"
+    echo "  extract    - Extract text from AACT flat files to JSON"
     echo "  process    - Process trials to create FAISS embeddings"
     echo "  merge      - Merge all indices into master index"
     echo "  all        - Run complete pipeline (download + extract + process + merge)"
@@ -25,56 +25,49 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --debug    - Process only $DEBUG_SAMPLE_SIZE trials"
-    echo "  --recreate - Recreate database (for download command)"
     echo ""
     echo "Examples:"
-    echo "  $0 download --recreate    # Download and recreate AACT database"
+    echo "  $0 download               # Download and extract AACT flat files"
     echo "  $0 extract --debug        # Extract limited data for testing"
     echo "  $0 all                    # Run complete pipeline"
 }
 
-# Download AACT database
+# Download and extract AACT flat files
 download() {
-    local recreate_flag="$1"
-    log "Starting AACT database download..."
-
-    local download_args=""
-    if [[ "$recreate_flag" == "true" ]]; then
-        download_args="--recreate"
-    fi
+    log "Starting AACT flat files download and extraction..."
 
     python download_aact.py \
         --download-dir "$BASE_DATA_DIR" \
-        --database-name "$AACT_DATABASE_NAME" \
-        $download_args
+        --extract-dir "$BASE_DATA_DIR/extracted"
 
     if [[ $? -eq 0 ]]; then
-        log "AACT database download completed successfully"
-        # Create connection info file for other scripts
-        local conn_file="$SCRIPTS_DIR/aact_connection.env"
-        cat > "$conn_file" << EOF
-AACT_DATABASE_URL="postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/$AACT_DATABASE_NAME"
-EOF
-        log "Database connection info saved to $conn_file"
+        log "AACT flat files download and extraction completed successfully"
+        # Save extraction dir for next steps
+        echo "EXTRACT_DIR=\"$BASE_DATA_DIR/extracted\"" > "$SCRIPTS_DIR/extraction_info.env"
     else
-        log "ERROR: AACT database download failed"
+        log "ERROR: AACT flat files download/extraction failed"
         return 1
     fi
 }
 
-# Extract text from AACT database
+# Extract text from AACT flat files
 extract() {
     local debug_mode="$1"
-    log "Starting text extraction from AACT database..."
+    log "Starting text extraction from AACT flat files..."
 
-    # Check if connection info exists
-    local conn_file="$SCRIPTS_DIR/aact_connection.env"
-    if [[ ! -f "$conn_file" ]]; then
-        log "Database connection info not found. Running download first..."
-        download "false"
+    # Check if extraction info exists
+    local extract_info="$SCRIPTS_DIR/extraction_info.env"
+    if [[ ! -f "$extract_info" ]]; then
+        log "Extraction info not found. Running download first..."
+        download
     fi
 
-    source "$conn_file"
+    source "$extract_info"
+
+    if [[ ! -d "$EXTRACT_DIR" ]]; then
+        log "ERROR: Extract directory not found: $EXTRACT_DIR"
+        return 1
+    fi
 
     # Prepare output files
     local output_json="${PROCESSED_DIR}/trials_data.json"
@@ -112,7 +105,7 @@ extract() {
     fi
 
     python extract_text.py \
-        --database-url "$AACT_DATABASE_URL" \
+        --extract-dir "$EXTRACT_DIR" \
         --output-json "$output_json" \
         --output-csv "$output_csv" \
         --min-summary-length "$MIN_BRIEF_SUMMARY_LENGTH" \
@@ -123,8 +116,8 @@ extract() {
         log "  JSON output: $output_json"
         log "  CSV output: $output_csv"
 
-        # Save extraction info for next steps
-        echo "EXTRACTED_JSON=\"$output_json\"" > "$SCRIPTS_DIR/extraction_info.env"
+        # Save extracted JSON path for next steps
+        echo "EXTRACTED_JSON=\"$output_json\"" >> "$SCRIPTS_DIR/extraction_info.env"
     else
         log "ERROR: Text extraction failed"
         return 1
@@ -232,23 +225,19 @@ status() {
     echo "Dimensions: $VECTOR_DIMENSION"
     echo ""
 
-    # AACT Database
-    local conn_file="$SCRIPTS_DIR/aact_connection.env"
-    if [[ -f "$conn_file" ]]; then
-        echo "AACT Database: ✓ Downloaded and configured"
+    # AACT Flat Files
+    local extract_info="$SCRIPTS_DIR/extraction_info.env"
+    if [[ -f "$extract_info" ]]; then
+        source "$extract_info"
+        echo "AACT Flat Files: ✓ Downloaded and extracted"
+        echo "Extract directory: $EXTRACT_DIR"
 
-        # Try to get database stats
-        source "$conn_file"
-        echo "Database URL: $AACT_DATABASE_URL"
-
-        # Test database connection
-        if python extract_text.py --database-url "$AACT_DATABASE_URL" --stats-only >/dev/null 2>&1; then
-            echo "Database connection: ✓ Working"
-        else
-            echo "Database connection: ✗ Failed"
+        if [[ -d "$EXTRACT_DIR" ]]; then
+            local file_count=$(find "$EXTRACT_DIR" -name "*.txt" 2>/dev/null | wc -l)
+            echo "  Flat files: $file_count table files"
         fi
     else
-        echo "AACT Database: ✗ Not downloaded"
+        echo "AACT Flat Files: ✗ Not downloaded"
     fi
 
     # Extracted data
@@ -335,19 +324,19 @@ validate() {
         log "✓ Model: $MODEL_NAME ($VECTOR_DIMENSION dimensions)"
     fi
 
-    # Check AACT database
-    local conn_file="$SCRIPTS_DIR/aact_connection.env"
-    if [[ -f "$conn_file" ]]; then
-        source "$conn_file"
-        log "Testing AACT database connection..."
-        if python extract_text.py --database-url "$AACT_DATABASE_URL" --stats-only >/dev/null 2>&1; then
-            log "✓ AACT database connection working"
+    # Check AACT flat files
+    local extract_info="$SCRIPTS_DIR/extraction_info.env"
+    if [[ -f "$extract_info" ]]; then
+        source "$extract_info"
+        log "Testing AACT flat files..."
+        if [[ -d "$EXTRACT_DIR" ]] && python extract_text.py --extract-dir "$EXTRACT_DIR" --stats-only --output-json /dev/null >/dev/null 2>&1; then
+            log "✓ AACT flat files accessible"
         else
-            log "✗ AACT database connection failed"
+            log "✗ AACT flat files not accessible"
             ((errors++))
         fi
     else
-        log "✗ AACT database not configured"
+        log "✗ AACT flat files not downloaded"
         ((errors++))
     fi
 
@@ -404,16 +393,16 @@ run_all() {
     local debug_mode="$1"
     log "Running complete clinical trials pipeline..."
 
-    # Download
-    download "false"
+    # Download (also extracts flat files)
+    download
 
-    # Extract
+    # Extract (parse flat files to JSON)
     extract "$debug_mode"
 
-    # Process
+    # Process (create embeddings)
     process "$debug_mode"
 
-    # Merge
+    # Merge (combine indices)
     merge
 
     log "Complete clinical trials pipeline finished!"
@@ -421,7 +410,6 @@ run_all() {
 
 # Parse arguments
 DEBUG_MODE="false"
-RECREATE="false"
 COMMAND=""
 
 source /home/scc/tgur/programs/miniconda3/etc/profile.d/conda.sh
@@ -430,7 +418,6 @@ conda activate bioyoda
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug) DEBUG_MODE="true"; shift ;;
-        --recreate) RECREATE="true"; shift ;;
         download|extract|process|merge|all|status|validate) COMMAND="$1"; shift ;;
         *) usage; exit 1 ;;
     esac
@@ -439,7 +426,7 @@ done
 # Execute command
 case "$COMMAND" in
     download)
-        download "$RECREATE"
+        download
         ;;
     extract)
         extract "$DEBUG_MODE"

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Text Extraction from AACT Database for Clinical Trials Pipeline
+Text Extraction from AACT Flat Files for Clinical Trials Pipeline
 
-Extracts and processes text content from AACT PostgreSQL database
+Extracts and processes text content from AACT pipe-delimited flat files
 for embedding generation and FAISS indexing.
 """
 
 import os
 import sys
 import json
-import psycopg2
 import pandas as pd
 import argparse
 import psutil
@@ -33,62 +32,109 @@ def get_memory_usage() -> tuple:
     )
 
 class AACTTextExtractor:
-    """Extracts text content from AACT database for embedding generation."""
+    """Extracts text content from AACT flat files for embedding generation."""
 
-    def __init__(self, database_url: str):
-        """Initialize the text extractor with database connection."""
-        self.database_url = database_url
-        self.connection = None
+    def __init__(self, extract_dir: str):
+        """Initialize the text extractor with extracted files directory."""
+        self.extract_dir = extract_dir
+        self.extraction_info = None
+        self.tables = {}
 
-    def connect(self) -> bool:
-        """Establish connection to AACT database."""
-        try:
-            log_with_timestamp("Connecting to AACT database...")
-            self.connection = psycopg2.connect(self.database_url)
-            self.connection.set_session(autocommit=True)
-            log_with_timestamp("Database connection established")
-            return True
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Failed to connect to database: {e}")
+    def load_extraction_info(self) -> bool:
+        """Load extraction info JSON to find table files."""
+        info_path = os.path.join(self.extract_dir, 'extraction_info.json')
+
+        if not os.path.exists(info_path):
+            log_with_timestamp(f"ERROR: extraction_info.json not found in {self.extract_dir}")
             return False
 
-    def disconnect(self):
-        """Close database connection."""
-        if self.connection:
-            self.connection.close()
-            log_with_timestamp("Database connection closed")
+        try:
+            with open(info_path, 'r') as f:
+                self.extraction_info = json.load(f)
+            log_with_timestamp(f"Loaded extraction info: {self.extraction_info['total_files']} tables available")
+            return True
+        except Exception as e:
+            log_with_timestamp(f"ERROR: Failed to load extraction info: {e}")
+            return False
 
-    def get_database_stats(self) -> Dict[str, int]:
-        """Get basic statistics about the AACT database."""
-        log_with_timestamp("Getting database statistics...")
+    def load_table(self, table_name: str, chunksize: Optional[int] = None) -> Optional[pd.DataFrame]:
+        """Load a table from the extracted flat files."""
+        if not self.extraction_info:
+            log_with_timestamp("ERROR: Extraction info not loaded. Call load_extraction_info() first.")
+            return None
 
-        queries = {
-            'total_studies': 'SELECT COUNT(*) FROM studies',
-            'studies_with_summary': 'SELECT COUNT(*) FROM studies WHERE brief_summary IS NOT NULL AND brief_summary != \'\'',
-            'studies_with_description': 'SELECT COUNT(*) FROM studies WHERE detailed_description IS NOT NULL AND detailed_description != \'\'',
-            'total_outcomes': 'SELECT COUNT(*) FROM design_outcomes',
-            'total_eligibilities': 'SELECT COUNT(*) FROM eligibilities WHERE criteria IS NOT NULL AND criteria != \'\'',
-            'total_conditions': 'SELECT COUNT(*) FROM conditions',
-            'total_interventions': 'SELECT COUNT(*) FROM interventions'
-        }
+        if table_name not in self.extraction_info['tables']:
+            log_with_timestamp(f"WARNING: Table '{table_name}' not found in extracted files")
+            return None
 
-        stats = {}
-        cursor = self.connection.cursor()
+        table_info = self.extraction_info['tables'][table_name]
+        table_path = table_info['path']
+
+        if not os.path.exists(table_path):
+            log_with_timestamp(f"ERROR: Table file not found: {table_path}")
+            return None
 
         try:
-            for stat_name, query in queries.items():
-                cursor.execute(query)
-                result = cursor.fetchone()
-                stats[stat_name] = result[0] if result else 0
-                log_with_timestamp(f"  {stat_name}: {stats[stat_name]:,}")
+            log_with_timestamp(f"Loading table: {table_name} ({table_info['size_mb']:.1f}MB)")
 
-            return stats
+            # AACT flat files are pipe-delimited
+            if chunksize:
+                # Return iterator for large files
+                return pd.read_csv(table_path, sep='|', low_memory=False, chunksize=chunksize)
+            else:
+                df = pd.read_csv(table_path, sep='|', low_memory=False)
+                log_with_timestamp(f"Loaded {len(df):,} rows from {table_name}")
+                return df
 
         except Exception as e:
-            log_with_timestamp(f"ERROR: Failed to get database stats: {e}")
-            return {}
-        finally:
-            cursor.close()
+            log_with_timestamp(f"ERROR: Failed to load table {table_name}: {e}")
+            return None
+
+    def get_dataset_stats(self) -> Dict[str, int]:
+        """Get basic statistics about the AACT dataset."""
+        log_with_timestamp("Getting dataset statistics...")
+
+        stats = {}
+
+        # Load studies table
+        studies = self.load_table('studies')
+        if studies is not None:
+            stats['total_studies'] = len(studies)
+
+            # Filter by status if needed
+            if 'overall_status' in studies.columns:
+                status_counts = studies['overall_status'].value_counts()
+                log_with_timestamp(f"  Study statuses: {dict(status_counts)}")
+
+        # Load brief summaries
+        brief_summaries = self.load_table('brief_summaries')
+        if brief_summaries is not None:
+            stats['studies_with_summary'] = len(brief_summaries)
+
+        # Load detailed descriptions
+        detailed_descriptions = self.load_table('detailed_descriptions')
+        if detailed_descriptions is not None:
+            stats['studies_with_description'] = len(detailed_descriptions)
+
+        # Load outcomes
+        design_outcomes = self.load_table('design_outcomes')
+        if design_outcomes is not None:
+            stats['total_outcomes'] = len(design_outcomes)
+
+        # Load eligibilities
+        eligibilities = self.load_table('eligibilities')
+        if eligibilities is not None:
+            stats['total_eligibilities'] = len(eligibilities)
+
+        # Load interventions
+        interventions = self.load_table('interventions')
+        if interventions is not None:
+            stats['total_interventions'] = len(interventions)
+
+        for stat_name, value in stats.items():
+            log_with_timestamp(f"  {stat_name}: {value:,}")
+
+        return stats
 
     def extract_studies_text(self, limit: Optional[int] = None,
                            include_detailed_description: bool = True,
@@ -99,347 +145,155 @@ class AACTTextExtractor:
                            exclude_withdrawn: bool = True) -> List[Dict[str, Any]]:
         """Extract text content from studies with related information."""
 
-        log_with_timestamp("Extracting studies text content...")
+        log_with_timestamp("Starting text extraction from flat files...")
 
-        # Build the main query
-        query_parts = []
+        # Load main studies table
+        studies = self.load_table('studies')
+        if studies is None:
+            log_with_timestamp("ERROR: Cannot load studies table")
+            return []
 
-        # Base study information
-        base_query = """
-        SELECT DISTINCT
-            s.nct_id,
-            s.brief_title,
-            s.official_title,
-            s.brief_summary,
-            s.overall_status,
-            s.phase,
-            s.study_type,
-            s.study_first_submitted_date,
-            s.start_date,
-            s.completion_date,
-            s.enrollment,
-            s.number_of_arms,
-            s.number_of_groups"""
+        # Filter withdrawn studies if requested
+        if exclude_withdrawn and 'overall_status' in studies.columns:
+            original_count = len(studies)
+            studies = studies[studies['overall_status'] != 'Withdrawn']
+            log_with_timestamp(f"Filtered out {original_count - len(studies):,} withdrawn studies")
 
-        if include_detailed_description:
-            base_query += ",\n            s.detailed_description"
-
-        base_query += "\n        FROM studies s"
-
-        # Add WHERE conditions
-        where_conditions = []
-
-        # Require brief_summary
-        where_conditions.append("s.brief_summary IS NOT NULL")
-        where_conditions.append("s.brief_summary != ''")
-
-        if min_summary_length > 0:
-            where_conditions.append(f"LENGTH(s.brief_summary) >= {min_summary_length}")
-
-        if exclude_withdrawn:
-            where_conditions.append("s.overall_status != 'Withdrawn'")
-
-        if where_conditions:
-            base_query += "\n        WHERE " + " AND ".join(where_conditions)
-
+        # Apply limit if specified
         if limit:
-            base_query += f"\n        LIMIT {limit}"
+            studies = studies.head(limit)
+            log_with_timestamp(f"Limited to {limit} studies")
 
-        log_with_timestamp(f"Executing main query{'with limit ' + str(limit) if limit else ''}...")
+        # Load related tables
+        brief_summaries = self.load_table('brief_summaries')
+        detailed_descriptions = self.load_table('detailed_descriptions') if include_detailed_description else None
+        design_outcomes = self.load_table('design_outcomes') if include_outcomes else None
+        eligibilities = self.load_table('eligibilities') if include_eligibility else None
+        interventions = self.load_table('interventions') if include_interventions else None
 
-        cursor = self.connection.cursor()
-        studies = []
+        # Extract text for each study
+        extracted_studies = []
+        processed_count = 0
+        skipped_count = 0
 
-        try:
-            cursor.execute(base_query)
-            rows = cursor.fetchall()
+        log_with_timestamp(f"Processing {len(studies):,} studies...")
 
-            # Get column names
-            col_names = [desc[0] for desc in cursor.description]
+        for idx, study_row in studies.iterrows():
+            nct_id = study_row['nct_id']
 
-            log_with_timestamp(f"Found {len(rows)} studies to process")
+            # Get brief summary
+            summary_text = ""
+            if brief_summaries is not None:
+                summary_rows = brief_summaries[brief_summaries['nct_id'] == nct_id]
+                if not summary_rows.empty:
+                    summary_text = str(summary_rows.iloc[0]['description']) if 'description' in summary_rows.columns else ""
 
-            for i, row in enumerate(rows):
-                study = dict(zip(col_names, row))
+            # Filter by minimum summary length
+            if len(summary_text) < min_summary_length:
+                skipped_count += 1
+                continue
 
-                # Log progress every 10,000 studies
-                if (i + 1) % 10000 == 0:
-                    log_with_timestamp(f"Processed {i + 1}/{len(rows)} studies...")
+            # Build study data
+            study_data = {
+                'nct_id': nct_id,
+                'brief_title': str(study_row.get('brief_title', '')),
+                'official_title': str(study_row.get('official_title', '')),
+                'brief_summary': summary_text,
+                'overall_status': str(study_row.get('overall_status', '')),
+                'phase': str(study_row.get('phase', '')),
+                'study_type': str(study_row.get('study_type', '')),
+                'enrollment': int(study_row.get('enrollment', 0)) if pd.notna(study_row.get('enrollment')) else 0,
+                'start_date': str(study_row.get('start_date', '')),
+                'completion_date': str(study_row.get('completion_date', ''))
+            }
 
-                studies.append(study)
+            # Add detailed description
+            if detailed_descriptions is not None:
+                desc_rows = detailed_descriptions[detailed_descriptions['nct_id'] == nct_id]
+                if not desc_rows.empty:
+                    study_data['detailed_description'] = str(desc_rows.iloc[0]['description']) if 'description' in desc_rows.columns else ""
 
-            log_with_timestamp(f"Extracted text from {len(studies)} studies")
+            # Add outcomes
+            if design_outcomes is not None:
+                outcome_rows = design_outcomes[design_outcomes['nct_id'] == nct_id]
+                if not outcome_rows.empty:
+                    outcomes = []
+                    for _, outcome_row in outcome_rows.iterrows():
+                        outcomes.append({
+                            'outcome_type': str(outcome_row.get('outcome_type', '')),
+                            'measure': str(outcome_row.get('measure', '')),
+                            'description': str(outcome_row.get('description', ''))
+                        })
+                    study_data['outcomes'] = outcomes
 
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Failed to extract studies: {e}")
-            raise
-        finally:
-            cursor.close()
-
-        # Add related information if requested
-        if include_outcomes or include_eligibility or include_interventions:
-            studies = self._add_related_information(studies, include_outcomes,
-                                                  include_eligibility, include_interventions)
-
-        return studies
-
-    def _add_related_information(self, studies: List[Dict[str, Any]],
-                               include_outcomes: bool = True,
-                               include_eligibility: bool = True,
-                               include_interventions: bool = True) -> List[Dict[str, Any]]:
-        """Add related information (outcomes, eligibility, interventions) to studies."""
-
-        if not studies:
-            return studies
-
-        nct_ids = [study['nct_id'] for study in studies]
-        nct_id_placeholders = ','.join(['%s'] * len(nct_ids))
-
-        cursor = self.connection.cursor()
-
-        try:
-            # Get outcomes
-            if include_outcomes:
-                log_with_timestamp("Fetching outcomes data...")
-                outcomes_query = f"""
-                SELECT nct_id, outcome_type, measure, description, time_frame
-                FROM design_outcomes
-                WHERE nct_id IN ({nct_id_placeholders})
-                AND measure IS NOT NULL AND measure != ''
-                ORDER BY nct_id, outcome_type, id
-                """
-
-                cursor.execute(outcomes_query, nct_ids)
-                outcomes_rows = cursor.fetchall()
-
-                # Group outcomes by nct_id
-                outcomes_by_nct = {}
-                for nct_id, outcome_type, measure, description, time_frame in outcomes_rows:
-                    if nct_id not in outcomes_by_nct:
-                        outcomes_by_nct[nct_id] = {'primary': [], 'secondary': []}
-
-                    outcome_text = measure
-                    if description:
-                        outcome_text += f": {description}"
-                    if time_frame:
-                        outcome_text += f" (Time frame: {time_frame})"
-
-                    if outcome_type and outcome_type.lower() == 'primary':
-                        outcomes_by_nct[nct_id]['primary'].append(outcome_text)
-                    else:
-                        outcomes_by_nct[nct_id]['secondary'].append(outcome_text)
-
-                log_with_timestamp(f"Found outcomes for {len(outcomes_by_nct)} studies")
-
-            # Get eligibility criteria
-            if include_eligibility:
-                log_with_timestamp("Fetching eligibility data...")
-                eligibility_query = f"""
-                SELECT nct_id, criteria, gender, minimum_age, maximum_age
-                FROM eligibilities
-                WHERE nct_id IN ({nct_id_placeholders})
-                AND criteria IS NOT NULL AND criteria != ''
-                """
-
-                cursor.execute(eligibility_query, nct_ids)
-                eligibility_rows = cursor.fetchall()
-
-                eligibility_by_nct = {}
-                for nct_id, criteria, gender, min_age, max_age in eligibility_rows:
-                    eligibility_by_nct[nct_id] = {
-                        'criteria': criteria,
-                        'gender': gender,
-                        'minimum_age': min_age,
-                        'maximum_age': max_age
+            # Add eligibility criteria
+            if eligibilities is not None:
+                elig_rows = eligibilities[eligibilities['nct_id'] == nct_id]
+                if not elig_rows.empty:
+                    elig_row = elig_rows.iloc[0]
+                    study_data['eligibility'] = {
+                        'criteria': str(elig_row.get('criteria', '')),
+                        'gender': str(elig_row.get('gender', '')),
+                        'minimum_age': str(elig_row.get('minimum_age', '')),
+                        'maximum_age': str(elig_row.get('maximum_age', ''))
                     }
 
-                log_with_timestamp(f"Found eligibility criteria for {len(eligibility_by_nct)} studies")
+            # Add interventions
+            if interventions is not None:
+                int_rows = interventions[interventions['nct_id'] == nct_id]
+                if not int_rows.empty:
+                    intervention_list = []
+                    for _, int_row in int_rows.iterrows():
+                        intervention_list.append({
+                            'intervention_type': str(int_row.get('intervention_type', '')),
+                            'name': str(int_row.get('name', '')),
+                            'description': str(int_row.get('description', ''))
+                        })
+                    study_data['interventions'] = intervention_list
 
-            # Get interventions
-            if include_interventions:
-                log_with_timestamp("Fetching interventions data...")
-                interventions_query = f"""
-                SELECT nct_id, intervention_type, name, description
-                FROM interventions
-                WHERE nct_id IN ({nct_id_placeholders})
-                AND name IS NOT NULL AND name != ''
-                ORDER BY nct_id, intervention_type, id
-                """
+            extracted_studies.append(study_data)
+            processed_count += 1
 
-                cursor.execute(interventions_query, nct_ids)
-                interventions_rows = cursor.fetchall()
+            # Progress logging
+            if processed_count % 1000 == 0:
+                mem_used, mem_avail, mem_pct = get_memory_usage()
+                log_with_timestamp(f"Processed {processed_count:,} studies (skipped {skipped_count:,}), Memory: {mem_pct:.1f}%")
 
-                interventions_by_nct = {}
-                for nct_id, intervention_type, name, description in interventions_rows:
-                    if nct_id not in interventions_by_nct:
-                        interventions_by_nct[nct_id] = []
-
-                    intervention_text = name
-                    if intervention_type:
-                        intervention_text = f"{intervention_type}: {intervention_text}"
-                    if description:
-                        intervention_text += f" - {description}"
-
-                    interventions_by_nct[nct_id].append(intervention_text)
-
-                log_with_timestamp(f"Found interventions for {len(interventions_by_nct)} studies")
-
-            # Get conditions
-            log_with_timestamp("Fetching conditions data...")
-            conditions_query = f"""
-            SELECT nct_id, name
-            FROM conditions
-            WHERE nct_id IN ({nct_id_placeholders})
-            AND name IS NOT NULL AND name != ''
-            ORDER BY nct_id, name
-            """
-
-            cursor.execute(conditions_query, nct_ids)
-            conditions_rows = cursor.fetchall()
-
-            conditions_by_nct = {}
-            for nct_id, name in conditions_rows:
-                if nct_id not in conditions_by_nct:
-                    conditions_by_nct[nct_id] = []
-                conditions_by_nct[nct_id].append(name)
-
-            log_with_timestamp(f"Found conditions for {len(conditions_by_nct)} studies")
-
-            # Add related information to studies
-            for study in studies:
-                nct_id = study['nct_id']
-
-                if include_outcomes:
-                    outcomes = outcomes_by_nct.get(nct_id, {'primary': [], 'secondary': []})
-                    study['primary_outcomes'] = outcomes['primary']
-                    study['secondary_outcomes'] = outcomes['secondary']
-
-                if include_eligibility:
-                    study['eligibility'] = eligibility_by_nct.get(nct_id, {})
-
-                if include_interventions:
-                    study['interventions'] = interventions_by_nct.get(nct_id, [])
-
-                study['conditions'] = conditions_by_nct.get(nct_id, [])
-
-        except Exception as e:
-            log_with_timestamp(f"ERROR: Failed to fetch related information: {e}")
-            raise
-        finally:
-            cursor.close()
-
-        return studies
-
-def clean_text(text: str) -> str:
-    """Clean and normalize text content."""
-    if not text:
-        return ""
-
-    # Remove excessive whitespace and normalize
-    text = re.sub(r'\s+', ' ', text.strip())
-
-    # Remove common artifacts
-    text = re.sub(r'\r\n|\r|\n', ' ', text)
-    text = re.sub(r'\t+', ' ', text)
-
-    # Remove HTML tags if present
-    text = re.sub(r'<[^>]+>', '', text)
-
-    return text.strip()
-
-def export_to_json(studies: List[Dict[str, Any]], output_file: str) -> None:
-    """Export studies data to JSON file."""
-    log_with_timestamp(f"Exporting {len(studies)} studies to {output_file}")
-
-    try:
-        with open(output_file, 'w') as f:
-            json.dump(studies, f, indent=2, default=str, ensure_ascii=False)
-
-        file_size_mb = os.path.getsize(output_file) / 1024 / 1024
-        log_with_timestamp(f"Export complete: {file_size_mb:.1f}MB")
-
-    except Exception as e:
-        log_with_timestamp(f"ERROR: Failed to export to JSON: {e}")
-        raise
-
-def export_to_csv(studies: List[Dict[str, Any]], output_file: str) -> None:
-    """Export studies data to CSV file."""
-    log_with_timestamp(f"Exporting {len(studies)} studies to {output_file}")
-
-    try:
-        # Flatten the data for CSV export
-        flattened_studies = []
-        for study in studies:
-            flat_study = study.copy()
-
-            # Convert lists to strings
-            for key, value in flat_study.items():
-                if isinstance(value, list):
-                    flat_study[key] = ' | '.join(str(v) for v in value)
-                elif isinstance(value, dict):
-                    # For eligibility, create a formatted string
-                    if key == 'eligibility':
-                        eligibility_parts = []
-                        if value.get('criteria'):
-                            eligibility_parts.append(value['criteria'])
-                        if value.get('gender'):
-                            eligibility_parts.append(f"Gender: {value['gender']}")
-                        if value.get('minimum_age'):
-                            eligibility_parts.append(f"Min age: {value['minimum_age']}")
-                        if value.get('maximum_age'):
-                            eligibility_parts.append(f"Max age: {value['maximum_age']}")
-                        flat_study[key] = ' | '.join(eligibility_parts)
-                    else:
-                        flat_study[key] = str(value)
-
-            flattened_studies.append(flat_study)
-
-        df = pd.DataFrame(flattened_studies)
-        df.to_csv(output_file, index=False)
-
-        file_size_mb = os.path.getsize(output_file) / 1024 / 1024
-        log_with_timestamp(f"Export complete: {file_size_mb:.1f}MB")
-
-    except Exception as e:
-        log_with_timestamp(f"ERROR: Failed to export to CSV: {e}")
-        raise
+        log_with_timestamp(f"Text extraction complete: {processed_count:,} studies extracted, {skipped_count:,} skipped")
+        return extracted_studies
 
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(
-        description="Extract text content from AACT database for clinical trials processing"
+        description="Extract text from AACT flat files for clinical trials processing"
     )
     parser.add_argument(
-        "--database-url", required=True,
-        help="PostgreSQL database URL (e.g., postgresql://user:pass@localhost:5432/aact)"
+        "--extract-dir", required=True,
+        help="Directory containing extracted AACT flat files"
     )
     parser.add_argument(
-        "--output-json",
-        help="Output JSON file path"
+        "--output-json", required=True,
+        help="Output JSON file for extracted trials data"
     )
     parser.add_argument(
         "--output-csv",
-        help="Output CSV file path"
+        help="Optional output CSV file for extracted trials data"
     )
     parser.add_argument(
         "--limit", type=int,
-        help="Limit number of studies to extract (for testing)"
+        help="Limit number of studies to process (for testing)"
     )
     parser.add_argument(
         "--min-summary-length", type=int, default=50,
-        help="Minimum length for brief_summary (default: 50)"
-    )
-    parser.add_argument(
-        "--exclude-withdrawn", action="store_true", default=True,
-        help="Exclude withdrawn studies"
+        help="Minimum brief summary length (default: 50)"
     )
     parser.add_argument(
         "--include-detailed-description", action="store_true", default=True,
-        help="Include detailed_description field"
+        help="Include detailed descriptions"
     )
     parser.add_argument(
         "--include-outcomes", action="store_true", default=True,
-        help="Include outcomes information"
+        help="Include study outcomes"
     )
     parser.add_argument(
         "--include-eligibility", action="store_true", default=True,
@@ -447,19 +301,18 @@ def main():
     )
     parser.add_argument(
         "--include-interventions", action="store_true", default=True,
-        help="Include interventions information"
+        help="Include interventions"
+    )
+    parser.add_argument(
+        "--exclude-withdrawn", action="store_true", default=True,
+        help="Exclude withdrawn studies"
     )
     parser.add_argument(
         "--stats-only", action="store_true",
-        help="Only show database statistics, don't extract data"
+        help="Only print dataset statistics, don't extract"
     )
 
     args = parser.parse_args()
-
-    # Validate arguments
-    if not args.stats_only and not args.output_json and not args.output_csv:
-        log_with_timestamp("ERROR: Must specify --output-json and/or --output-csv, or use --stats-only")
-        return 1
 
     # System information
     memory = psutil.virtual_memory()
@@ -467,22 +320,24 @@ def main():
 
     try:
         # Initialize extractor
-        extractor = AACTTextExtractor(args.database_url)
+        extractor = AACTTextExtractor(args.extract_dir)
 
-        # Connect to database
-        if not extractor.connect():
+        # Load extraction info
+        if not extractor.load_extraction_info():
+            log_with_timestamp("ERROR: Failed to load extraction info")
             return 1
 
-        # Get database statistics
-        stats = extractor.get_database_stats()
+        # Get statistics
+        stats = extractor.get_dataset_stats()
 
         if args.stats_only:
-            log_with_timestamp("Database statistics complete")
+            log_with_timestamp("Statistics only mode - exiting")
             return 0
 
-        # Extract studies
+        # Extract text from studies
         log_with_timestamp("=== Starting Text Extraction ===")
-        studies = extractor.extract_studies_text(
+
+        extracted_studies = extractor.extract_studies_text(
             limit=args.limit,
             include_detailed_description=args.include_detailed_description,
             include_outcomes=args.include_outcomes,
@@ -492,29 +347,51 @@ def main():
             exclude_withdrawn=args.exclude_withdrawn
         )
 
-        if not studies:
-            log_with_timestamp("No studies found matching criteria")
+        if not extracted_studies:
+            log_with_timestamp("WARNING: No studies extracted")
             return 1
 
-        # Export data
-        if args.output_json:
-            export_to_json(studies, args.output_json)
+        # Save to JSON
+        log_with_timestamp(f"Saving {len(extracted_studies):,} studies to JSON: {args.output_json}")
+        os.makedirs(os.path.dirname(os.path.abspath(args.output_json)), exist_ok=True)
 
+        with open(args.output_json, 'w') as f:
+            json.dump(extracted_studies, f, indent=2)
+
+        json_size = os.path.getsize(args.output_json) / 1024 / 1024
+        log_with_timestamp(f"JSON saved: {json_size:.1f}MB")
+
+        # Save to CSV if requested
         if args.output_csv:
-            export_to_csv(studies, args.output_csv)
+            log_with_timestamp(f"Saving basic info to CSV: {args.output_csv}")
+
+            # Create simplified version for CSV
+            csv_data = []
+            for study in extracted_studies:
+                csv_data.append({
+                    'nct_id': study['nct_id'],
+                    'brief_title': study['brief_title'],
+                    'overall_status': study['overall_status'],
+                    'phase': study['phase'],
+                    'study_type': study['study_type'],
+                    'enrollment': study['enrollment'],
+                    'summary_length': len(study['brief_summary'])
+                })
+
+            df = pd.DataFrame(csv_data)
+            df.to_csv(args.output_csv, index=False)
+
+            csv_size = os.path.getsize(args.output_csv) / 1024 / 1024
+            log_with_timestamp(f"CSV saved: {csv_size:.1f}MB")
 
         log_with_timestamp("=== Text Extraction Complete ===")
         return 0
 
-    except KeyboardInterrupt:
-        log_with_timestamp("Extraction interrupted by user")
-        return 1
     except Exception as e:
         log_with_timestamp(f"ERROR during extraction: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
-    finally:
-        if 'extractor' in locals():
-            extractor.disconnect()
 
 if __name__ == "__main__":
     sys.exit(main())
