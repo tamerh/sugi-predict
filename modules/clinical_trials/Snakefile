@@ -1,0 +1,227 @@
+##############################################################################
+#
+#   Clinical Trials Module - Snakemake Workflow
+#
+#   Processes ClinicalTrials.gov AACT database for semantic search
+#   Pipeline: download → extract → process (no merge needed)
+#
+##############################################################################
+
+import os
+import glob
+
+# Load module-specific configuration
+ct_config = config["clinical_trials"]
+
+# Directory paths
+RAW_DIR = ct_config["raw_dir"]
+PROCESSED_DIR = ct_config["processed_dir"]
+FINAL_DIR = ct_config["final_dir"]
+LOG_DIR = ct_config["log_dir"]
+MODULE_SCRIPTS = os.path.join(config["scripts_dir"], "clinical_trials", "scripts")
+
+# Create directories
+os.makedirs(RAW_DIR, exist_ok=True)
+os.makedirs(PROCESSED_DIR, exist_ok=True)
+os.makedirs(FINAL_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Top-level rule for clinical_trials module
+rule clinical_trials_all:
+    input:
+        ct_config["final_index"],
+        ct_config["final_metadata"]
+
+# Rule 1: Download AACT database snapshot
+rule clinical_trials_download:
+    output:
+        snapshot_zip = os.path.join(RAW_DIR, "aact_snapshot.zip"),
+        extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
+        download_flag = os.path.join(FINAL_DIR, ".download_complete")
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "download_aact.py"),
+        download_dir = RAW_DIR,
+        extract_dir = os.path.join(RAW_DIR, "extracted"),
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_download.log")
+    log:
+        os.path.join(LOG_DIR, "download.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=ct_config["download_memory_mb"],
+        runtime=ct_config["download_runtime"]
+    shell:
+        """
+        echo "Starting AACT database download..." > {log}
+
+        python {params.script} \
+            --download-dir {params.download_dir} \
+            --extract-dir {params.extract_dir} \
+            >> {log} 2>&1
+
+        # Find the downloaded zip file (timestamped) and create symlink to expected name
+        DOWNLOADED_ZIP=$(ls {params.download_dir}/aact_flat_files_*.zip 2>/dev/null | head -1)
+        if [[ -f "$DOWNLOADED_ZIP" ]]; then
+            echo "Creating symlink from $DOWNLOADED_ZIP to {output.snapshot_zip}" >> {log}
+            ln -sf $(basename "$DOWNLOADED_ZIP") {output.snapshot_zip}
+        else
+            echo "ERROR: No downloaded zip file found" >> {log}
+            exit 1
+        fi
+
+        # Create completion flag
+        touch {output.download_flag}
+
+        echo "Download and extraction completed successfully" >> {log}
+        """
+
+# Rule 2: Extract text from AACT tables to JSON
+rule clinical_trials_extract:
+    input:
+        extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
+        download_flag = os.path.join(FINAL_DIR, ".download_complete")
+    output:
+        trials_json = ct_config["trials_json"],
+        trials_csv = os.path.join(PROCESSED_DIR, "trials_data.csv")
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "extract_text.py"),
+        extract_dir = os.path.join(RAW_DIR, "extracted"),
+        min_summary_length = ct_config.get("min_summary_length", 100),
+        include_flags = (
+            ("--include-detailed-description " if ct_config.get("include_detailed_description", True) else "") +
+            ("--include-outcomes " if ct_config.get("include_outcomes", True) else "") +
+            ("--include-eligibility " if ct_config.get("include_eligibility", True) else "") +
+            ("--include-interventions " if ct_config.get("include_interventions", True) else "") +
+            ("--exclude-withdrawn " if ct_config.get("exclude_withdrawn", True) else "")
+        ),
+        limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_extract.log")
+    log:
+        os.path.join(LOG_DIR, "extract.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=ct_config["extract_memory_mb"],
+        runtime=ct_config["extract_runtime"]
+    shell:
+        """
+        echo "Starting text extraction from AACT tables..." > {log}
+
+        python {params.script} \
+            --extract-dir {params.extract_dir} \
+            --output-json {output.trials_json} \
+            --output-csv {output.trials_csv} \
+            --min-summary-length {params.min_summary_length} \
+            {params.include_flags} \
+            {params.limit_flag} \
+            >> {log} 2>&1
+
+        echo "Extraction completed successfully" >> {log}
+        echo "Output JSON: {output.trials_json}" >> {log}
+        echo "Output CSV: {output.trials_csv}" >> {log}
+        """
+
+# Rule 3: Process trials to create FAISS embeddings
+rule clinical_trials_process:
+    input:
+        trials_json = ct_config["trials_json"]
+    output:
+        index = ct_config["final_index"],
+        metadata = ct_config["final_metadata"]
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "process_trials.py"),
+        model = ct_config["model_name"],
+        vector_dim = ct_config["vector_dimension"],
+        batch_size = ct_config.get("batch_size", 1000),
+        max_chunk_length = ct_config.get("max_chunk_length", 500),
+        min_text_length = ct_config.get("min_text_length", 50),
+        limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_process.log")
+    log:
+        os.path.join(LOG_DIR, "process.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=ct_config["process_memory_mb"],
+        runtime=ct_config["process_runtime"]
+    shell:
+        """
+        echo "Starting clinical trials processing..." > {log}
+
+        python {params.script} \
+            --input-json {input.trials_json} \
+            --output-index {output.index} \
+            --output-metadata {output.metadata} \
+            --model-name {params.model} \
+            --vector-dimension {params.vector_dim} \
+            --batch-size {params.batch_size} \
+            --max-chunk-length {params.max_chunk_length} \
+            --min-text-length {params.min_text_length} \
+            {params.limit_flag} \
+            >> {log} 2>&1
+
+        echo "Processing completed successfully" >> {log}
+        echo "Final index: {output.index}" >> {log}
+        echo "Final metadata: {output.metadata}" >> {log}
+        echo "Index size: $(du -h {output.index})" >> {log}
+        """
+
+# Rule 4: Validate final indices (optional)
+rule clinical_trials_validate:
+    input:
+        index = ct_config["final_index"],
+        metadata = ct_config["final_metadata"]
+    output:
+        validation_report = os.path.join(FINAL_DIR, "validation_report.txt")
+    params:
+        vector_dim = ct_config["vector_dimension"],
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_validate.log")
+    log:
+        os.path.join(LOG_DIR, "validate.log")
+    conda:
+        config["conda_env"]
+    shell:
+        """
+        echo "Validating clinical trials indices..." > {log}
+
+        python -c "
+import faiss
+import json
+import sys
+
+try:
+    # Load index
+    index = faiss.read_index('{input.index}')
+    print(f'Index loaded: {{index.ntotal}} vectors, dimension={{index.d}}')
+
+    # Validate dimension
+    if index.d != {params.vector_dim}:
+        print(f'ERROR: Dimension mismatch! Expected {params.vector_dim}, got {{index.d}}')
+        sys.exit(1)
+
+    # Load metadata
+    with open('{input.metadata}', 'r') as f:
+        metadata = json.load(f)
+    print(f'Metadata loaded: {{len(metadata)}} entries')
+
+    # Validate counts match
+    if len(metadata) != index.ntotal:
+        print(f'ERROR: Count mismatch! Index has {{index.ntotal}} vectors, metadata has {{len(metadata)}} entries')
+        sys.exit(1)
+
+    print('✓ Validation passed!')
+    print(f'  Total vectors: {{index.ntotal}}')
+    print(f'  Dimension: {{index.d}}')
+    print(f'  Metadata entries: {{len(metadata)}}')
+
+except Exception as e:
+    print(f'ERROR: Validation failed: {{e}}')
+    sys.exit(1)
+        " > {output.validation_report} 2>&1
+
+        cat {output.validation_report} >> {log}
+        echo "Validation completed" >> {log}
+        """

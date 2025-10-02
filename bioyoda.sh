@@ -214,7 +214,8 @@ run() {
     mkdir -p ${pid_dir}
 
     # Build Snakemake command
-    local snakemake_cmd="snakemake --snakefile ${snakefile} --configfile ${active_config}"
+    # Add --latency-wait for HPC filesystem delays (60 seconds like tieri, default is 5)
+    local snakemake_cmd="snakemake --snakefile ${snakefile} --configfile ${active_config} --latency-wait 60"
 
     # Add execution mode options
     if [[ "$execution_mode" == "cluster" ]]; then

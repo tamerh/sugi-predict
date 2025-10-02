@@ -44,25 +44,25 @@ def estimate_mb_required(file_path, size_factor=8000, min_mb=8000, max_mb=30000)
 
 # Include module workflows
 include: "pubmed/Snakefile"
-# include: "clinical_trials/Snakefile"  # Phase 2
-# include: "qdrant/Snakefile"           # Phase 2
+include: "clinical_trials/Snakefile"
+# include: "qdrant/Snakefile"           # Phase 3
 
 # Top-level target: build all modules
 rule all:
     input:
-        rules.pubmed_all.input
-        # rules.clinical_trials_all.input,  # Phase 2
-        # rules.qdrant_all.input             # Phase 2
+        rules.pubmed_all.input,
+        rules.clinical_trials_all.input
+        # rules.qdrant_all.input             # Phase 3
 
 # Individual module targets
 rule pubmed:
     input:
         rules.pubmed_all.input
 
-# rule clinical_trials:  # Phase 2
-#     input:
-#         rules.clinical_trials_all.input
+rule clinical_trials:
+    input:
+        rules.clinical_trials_all.input
 
-# rule qdrant:  # Phase 2
+# rule qdrant:  # Phase 3
 #     input:
 #         rules.qdrant_all.input

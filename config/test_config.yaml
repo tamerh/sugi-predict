@@ -47,12 +47,47 @@ pubmed:
   merge_memory_mb: 8192        # 8GB (vs 256GB production) - enough for 2×1000 abstracts
   merge_runtime: 30            # 30 minutes (vs 7 days production)
 
-# Clinical Trials Module Configuration (placeholder for phase 2)
+# Clinical Trials Module Configuration - TEST MODE
 clinical_trials:
+  # Data directories (same as production)
   raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/clinical_trials"
   processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials"
   final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials"
   log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/clinical_trials"
+
+  # Output files
+  trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials/trials_data.json"
+  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.index"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials_metadata.json"
+
+  # Model settings (same as PubMed)
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+  vector_dimension: 768
+
+  # Processing settings
+  batch_size: 1000
+  max_chunk_length: 500
+  min_text_length: 50
+  min_summary_length: 100
+
+  # Text extraction flags
+  include_detailed_description: true
+  include_outcomes: true
+  include_eligibility: true
+  include_interventions: true
+  exclude_withdrawn: true
+
+  # TEST MODE SETTINGS
+  test_mode: true              # Enable test optimizations
+  test_trials_limit: 100       # Process only first 100 trials
+
+  # Job resources - OPTIMIZED FOR TEST
+  download_memory_mb: 8192     # 8GB (vs 16GB production)
+  download_runtime: 60         # 1 hour (vs 4 hours production)
+  extract_memory_mb: 8192      # 8GB (vs 16GB production)
+  extract_runtime: 30          # 30 minutes (vs 4 hours production)
+  process_memory_mb: 8192      # 8GB (vs 20GB production)
+  process_runtime: 60          # 1 hour (vs 7 days production)
 
 # Qdrant Module Configuration (placeholder for phase 2)
 qdrant:
