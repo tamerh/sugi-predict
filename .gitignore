@@ -10,4 +10,6 @@ data_test
 **/node_modules2/
 .claude/
 results*
-benchmark
+logs/pids/
+tieri_snakemakes
+.snakemake

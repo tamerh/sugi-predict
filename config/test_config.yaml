@@ -1,0 +1,74 @@
+##############################################################################
+#
+#   BioYoda Test Configuration File
+#   Optimized settings for fast end-to-end pipeline testing
+#
+##############################################################################
+
+# Project Settings
+project_name: "bioyoda"
+conda_env: "bioyoda"
+
+# Base Paths
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda"
+data_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data"
+scripts_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/modules"
+logs_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs"
+
+# PubMed Module Configuration - TEST MODE
+pubmed:
+  # Data directories (same as production - test will overwrite)
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/pubmed"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/pubmed"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/pubmed"
+
+  # Files
+  file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/pubmed_files.txt"
+  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.index"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed_metadata.pkl"
+
+  # Model settings (same as production)
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+  vector_dimension: 768
+
+  # Processing settings
+  batch_size: 1000
+
+  # TEST MODE SETTINGS
+  test_mode: true              # Enable test optimizations
+  test_abstracts_limit: 1000   # Process only first 1000 abstracts per file
+  debug_mode: true             # Download only limited files
+  debug_sample_size: 2         # Number of files to download
+
+  # Job resources - OPTIMIZED FOR TEST
+  process_memory_mb: 4096      # 4GB (vs 12GB production)
+  process_runtime: 60          # 1 hour (vs 7 days production)
+  merge_memory_mb: 8192        # 8GB (vs 256GB production) - enough for 2×1000 abstracts
+  merge_runtime: 30            # 30 minutes (vs 7 days production)
+
+# Clinical Trials Module Configuration (placeholder for phase 2)
+clinical_trials:
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/clinical_trials"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/clinical_trials"
+
+# Qdrant Module Configuration (placeholder for phase 2)
+qdrant:
+  storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
+  collection_name: "bioyoda"
+  host: "localhost"
+  port: 6333
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
+
+# HPC Cluster Configuration
+cluster:
+  type: "sge"
+  default_queue: "scc"
+  max_jobs: 10  # Reduced for testing
+
+  # Resource defaults
+  default_memory_mb: 4096  # Reduced for testing
+  default_runtime: 60      # 1 hour (vs 24 hours production)
+  default_threads: 1

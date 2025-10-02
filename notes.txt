@@ -1,3 +1,20 @@
+
+
+ok now first check markdown files and documents under the vibe directory to rememmber the project. so far 
+we have implement the pubmed and clinical trials data(very first version) and also qdrant db that 
+import the data from these module (only pubmed is tested). Now since project is getting bigger 
+I would like implement snakemake pipeline where i have knowledge. But we are going to implement 
+very carefully since i am solo developer we are going to implement in a way not to increase complexity too much 
+while it is going to be helpful for me. Also as an example i am giving you the anoter snakemake pipeline 
+project that i have done for another project you can check in the tieri_snakemakes directory. 
+I am thinking similar structure like one big snakefile that include other modules snakefiles. and 
+also in the root directory on sh file for various orchestration also as example in tieri_snakemakes directory. 
+Lets plan the tasks and discuss first. 
+bash -c "source ~/.bashrc && conda activate bioyoda && snakemake --help" 2>&1 | grep -A5 "positional arguments"           │
+
+
+./bioyoda.sh run pubmed --cluster --jobs 1
+
 npm config set prefix ~/.npm-global
 
 qlogin -pe smp 2 -q scc -l h_vmem=8G -l h_rt=4:00:00

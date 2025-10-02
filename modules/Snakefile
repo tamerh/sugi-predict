@@ -1,0 +1,68 @@
+##############################################################################
+#
+#   BioYoda Snakemake Pipeline
+#   Main workflow orchestrator for biomedical data processing
+#
+#   AUTHOR: Tamer Gur
+#   PROJECT: BioYoda - AI-powered biomedical search system
+#   LICENSE: Apache_2.0
+#
+##############################################################################
+
+import sys
+import os
+import subprocess
+
+# Load configuration
+configfile: "config/config.yaml"
+
+# Local rules (don't submit to cluster)
+localrules: all, pubmed_all, clinical_trials_all, qdrant_all
+
+# Create logging directory
+os.makedirs(config["logs_dir"], exist_ok=True)
+
+# Utility function for resource estimation (adapted from tieri)
+def estimate_mb_required(file_path, size_factor=8000, min_mb=8000, max_mb=30000):
+    """
+    Return mb_required for mem_mb based on the size of input files
+    Args:
+        file_path: path to file to estimate resources from
+        size_factor: multiplication factor (default 8000)
+        min_mb: minimum memory in MB (default 8GB)
+        max_mb: maximum memory in MB (default 30GB)
+    """
+    if os.path.exists(file_path):
+        mb_required = os.path.getsize(file_path) / (1024**2)
+        if mb_required < min_mb:
+            mb_required = min_mb
+        elif mb_required > max_mb:
+            mb_required = max_mb
+        return int(mb_required)
+    else:
+        return int(size_factor)
+
+# Include module workflows
+include: "pubmed/Snakefile"
+# include: "clinical_trials/Snakefile"  # Phase 2
+# include: "qdrant/Snakefile"           # Phase 2
+
+# Top-level target: build all modules
+rule all:
+    input:
+        rules.pubmed_all.input
+        # rules.clinical_trials_all.input,  # Phase 2
+        # rules.qdrant_all.input             # Phase 2
+
+# Individual module targets
+rule pubmed:
+    input:
+        rules.pubmed_all.input
+
+# rule clinical_trials:  # Phase 2
+#     input:
+#         rules.clinical_trials_all.input
+
+# rule qdrant:  # Phase 2
+#     input:
+#         rules.qdrant_all.input

@@ -1,0 +1,72 @@
+##############################################################################
+#
+#   BioYoda Configuration File
+#   Central configuration for all pipeline modules
+#
+##############################################################################
+
+# Project Settings
+project_name: "bioyoda"
+conda_env: "bioyoda"
+
+# Base Paths
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda"
+data_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data"
+scripts_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/modules"
+logs_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs"
+
+# PubMed Module Configuration
+pubmed:
+  # Data directories
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/pubmed"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/pubmed"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/pubmed"
+
+  # Files
+  file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/pubmed_files.txt"
+  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.index"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed_metadata.pkl"
+
+  # Model settings
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+  vector_dimension: 768
+
+  # Processing settings
+  batch_size: 1000
+
+  # Job resources
+  process_memory_mb: 12288  # 12GB
+  process_runtime: 10080     # 168 hours in minutes
+  merge_memory_mb: 262144    # 256GB
+  merge_runtime: 10080       # 168 hours in minutes
+
+  # Debug settings
+  debug_mode: true         # Set to true to download/process limited files
+  debug_sample_size: 2     # Number of files to process in debug mode
+
+# Clinical Trials Module Configuration (placeholder for phase 2)
+clinical_trials:
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/clinical_trials"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/clinical_trials"
+
+# Qdrant Module Configuration (placeholder for phase 2)
+qdrant:
+  storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
+  collection_name: "bioyoda"
+  host: "localhost"
+  port: 6333
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
+
+# HPC Cluster Configuration
+cluster:
+  type: "sge"
+  default_queue: "scc"
+  max_jobs: 100
+
+  # Resource defaults
+  default_memory_mb: 8192
+  default_runtime: 1440  # 24 hours in minutes
+  default_threads: 1

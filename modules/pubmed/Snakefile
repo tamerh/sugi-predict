@@ -1,0 +1,246 @@
+##############################################################################
+#
+#   PubMed Module Snakefile
+#   Workflow for downloading, processing, and indexing PubMed data
+#
+##############################################################################
+
+import os
+import glob
+
+# Get PubMed-specific configuration
+pubmed_config = config["pubmed"]
+
+# Paths
+RAW_DIR = pubmed_config["raw_dir"]
+PROCESSED_DIR = pubmed_config["processed_dir"]
+FINAL_DIR = pubmed_config["final_dir"]
+LOG_DIR = pubmed_config["log_dir"]
+MODULE_SCRIPTS = os.path.join(config["scripts_dir"], "pubmed", "scripts")
+
+# Create directories
+os.makedirs(RAW_DIR, exist_ok=True)
+os.makedirs(os.path.join(RAW_DIR, "baseline"), exist_ok=True)
+os.makedirs(os.path.join(RAW_DIR, "updatefiles"), exist_ok=True)
+os.makedirs(PROCESSED_DIR, exist_ok=True)
+os.makedirs(os.path.join(PROCESSED_DIR, "baseline"), exist_ok=True)
+os.makedirs(os.path.join(PROCESSED_DIR, "updatefiles"), exist_ok=True)
+os.makedirs(FINAL_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Helper function to get XML file path from wildcards
+def get_xml_file_from_wildcards(wildcards):
+    """Reconstruct XML file path from wildcards."""
+    return os.path.join(RAW_DIR, wildcards.subdir, f"{wildcards.filename}.xml.gz")
+
+# Aggregation function for merge rule (uses checkpoint)
+# This is called AFTER download completes to dynamically discover files
+def aggregate_processed_indices(wildcards):
+    """
+    Aggregate all processed index files after checkpoint completes.
+
+    This function is called after the download checkpoint finishes.
+    It discovers which XML files were downloaded and requests their
+    corresponding processed index files.
+    """
+    # Wait for checkpoint to complete (download finishes)
+    checkpoint_output = checkpoints.pubmed_download.get(**wildcards).output[0]
+
+    # Discover downloaded XML files
+    xml_files = []
+    xml_files += glob.glob(os.path.join(RAW_DIR, "baseline", "*.xml.gz"))
+    xml_files += glob.glob(os.path.join(RAW_DIR, "updatefiles", "*.xml.gz"))
+
+    # Generate expected index file paths
+    indices = []
+    for xml_file in xml_files:
+        basename = os.path.basename(xml_file).replace('.xml.gz', '')
+        if 'baseline' in xml_file:
+            indices.append(os.path.join(PROCESSED_DIR, "baseline", f"{basename}.index"))
+        else:
+            indices.append(os.path.join(PROCESSED_DIR, "updatefiles", f"{basename}.index"))
+
+    return indices
+
+# Top-level rule for PubMed module
+rule pubmed_all:
+    input:
+        pubmed_config["final_index"],
+        os.path.join(FINAL_DIR, "master_metadata.json")
+
+# Checkpoint 1: Download PubMed data from FTP
+# This is a checkpoint because we don't know how many files will be downloaded
+checkpoint pubmed_download:
+    output:
+        baseline_flag = os.path.join(FINAL_DIR, ".download_baseline_complete"),
+        updatefiles_flag = os.path.join(FINAL_DIR, ".download_updatefiles_complete"),
+        deleted_pmids = os.path.join(RAW_DIR, "deleted.pmids.sorted.gz")
+    params:
+        baseline_dir = os.path.join(RAW_DIR, "baseline"),
+        update_dir = os.path.join(RAW_DIR, "updatefiles"),
+        script = os.path.join(MODULE_SCRIPTS, "download.py"),
+        debug_mode = pubmed_config.get("debug_mode", False),
+        debug_limit = pubmed_config.get("debug_sample_size", 2),
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_download.log")
+    log:
+        os.path.join(LOG_DIR, "download.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=config["cluster"]["default_memory_mb"],
+        runtime=config["cluster"]["default_runtime"]
+    shell:
+        """
+        echo "Starting PubMed download..." > {log}
+
+        # Add debug flag if debug mode is enabled
+        if [ "{params.debug_mode}" = "True" ]; then
+            echo "DEBUG MODE: Downloading only {params.debug_limit} files" >> {log}
+            python {params.script} --debug {params.debug_limit} >> {log} 2>&1
+        else
+            python {params.script} >> {log} 2>&1
+        fi
+
+        # Create completion flags
+        touch {output.baseline_flag}
+        touch {output.updatefiles_flag}
+
+        echo "Download completed successfully" >> {log}
+        """
+
+# Rule 2: Process individual PubMed XML files
+# This rule is triggered dynamically after the download checkpoint
+rule pubmed_process_file:
+    input:
+        xml_file = get_xml_file_from_wildcards,
+        deleted_pmids = os.path.join(RAW_DIR, "deleted.pmids.sorted.gz")
+    output:
+        index = os.path.join(PROCESSED_DIR, "{subdir}", "{filename}.index"),
+        metadata = os.path.join(PROCESSED_DIR, "{subdir}", "{filename}.json")
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "index.py"),
+        output_dir = os.path.join(PROCESSED_DIR, "{subdir}"),
+        model = pubmed_config["model_name"],
+        vector_dim = pubmed_config["vector_dimension"],
+        limit_flag = f"--limit {pubmed_config['test_abstracts_limit']}" if pubmed_config.get("test_mode", False) else "",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_process_file.{subdir}.{filename}.log")
+    log:
+        os.path.join(LOG_DIR, "process", "{subdir}", "{filename}.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=pubmed_config["process_memory_mb"],
+        runtime=pubmed_config["process_runtime"]
+    shell:
+        """
+        mkdir -p $(dirname {log})
+        echo "Processing {wildcards.filename}..." > {log}
+
+        python {params.script} {input.xml_file} {params.output_dir} {params.limit_flag} >> {log} 2>&1
+
+        echo "Processing completed" >> {log}
+        """
+
+# Rule 3: Merge all processed indices into master index
+# This rule uses the checkpoint aggregation function to get all indices
+rule pubmed_merge:
+    input:
+        indices = aggregate_processed_indices
+    output:
+        index = pubmed_config["final_index"],
+        metadata = os.path.join(FINAL_DIR, "master_metadata.json")  # merge0.py outputs JSON
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "merge0.py"),
+        processed_dir = PROCESSED_DIR,
+        final_dir = FINAL_DIR,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_merge.log")
+    log:
+        os.path.join(LOG_DIR, "merge.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=pubmed_config["merge_memory_mb"],
+        runtime=pubmed_config["merge_runtime"]
+    shell:
+        """
+        echo "Starting merge of $(echo {input.indices} | wc -w) index files..." > {log}
+
+        python {params.script} \
+            --processed-dir {params.processed_dir} \
+            --output-dir {params.final_dir} \
+            >> {log} 2>&1
+
+        echo "Merge completed successfully" >> {log}
+        echo "Final index size: $(du -h {output.index})" >> {log}
+        """
+
+# Rule 4: Validate final indices
+rule pubmed_validate:
+    input:
+        index = pubmed_config["final_index"],
+        metadata = pubmed_config["final_metadata"]
+    output:
+        validation_report = os.path.join(FINAL_DIR, "validation_report.txt")
+    params:
+        vector_dim = pubmed_config["vector_dimension"],
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_validate.log")
+    log:
+        os.path.join(LOG_DIR, "validate.log")
+    conda:
+        config["conda_env"]
+    shell:
+        """
+        echo "Validating final indices..." > {log}
+
+        python -c "
+import faiss
+import pickle
+import sys
+
+# Load index
+print('Loading FAISS index...', file=sys.stderr)
+index = faiss.read_index('{input.index}')
+print(f'Index contains {{index.ntotal}} vectors', file=sys.stderr)
+print(f'Index dimension: {{index.d}}', file=sys.stderr)
+
+# Load metadata
+print('Loading metadata...', file=sys.stderr)
+with open('{input.metadata}', 'rb') as f:
+    metadata = pickle.load(f)
+print(f'Metadata contains {{len(metadata)}} entries', file=sys.stderr)
+
+# Validation
+validation_report = []
+validation_report.append('=== PubMed Index Validation Report ===')
+validation_report.append(f'Index vectors: {{index.ntotal}}')
+validation_report.append(f'Index dimension: {{index.d}}')
+validation_report.append(f'Expected dimension: {params.vector_dim}')
+validation_report.append(f'Metadata entries: {{len(metadata)}}')
+
+# Checks
+if index.d == {params.vector_dim}:
+    validation_report.append('✓ Vector dimension matches expected')
+else:
+    validation_report.append('✗ Vector dimension mismatch!')
+    sys.exit(1)
+
+if index.ntotal == len(metadata):
+    validation_report.append('✓ Index-metadata alignment verified')
+else:
+    validation_report.append('✗ Index-metadata count mismatch!')
+    sys.exit(1)
+
+validation_report.append('✓ All validation checks passed')
+
+# Write report
+with open('{output.validation_report}', 'w') as f:
+    f.write('\\n'.join(validation_report))
+
+print('\\n'.join(validation_report))
+        " >> {log} 2>&1
+
+        echo "Validation completed" >> {log}
+        """
