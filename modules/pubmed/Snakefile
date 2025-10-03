@@ -31,7 +31,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # Helper function to get XML file path from wildcards
 def get_xml_file_from_wildcards(wildcards):
     """Reconstruct XML file path from wildcards."""
-    return os.path.join(RAW_DIR, wildcards.subdir, f"{wildcards.filename}.xml.gz")
+    # Use config directly to avoid global variable pollution
+    pubmed_raw_dir = config["pubmed"]["raw_dir"]
+    return os.path.join(pubmed_raw_dir, wildcards.subdir, f"{wildcards.filename}.xml.gz")
 
 # Aggregation function for merge rule (uses checkpoint)
 # This is called AFTER download completes to dynamically discover files
@@ -44,29 +46,76 @@ def aggregate_processed_indices(wildcards):
     corresponding processed index files.
     """
     # Wait for checkpoint to complete (download finishes)
-    checkpoint_output = checkpoints.pubmed_download.get(**wildcards).output[0]
+    # Use empty dict for wildcards since pubmed_download has no wildcards
+    checkpoints.pubmed_download.get()
 
     # Discover downloaded XML files
-    xml_files = []
-    xml_files += glob.glob(os.path.join(RAW_DIR, "baseline", "*.xml.gz"))
-    xml_files += glob.glob(os.path.join(RAW_DIR, "updatefiles", "*.xml.gz"))
+    import sys
+
+    # IMPORTANT: Use config directly to avoid global variable pollution from other modules
+    # The global RAW_DIR/PROCESSED_DIR may have been overwritten by clinical_trials module
+    pubmed_raw_dir = config["pubmed"]["raw_dir"]
+    pubmed_processed_dir = config["pubmed"]["processed_dir"]
+
+    # Use absolute paths to avoid working directory issues
+    raw_baseline = os.path.abspath(os.path.join(pubmed_raw_dir, "baseline"))
+    raw_update = os.path.abspath(os.path.join(pubmed_raw_dir, "updatefiles"))
+
+    baseline_files = glob.glob(os.path.join(raw_baseline, "*.xml.gz"))
+    update_files = glob.glob(os.path.join(raw_update, "*.xml.gz"))
+    xml_files = baseline_files + update_files
+
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Using config directly to avoid global var pollution\n")
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] PubMed raw dir: {pubmed_raw_dir}\n")
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Baseline dir: {raw_baseline}\n")
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Found {len(xml_files)} XML files\n")
+    sys.stderr.flush()
 
     # Generate expected index file paths
     indices = []
     for xml_file in xml_files:
         basename = os.path.basename(xml_file).replace('.xml.gz', '')
         if 'baseline' in xml_file:
-            indices.append(os.path.join(PROCESSED_DIR, "baseline", f"{basename}.index"))
+            subdir = "baseline"
         else:
-            indices.append(os.path.join(PROCESSED_DIR, "updatefiles", f"{basename}.index"))
+            subdir = "updatefiles"
+        index_path = os.path.join(pubmed_processed_dir, subdir, f"{basename}.index")
+        indices.append(index_path)
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION]   -> {index_path}\n")
 
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Total indices: {len(indices)}\n")
+    sys.stderr.flush()
     return indices
 
 # Top-level rule for PubMed module
+# Creates FAISS indices only (merge is optional)
 rule pubmed_all:
     input:
-        pubmed_config["final_index"],
-        os.path.join(FINAL_DIR, "master_metadata.json")
+        aggregate_processed_indices
+
+# Completion marker for Qdrant dependency
+rule pubmed_processing_complete:
+    input:
+        indices = aggregate_processed_indices
+    output:
+        done = os.path.join(PROCESSED_DIR, ".processing_complete")
+    params:
+        processed_dir = PROCESSED_DIR
+    shell:
+        """
+        # Count actual index files created
+        INDEX_COUNT=$(find {params.processed_dir} -name "*.index" 2>/dev/null | wc -l)
+
+        echo "PubMed FAISS processing complete" > {output.done}
+        echo "Processed files: $INDEX_COUNT" >> {output.done}
+        echo "Index files from input: $(echo {input.indices} | wc -w)" >> {output.done}
+        echo "Completed at: $(date)" >> {output.done}
+
+        if [ "$INDEX_COUNT" -eq 0 ]; then
+            echo "ERROR: No index files were created!" | tee -a {output.done}
+            exit 1
+        fi
+        """
 
 # Checkpoint 1: Download PubMed data from FTP
 # This is a checkpoint because we don't know how many files will be downloaded

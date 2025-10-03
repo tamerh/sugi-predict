@@ -6,42 +6,61 @@ Snakemake workflow for downloading, processing, and indexing PubMed literature f
 
 This module builds a semantic search index from PubMed abstracts using:
 - **Model**: S-BioBERT (`pritamdeka/S-BioBERT-snli-multinli-stsb`) - 768 dimensions
-- **Vector DB**: FAISS (FlatL2 index)
+- **Vector DB**: FAISS (FlatL2 index) + Qdrant (automatic)
 - **Source**: PubMed baseline + update files from NCBI FTP
-- **Scale**: ~1200+ files, millions of abstracts
+- **Scale**: ~1200+ files, ~30M abstracts
+
+**Note**: This module creates FAISS indices only. Qdrant vector database insertion happens automatically via the infrastructure module.
 
 ## Quick Start
 
 ### Production Run
 ```bash
-# Full PubMed processing (takes days)
+# Full PubMed processing + automatic Qdrant insertion
 ./bioyoda.sh run pubmed --cluster --bg --jobs 100
+
+# What happens:
+# 1. Downloads ~1200 PubMed XML files
+# 2. Processes in parallel → creates FAISS indices
+# 3. Auto-starts Qdrant server
+# 4. Sequentially inserts FAISS data to Qdrant
 ```
 
 ### Test Run
 ```bash
-# Fast test with 2 files × 1000 abstracts (~5 minutes)
-./bioyoda.sh run pubmed --config config/test_config.yaml --local
+# Fast test: 2 files × 1000 abstracts + Qdrant insertion
+./bioyoda.sh run pubmed --config config/test_config.yaml --cluster --bg --jobs 5
+
+# Monitor
+tail -f logs/bioyoda_pubmed_main.log
+tail -f logs/qdrant/insert_pubmed.log
 ```
 
-## Pipeline Steps
+## Pipeline Steps (This Module)
 
 1. **Download** (`download.py`)
    - Fetches PubMed XML files from NCBI FTP
    - Downloads deleted PMIDs list
    - Supports debug mode (limited files)
 
-2. **Process** (`index.py`)
+2. **Process** (`index.py`) - **Parallel on cluster**
    - Parses XML to extract titles + abstracts
    - Skips deleted PMIDs
    - Creates embeddings using S-BioBERT
-   - Outputs: `.index` (FAISS) + `.json` (metadata)
+   - Outputs: `*.index` (FAISS) + `*_metadata.pkl` (metadata)
    - Supports `--limit N` for testing (processes first N abstracts)
 
-3. **Merge** (`merge0.py`)
+3. **Merge** (`merge0.py`) - **Optional**
    - Combines all individual indices into master index
    - Memory-efficient streaming approach
    - **Performance**: ~700s for full dataset, 180MB RAM
+   - **Note**: Not required for Qdrant insertion (inserts from unmerged files)
+
+4. **Qdrant Insertion** (Automatic) - **See `modules/qdrant/` for details**
+   - Auto-started after FAISS creation completes
+   - Sequentially reads unmerged FAISS files
+   - Inserts to Qdrant `pubmed_abstracts` collection
+   - Creates searchable vector database
 
 ## Directory Structure
 

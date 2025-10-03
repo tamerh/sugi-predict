@@ -96,11 +96,13 @@ Commands:
     help                      Show this help message
     version                   Show version information
 
-Modules:
-    pubmed                    PubMed literature processing
-    clinical_trials           Clinical trials data processing (Phase 2)
-    qdrant                    Qdrant vector database migration (Phase 2)
-    all                       Run all modules
+Dataset Modules:
+    pubmed                    PubMed literature processing (+ auto Qdrant insertion)
+    clinical_trials           Clinical trials data processing (+ auto Qdrant insertion)
+    all                       Run all dataset modules
+
+Note: Qdrant vector database insertion is automatic when running dataset modules.
+      The Qdrant infrastructure module is triggered automatically, not run standalone.
 
 Run Options:
     --cluster                 Submit jobs to SGE cluster
@@ -115,17 +117,21 @@ Stop Options:
     --clean, -c               Also clean intermediate files after stopping
 
 Examples:
-    # Run PubMed pipeline locally in foreground
-    $0 run pubmed --local
-
-    # Run PubMed pipeline on cluster in background
+    # Run PubMed pipeline (creates FAISS + auto inserts to Qdrant)
     $0 run pubmed --cluster --bg --jobs 50
 
-    # Run test pipeline with test config
+    # Run test pipeline with small dataset
     $0 run pubmed --config config/test_config.yaml --cluster --bg --jobs 5
 
-    # Monitor background pipeline
+    # Run Clinical Trials (creates data + auto inserts to Qdrant)
+    $0 run clinical_trials --cluster --bg --jobs 20
+
+    # Run all datasets (PubMed + Clinical Trials + Qdrant)
+    $0 run all --cluster --bg --jobs 100
+
+    # Monitor progress
     tail -f logs/bioyoda_pubmed_main.log
+    tail -f logs/qdrant/insert_pubmed.log
 
     # Stop running pipeline
     $0 stop pubmed
@@ -139,11 +145,16 @@ Examples:
     # Generate workflow visualization
     $0 dag pubmed
 
-    # Check pipeline status
+    # Check pipeline status (shows FAISS + Qdrant status)
     $0 status
 
-    # Validate PubMed outputs
+    # Validate outputs
     $0 validate pubmed
+    $0 validate qdrant
+
+    # Clean specific module
+    $0 clean pubmed
+    $0 clean qdrant
 
 For more information, visit: https://github.com/yourusername/bioyoda
 EOF
@@ -271,7 +282,28 @@ run() {
         log_info "Main log: ${main_log}"
         log_info "Monitor with: tail -f ${main_log}"
 
-        nohup bash -c "${snakemake_cmd}" > "${main_log}" 2>&1 &
+        # Create wrapper script with cleanup
+        local wrapper_script="${pid_dir}/${module}_wrapper.sh"
+        cat > "${wrapper_script}" <<WRAPPER
+#!/bin/bash
+# Wrapper script for background execution with cleanup
+
+# Run pipeline
+${snakemake_cmd}
+EXIT_CODE=\$?
+
+# Cleanup Qdrant server
+$(declare -f stop_qdrant_server)
+stop_qdrant_server
+
+# Remove PID file
+rm -f "${pid_file}"
+
+exit \$EXIT_CODE
+WRAPPER
+        chmod +x "${wrapper_script}"
+
+        nohup bash "${wrapper_script}" > "${main_log}" 2>&1 &
         local main_pid=$!
         echo ${main_pid} > "${pid_file}"
 
@@ -281,8 +313,12 @@ run() {
     else
         log_info "Executing: ${snakemake_cmd}"
         eval ${snakemake_cmd}
+        local exit_code=$?
 
-        if [[ $? -eq 0 ]]; then
+        # Always cleanup Qdrant server
+        stop_qdrant_server
+
+        if [[ ${exit_code} -eq 0 ]]; then
             log_success "Pipeline completed successfully!"
         else
             log_error "Pipeline failed! Check logs for details."
@@ -323,12 +359,43 @@ status() {
     fi
 
     echo ""
-    echo "=== Clinical Trials Module (Phase 2) ==="
-    log_info "Not yet implemented"
+    echo "=== Clinical Trials Module ==="
+    if [[ -f "data/processed/clinical_trials/trials_data.json" ]]; then
+        local size=$(du -h data/processed/clinical_trials/trials_data.json | cut -f1)
+        log_success "Trials data exists (${size})"
+    else
+        log_warning "Trials data not found"
+    fi
 
     echo ""
-    echo "=== Qdrant Module (Phase 2) ==="
-    log_info "Not yet implemented"
+    echo "=== Qdrant Module ==="
+
+    # Check if Qdrant server is running
+    if [[ -f "data/qdrant/connection_info.txt" ]]; then
+        log_success "Qdrant server connection info found"
+        cat data/qdrant/connection_info.txt | grep QDRANT_URL
+    else
+        log_info "Qdrant server not running"
+    fi
+
+    # Check collections
+    if [[ -f "data/qdrant/collections/pubmed_abstracts.done" ]]; then
+        log_success "PubMed collection complete"
+    else
+        log_info "PubMed collection not completed"
+    fi
+
+    if [[ -f "data/qdrant/collections/clinical_trials.done" ]]; then
+        log_success "Clinical Trials collection complete"
+    else
+        log_info "Clinical Trials collection not completed"
+    fi
+
+    # Check storage size
+    if [[ -d "data/qdrant/storage" ]]; then
+        local qdrant_size=$(du -sh data/qdrant/storage 2>/dev/null | cut -f1)
+        log_info "Qdrant storage size: ${qdrant_size}"
+    fi
 }
 
 validate() {
@@ -351,6 +418,30 @@ validate() {
             if [[ -f "data/final/pubmed/validation_report.txt" ]]; then
                 echo ""
                 cat data/final/pubmed/validation_report.txt
+            fi
+            ;;
+        qdrant)
+            if [[ ! -f "data/qdrant/connection_info.txt" ]]; then
+                log_error "Qdrant server not running or connection info not found."
+                exit 1
+            fi
+
+            log_info "Checking Qdrant collections..."
+            source data/qdrant/connection_info.txt
+
+            # Check collections via API
+            log_info "Querying Qdrant at: $QDRANT_URL"
+            curl -s "$QDRANT_URL/collections" | python -m json.tool 2>/dev/null || log_warning "Failed to connect to Qdrant"
+
+            # Check specific collections
+            if curl -s "$QDRANT_URL/collections/pubmed_abstracts" >/dev/null 2>&1; then
+                log_success "PubMed collection accessible"
+                curl -s "$QDRANT_URL/collections/pubmed_abstracts" | python -m json.tool 2>/dev/null | grep -E "(points_count|status)"
+            fi
+
+            if curl -s "$QDRANT_URL/collections/clinical_trials" >/dev/null 2>&1; then
+                log_success "Clinical Trials collection accessible"
+                curl -s "$QDRANT_URL/collections/clinical_trials" | python -m json.tool 2>/dev/null | grep -E "(points_count|status)"
             fi
             ;;
         *)
@@ -376,9 +467,24 @@ clean() {
             rm -rf data/processed/pubmed/*
             log_success "PubMed cleaned"
             ;;
+        clinical_trials)
+            log_info "Cleaning Clinical Trials processed files..."
+            rm -rf data/processed/clinical_trials/*
+            log_success "Clinical Trials cleaned"
+            ;;
+        qdrant)
+            log_info "Cleaning Qdrant storage and collections..."
+            rm -rf data/qdrant/storage/*
+            rm -f data/qdrant/connection_info.txt
+            rm -f data/qdrant/collections/*.done
+            log_success "Qdrant cleaned"
+            ;;
         all)
             log_info "Cleaning all processed files..."
             rm -rf data/processed/*
+            rm -rf data/qdrant/storage/*
+            rm -f data/qdrant/connection_info.txt
+            rm -f data/qdrant/collections/*.done
             log_success "All modules cleaned"
             ;;
         *)
@@ -483,6 +589,53 @@ kill_process() {
     fi
 }
 
+##############################################################################
+# Qdrant Server Management
+##############################################################################
+
+stop_qdrant_server() {
+    local qdrant_pid_file="data/qdrant/qdrant.pid"
+    local connection_info="data/qdrant/connection_info.txt"
+
+    # Check for local PID file
+    if [[ -f "${qdrant_pid_file}" ]]; then
+        local qdrant_pid=$(cat "${qdrant_pid_file}")
+        if ps -p ${qdrant_pid} > /dev/null 2>&1; then
+            log_info "Stopping Qdrant server (PID: ${qdrant_pid})..."
+            kill ${qdrant_pid} 2>/dev/null || true
+            sleep 2
+            # Force kill if still running
+            if ps -p ${qdrant_pid} > /dev/null 2>&1; then
+                kill -9 ${qdrant_pid} 2>/dev/null || true
+            fi
+            log_success "Qdrant server stopped"
+        fi
+        rm -f "${qdrant_pid_file}"
+    fi
+
+    # Check for cluster job (look for qdrant_server job)
+    if command -v qstat &> /dev/null; then
+        local qdrant_jobs=$(qstat -u $(whoami) 2>/dev/null | grep "qdrant_server" | awk '{print $1}' || true)
+        if [[ -n "${qdrant_jobs}" ]]; then
+            log_info "Stopping Qdrant cluster job(s)..."
+            for job_id in ${qdrant_jobs}; do
+                qdel ${job_id} 2>/dev/null || true
+                log_info "  Cancelled job: ${job_id}"
+            done
+            log_success "Qdrant cluster job(s) stopped"
+        fi
+    fi
+
+    # Clean up connection info
+    if [[ -f "${connection_info}" ]]; then
+        rm -f "${connection_info}"
+    fi
+}
+
+##############################################################################
+# Pipeline Control Functions
+##############################################################################
+
 stop() {
     local module="pubmed"
     local clean=false
@@ -537,6 +690,9 @@ stop() {
     # Clean up Snakemake locks
     log_info "Cleaning up Snakemake locks..."
     rm -rf .snakemake/locks/ 2>/dev/null || true
+
+    # Stop Qdrant server if running
+    stop_qdrant_server
 
     # Optional: clean intermediate files
     if [[ "${clean}" == true ]]; then

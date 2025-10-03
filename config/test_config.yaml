@@ -26,7 +26,7 @@ pubmed:
   # Files
   file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/pubmed_files.txt"
   final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed_metadata.pkl"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.json"
 
   # Model settings (same as production)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -47,6 +47,12 @@ pubmed:
   merge_memory_mb: 8192        # 8GB (vs 256GB production) - enough for 2×1000 abstracts
   merge_runtime: 30            # 30 minutes (vs 7 days production)
 
+  # Qdrant insertion settings - TEST MODE
+  qdrant:
+    collection_name: "pubmed_abstracts"
+    memory_mb: 4096            # 4GB (vs 8GB production)
+    runtime_hours: 1           # 1 hour (vs 8 hours production)
+
 # Clinical Trials Module Configuration - TEST MODE
 clinical_trials:
   # Data directories (same as production)
@@ -58,7 +64,7 @@ clinical_trials:
   # Output files
   trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials/trials_data.json"
   final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials_metadata.json"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.json"
 
   # Model settings (same as PubMed)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -89,13 +95,27 @@ clinical_trials:
   process_memory_mb: 8192      # 8GB (vs 20GB production)
   process_runtime: 60          # 1 hour (vs 7 days production)
 
-# Qdrant Module Configuration (placeholder for phase 2)
+  # Qdrant insertion settings - TEST MODE
+  qdrant:
+    collection_name: "clinical_trials"
+    memory_mb: 4096            # 4GB (vs 8GB production)
+    runtime_hours: 1           # 1 hour (vs 4 hours production)
+
+# Qdrant Module Configuration - TEST MODE
 qdrant:
+  # Storage
   storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
-  collection_name: "bioyoda"
-  host: "localhost"
-  port: 6333
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
+
+  # Insertion settings
+  batch_size: 100              # Small batches for testing (vs 1000 production)
+
+  # Server settings - OPTIMIZED FOR TEST
+  server:
+    memory_mb: 16384           # 16GB (vs 128GB production) - enough for test data
+    runtime_hours: 4           # 4 hours (vs 48 hours production)
+
+# Output directory for final FAISS exports
+final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final"
 
 # HPC Cluster Configuration
 cluster:

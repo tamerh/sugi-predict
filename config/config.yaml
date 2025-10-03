@@ -26,7 +26,7 @@ pubmed:
   # Files
   file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/pubmed_files.txt"
   final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed_metadata.pkl"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.json"
 
   # Model settings
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -40,6 +40,12 @@ pubmed:
   process_runtime: 10080     # 168 hours in minutes
   merge_memory_mb: 262144    # 256GB
   merge_runtime: 10080       # 168 hours in minutes
+
+  # Qdrant insertion settings
+  qdrant:
+    collection_name: "pubmed_abstracts"
+    memory_mb: 8192
+    runtime_hours: 8
 
   # Debug settings
   debug_mode: true         # Set to true to download/process limited files
@@ -56,7 +62,7 @@ clinical_trials:
   # Output files
   trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials/trials_data.json"
   final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials_metadata.json"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.json"
 
   # Model settings (same as PubMed for consistency)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -83,13 +89,27 @@ clinical_trials:
   process_memory_mb: 20480     # 20GB for embedding generation
   process_runtime: 10080       # 7 days (554K trials)
 
-# Qdrant Module Configuration (placeholder for phase 2)
+  # Qdrant insertion settings
+  qdrant:
+    collection_name: "clinical_trials"
+    memory_mb: 8192
+    runtime_hours: 4
+
+# Qdrant Module Configuration
 qdrant:
+  # Storage
   storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
-  collection_name: "bioyoda"
-  host: "localhost"
-  port: 6333
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
+
+  # Insertion settings
+  batch_size: 1000
+
+  # Server settings (for auto-start via Snakemake)
+  server:
+    memory_mb: 131072      # 128GB for server
+    runtime_hours: 48      # 2 days
+
+# Output directory for final FAISS exports
+final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final"
 
 # HPC Cluster Configuration
 cluster:

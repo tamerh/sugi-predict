@@ -1,0 +1,341 @@
+##############################################################################
+#
+#   Qdrant Module Snakefile
+#   Vector database insertion and management
+#
+#   AUTHOR: Tamer Gur
+#   PROJECT: BioYoda - AI-powered biomedical search system
+#   LICENSE: Apache_2.0
+#
+##############################################################################
+
+import os
+import time
+import subprocess
+
+# Module-specific configuration
+QDRANT_MODULE_DIR = "modules/qdrant"
+QDRANT_SCRIPTS = f"{QDRANT_MODULE_DIR}/scripts"
+QDRANT_SETUP = f"{QDRANT_MODULE_DIR}/setup"
+
+# Paths from config
+QDRANT_STORAGE = config["qdrant"]["storage_dir"]
+QDRANT_CONTAINER = f"{QDRANT_SETUP}/singularity/qdrant.sif"
+QDRANT_CONFIG = f"{QDRANT_SETUP}/singularity/config.yaml"
+CONNECTION_INFO = f"{QDRANT_STORAGE}/connection_info.txt"
+
+# Collection directories
+PUBMED_FAISS_DIR = config["pubmed"]["processed_dir"]
+CLINICAL_TRIALS_FAISS_DIR = config["clinical_trials"]["final_dir"]
+CLINICAL_TRIALS_DATA = config["clinical_trials"]["final_index"]
+
+# Ensure directories exist
+os.makedirs(QDRANT_STORAGE, exist_ok=True)
+os.makedirs(f"{QDRANT_STORAGE}/collections", exist_ok=True)
+
+# ============================================================================
+# Rule: Start Qdrant Server
+# ============================================================================
+
+rule start_qdrant_server:
+    """
+    Start Qdrant server (local mode or cluster job).
+    Creates connection_info.txt with server hostname and port.
+    """
+    output:
+        connection_info = CONNECTION_INFO
+    params:
+        container = QDRANT_CONTAINER,
+        config_file = QDRANT_CONFIG,
+        storage = QDRANT_STORAGE,
+        memory_mb = config["qdrant"]["server"]["memory_mb"],
+        runtime = config["qdrant"]["server"]["runtime_hours"] * 3600,
+        job_name = "qdrant_server",
+        is_cluster =  workflow.cores > 1  # Heuristic: cluster mode if cores > 1
+    log:
+        f"{config['logs_dir']}/qdrant/server.log"
+    shell:
+        """
+        # Check if container exists
+        if [ ! -f {params.container} ]; then
+            echo "ERROR: Qdrant container not found at {params.container}"
+            echo "Please build it first: cd {QDRANT_SETUP} && ./build_container.sh"
+            exit 1
+        fi
+
+        # Detect execution mode
+        if [ "{params.is_cluster}" = "True" ]; then
+            echo "Starting Qdrant server via cluster job..."
+            MODE="cluster"
+        else
+            echo "Starting Qdrant server in local mode..."
+            MODE="local"
+        fi
+
+        if [ "$MODE" = "cluster" ]; then
+            # ====== CLUSTER MODE: Submit as job ======
+
+            # Create job script
+            cat > {QDRANT_STORAGE}/start_server.sh <<'JOBSCRIPT'
+#!/bin/bash
+#$ -N {params.job_name}
+#$ -q scc
+#$ -l h_vmem={params.memory_mb}M
+#$ -l h_rt={params.runtime}
+#$ -cwd
+#$ -V
+#$ -o {log}
+#$ -j y
+
+set -e
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Qdrant server..."
+echo "Job ID: $JOB_ID"
+echo "Hostname: $(hostname)"
+
+# Set variables
+QDRANT_HOST=$(hostname)
+QDRANT_PORT=6333
+
+# Create connection info file
+cat > {output.connection_info} <<EOF
+# Qdrant Connection Information
+# Generated: $(date)
+# Job ID: $JOB_ID
+QDRANT_HOST=$QDRANT_HOST
+QDRANT_PORT=$QDRANT_PORT
+QDRANT_URL=http://$QDRANT_HOST:$QDRANT_PORT
+EOF
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Connection info: {output.connection_info}"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Server URL: http://$QDRANT_HOST:$QDRANT_PORT"
+
+# Cleanup on exit
+cleanup() {{
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Shutting down Qdrant server..."
+    rm -f {output.connection_info}
+}}
+trap cleanup EXIT
+
+# Start Qdrant
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Singularity container..."
+singularity run \
+    --bind {params.storage}:/qdrant/storage \
+    --bind {params.config_file}:/opt/qdrant/config.yaml \
+    {params.container} \
+    --config-path /opt/qdrant/config.yaml
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant server stopped"
+JOBSCRIPT
+
+            chmod +x {QDRANT_STORAGE}/start_server.sh
+
+            # Submit the job
+            echo "Submitting Qdrant server job..."
+            qsub {QDRANT_STORAGE}/start_server.sh
+
+            # Wait for connection_info.txt to appear (max 5 minutes)
+            echo "Waiting for Qdrant server to start..."
+            for i in {{1..60}}; do
+                if [ -f {output.connection_info} ]; then
+                    echo "Qdrant server started successfully!"
+                    cat {output.connection_info}
+                    sleep 10  # Give it a bit more time to fully initialize
+                    exit 0
+                fi
+                echo "  Waiting... ($i/60)"
+                sleep 5
+            done
+
+            echo "ERROR: Qdrant server did not start within 5 minutes"
+            echo "Check logs: {log}"
+            exit 1
+
+        else
+            # ====== LOCAL MODE: Start in background ======
+
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Qdrant server locally..." | tee {log}
+
+            # Set variables
+            QDRANT_HOST="localhost"
+            QDRANT_PORT=6333
+
+            # Create connection info file
+            cat > {output.connection_info} <<EOF
+# Qdrant Connection Information (Local Mode)
+# Generated: $(date)
+QDRANT_HOST=$QDRANT_HOST
+QDRANT_PORT=$QDRANT_PORT
+QDRANT_URL=http://$QDRANT_HOST:$QDRANT_PORT
+EOF
+
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Connection info: {output.connection_info}" | tee -a {log}
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Server URL: http://$QDRANT_HOST:$QDRANT_PORT" | tee -a {log}
+
+            # Start Qdrant in background
+            singularity run \
+                --bind {params.storage}:/qdrant/storage \
+                --bind {params.config_file}:/opt/qdrant/config.yaml \
+                {params.container} \
+                --config-path /opt/qdrant/config.yaml \
+                >> {log} 2>&1 &
+
+            QDRANT_PID=$!
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant server started (PID: $QDRANT_PID)" | tee -a {log}
+
+            # Save PID for cleanup
+            echo $QDRANT_PID > {QDRANT_STORAGE}/qdrant.pid
+
+            # Wait for server to be ready
+            echo "Waiting for Qdrant to be ready..."
+            for i in {{1..30}}; do
+                if curl -s http://localhost:6333/health > /dev/null 2>&1; then
+                    echo "Qdrant server is ready!"
+                    exit 0
+                fi
+                echo "  Waiting... ($i/30)"
+                sleep 2
+            done
+
+            echo "WARNING: Qdrant may not be fully ready yet, but continuing..."
+            echo "Check logs: {log}"
+        fi
+        """
+
+# ============================================================================
+# Rule: Insert PubMed to Qdrant
+# ============================================================================
+
+rule insert_pubmed_to_qdrant:
+    """
+    Insert PubMed FAISS files to Qdrant collection.
+    Processes all individual FAISS files sequentially.
+    Waits for PubMed processing to complete before insertion.
+    """
+    input:
+        pubmed_complete = rules.pubmed_processing_complete.output.done,  # Wait for FAISS processing
+        connection_info = rules.start_qdrant_server.output.connection_info
+    output:
+        done = f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done"
+    params:
+        collection = config["pubmed"]["qdrant"]["collection_name"],
+        batch_size = config["qdrant"]["batch_size"],
+        faiss_dir = PUBMED_FAISS_DIR,
+        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py"
+    resources:
+        mem_mb = config["pubmed"]["qdrant"]["memory_mb"],
+        runtime = config["pubmed"]["qdrant"]["runtime_hours"] * 3600
+    conda:
+        config["conda_env"]
+    log:
+        f"{config['logs_dir']}/qdrant/insert_pubmed.log"
+    shell:
+        """
+        # Source connection info
+        source {input.connection_info}
+
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting PubMed to Qdrant..."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}"
+
+        python {params.script} \
+            --faiss-dir {params.faiss_dir} \
+            --collection {params.collection} \
+            --qdrant-url $QDRANT_URL \
+            --batch-size {params.batch_size} \
+            2>&1 | tee -a {log}
+
+        # Mark as done
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] PubMed insertion complete" > {output.done}
+        echo "Completed at: $(date)" >> {output.done}
+        """
+
+# ============================================================================
+# Rule: Insert Clinical Trials to Qdrant
+# ============================================================================
+
+rule insert_clinical_trials_to_qdrant:
+    """
+    Insert Clinical Trials to Qdrant collection.
+    Independent of PubMed - can run separately.
+    """
+    input:
+        trials_data = CLINICAL_TRIALS_DATA,
+        connection_info = rules.start_qdrant_server.output.connection_info
+    output:
+        done = f"{QDRANT_STORAGE}/collections/clinical_trials.done"
+    params:
+        collection = config["clinical_trials"]["qdrant"]["collection_name"],
+        batch_size = config["qdrant"]["batch_size"],
+        faiss_dir = CLINICAL_TRIALS_FAISS_DIR,
+        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py"  # Will create separate script if needed
+    resources:
+        mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"],
+        runtime = config["clinical_trials"]["qdrant"]["runtime_hours"] * 3600
+    conda:
+        config["conda_env"]
+    log:
+        f"{config['logs_dir']}/qdrant/insert_clinical_trials.log"
+    shell:
+        """
+        # Source connection info
+        source {input.connection_info}
+
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Clinical Trials to Qdrant..."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}"
+
+        python {params.script} \
+            --faiss-dir {params.faiss_dir} \
+            --collection {params.collection} \
+            --qdrant-url $QDRANT_URL \
+            --batch-size {params.batch_size} \
+            2>&1 | tee -a {log}
+
+        # Mark as done
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Clinical Trials insertion (TODO)" > {output.done}
+        echo "Completed at: $(date)" >> {output.done}
+        """
+
+# ============================================================================
+# Rule: Export Qdrant to FAISS (Optional Backup)
+# ============================================================================
+
+rule export_qdrant_to_faiss:
+    """
+    Export Qdrant collection back to FAISS format (lossless backup).
+    Optional step for archival purposes.
+    """
+    input:
+        done = rules.insert_pubmed_to_qdrant.output.done,
+        connection_info = rules.start_qdrant_server.output.connection_info
+    output:
+        index = f"{config['final_dir']}/pubmed/from_qdrant.index",
+        metadata = f"{config['final_dir']}/pubmed/from_qdrant_metadata.pkl"
+    params:
+        collection = config["pubmed"]["qdrant"]["collection_name"]
+    resources:
+        mem_mb = 100000  # ~100GB for full export
+    log:
+        f"{config['logs_dir']}/qdrant/export_to_faiss.log"
+    shell:
+        """
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS export not yet implemented"
+        echo "This will export Qdrant → FAISS for backup"
+
+        # TODO: Implement export script
+        touch {output.index}
+        touch {output.metadata}
+        """
+
+# ============================================================================
+# Top-level target for Qdrant module
+# ============================================================================
+
+rule qdrant_all:
+    input:
+        rules.insert_pubmed_to_qdrant.output.done,
+        rules.insert_clinical_trials_to_qdrant.output.done
+    default_target: True

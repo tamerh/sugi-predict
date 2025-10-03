@@ -6,6 +6,7 @@ vibe/
 old/
 bkp
 data_test
+data_local
 **/node_modules/
 **/node_modules2/
 .claude/
