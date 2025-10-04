@@ -20,6 +20,7 @@ QDRANT_SETUP = f"{QDRANT_MODULE_DIR}/setup"
 
 # Paths from config
 QDRANT_STORAGE = config["qdrant"]["storage_dir"]
+QDRANT_LOG_DIR = config["qdrant"]["log_dir"]
 QDRANT_CONTAINER = f"{QDRANT_SETUP}/singularity/qdrant.sif"
 QDRANT_CONFIG = f"{QDRANT_SETUP}/singularity/config.yaml"
 CONNECTION_INFO = f"{QDRANT_STORAGE}/connection_info.txt"
@@ -32,11 +33,16 @@ CLINICAL_TRIALS_DATA = config["clinical_trials"]["final_index"]
 # Ensure directories exist
 os.makedirs(QDRANT_STORAGE, exist_ok=True)
 os.makedirs(f"{QDRANT_STORAGE}/collections", exist_ok=True)
+os.makedirs(QDRANT_LOG_DIR, exist_ok=True)
+
+# Local rules - these run on head node, not submitted to cluster
+localrules: start_qdrant_server, qdrant_all
 
 # ============================================================================
 # Rule: Start Qdrant Server
 # ============================================================================
 
+# workflow.cores > 1  # Heuristic: cluster mode if cores > 1
 rule start_qdrant_server:
     """
     Start Qdrant server (local mode or cluster job).
@@ -51,9 +57,10 @@ rule start_qdrant_server:
         memory_mb = config["qdrant"]["server"]["memory_mb"],
         runtime = config["qdrant"]["server"]["runtime_hours"] * 3600,
         job_name = "qdrant_server",
-        is_cluster =  workflow.cores > 1  # Heuristic: cluster mode if cores > 1
+        is_cluster = True,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "start_qdrant_server_cluster.log")
     log:
-        f"{config['logs_dir']}/qdrant/server.log"
+        f"{QDRANT_LOG_DIR}/server.log"
     shell:
         """
         # Check if container exists
@@ -221,14 +228,14 @@ rule insert_pubmed_to_qdrant:
         collection = config["pubmed"]["qdrant"]["collection_name"],
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = PUBMED_FAISS_DIR,
-        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py"
+        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_pubmed_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["pubmed"]["qdrant"]["memory_mb"],
-        runtime = config["pubmed"]["qdrant"]["runtime_hours"] * 3600
+        mem_mb = config["pubmed"]["qdrant"]["memory_mb"]
     conda:
         config["conda_env"]
     log:
-        f"{config['logs_dir']}/qdrant/insert_pubmed.log"
+        f"{QDRANT_LOG_DIR}/insert_pubmed.log"
     shell:
         """
         # Source connection info
@@ -269,14 +276,14 @@ rule insert_clinical_trials_to_qdrant:
         collection = config["clinical_trials"]["qdrant"]["collection_name"],
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = CLINICAL_TRIALS_FAISS_DIR,
-        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py"  # Will create separate script if needed
+        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",  # Will create separate script if needed
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"],
-        runtime = config["clinical_trials"]["qdrant"]["runtime_hours"] * 3600
+        mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"]
     conda:
         config["conda_env"]
     log:
-        f"{config['logs_dir']}/qdrant/insert_clinical_trials.log"
+        f"{QDRANT_LOG_DIR}/insert_clinical_trials.log"
     shell:
         """
         # Source connection info
@@ -315,11 +322,12 @@ rule export_qdrant_to_faiss:
         index = f"{config['final_dir']}/pubmed/from_qdrant.index",
         metadata = f"{config['final_dir']}/pubmed/from_qdrant_metadata.pkl"
     params:
-        collection = config["pubmed"]["qdrant"]["collection_name"]
+        collection = config["pubmed"]["qdrant"]["collection_name"],
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "export_qdrant_to_faiss.log")
     resources:
         mem_mb = 100000  # ~100GB for full export
     log:
-        f"{config['logs_dir']}/qdrant/export_to_faiss.log"
+        f"{QDRANT_LOG_DIR}/export_to_faiss.log"
     shell:
         """
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS export not yet implemented"

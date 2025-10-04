@@ -48,7 +48,7 @@ pubmed:
     runtime_hours: 8
 
   # Debug settings
-  debug_mode: true         # Set to true to download/process limited files
+  debug_mode: false         # Set to true to download/process limited files
   debug_sample_size: 2     # Number of files to process in debug mode
 
 # Clinical Trials Module Configuration
@@ -99,6 +99,7 @@ clinical_trials:
 qdrant:
   # Storage
   storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
 
   # Insertion settings
   batch_size: 1000
@@ -119,5 +120,4 @@ cluster:
 
   # Resource defaults
   default_memory_mb: 8192
-  default_runtime: 1440  # 24 hours in minutes
   default_threads: 1

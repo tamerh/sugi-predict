@@ -49,8 +49,7 @@ rule clinical_trials_download:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=ct_config["download_memory_mb"],
-        runtime=ct_config["download_runtime"]
+        mem_mb=ct_config["download_memory_mb"]
     shell:
         """
         echo "Starting AACT database download..." > {log}
@@ -103,8 +102,7 @@ rule clinical_trials_extract:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=ct_config["extract_memory_mb"],
-        runtime=ct_config["extract_runtime"]
+        mem_mb=ct_config["extract_memory_mb"]
     shell:
         """
         echo "Starting text extraction from AACT tables..." > {log}
@@ -145,8 +143,7 @@ rule clinical_trials_process:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=ct_config["process_memory_mb"],
-        runtime=ct_config["process_runtime"]
+        mem_mb=ct_config["process_memory_mb"]
     shell:
         """
         echo "Starting clinical trials processing..." > {log}

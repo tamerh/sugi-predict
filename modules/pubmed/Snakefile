@@ -100,7 +100,8 @@ rule pubmed_processing_complete:
     output:
         done = os.path.join(PROCESSED_DIR, ".processing_complete")
     params:
-        processed_dir = PROCESSED_DIR
+        processed_dir = PROCESSED_DIR,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_processing_complete.log")
     shell:
         """
         # Count actual index files created
@@ -137,8 +138,7 @@ checkpoint pubmed_download:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=config["cluster"]["default_memory_mb"],
-        runtime=config["cluster"]["default_runtime"]
+        mem_mb=config["cluster"]["default_memory_mb"]
     shell:
         """
         echo "Starting PubMed download..." > {log}
@@ -180,8 +180,7 @@ rule pubmed_process_file:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=pubmed_config["process_memory_mb"],
-        runtime=pubmed_config["process_runtime"]
+        mem_mb=pubmed_config["process_memory_mb"]
     shell:
         """
         mkdir -p $(dirname {log})
@@ -211,8 +210,7 @@ rule pubmed_merge:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=pubmed_config["merge_memory_mb"],
-        runtime=pubmed_config["merge_runtime"]
+        mem_mb=pubmed_config["merge_memory_mb"]
     shell:
         """
         echo "Starting merge of $(echo {input.indices} | wc -w) index files..." > {log}

@@ -42,10 +42,8 @@ pubmed:
   debug_sample_size: 2         # Number of files to download
 
   # Job resources - OPTIMIZED FOR TEST
-  process_memory_mb: 4096      # 4GB (vs 12GB production)
-  process_runtime: 60          # 1 hour (vs 7 days production)
+  process_memory_mb: 8192      # 8GB (need more for model loading)
   merge_memory_mb: 8192        # 8GB (vs 256GB production) - enough for 2×1000 abstracts
-  merge_runtime: 30            # 30 minutes (vs 7 days production)
 
   # Qdrant insertion settings - TEST MODE
   qdrant:
@@ -89,11 +87,8 @@ clinical_trials:
 
   # Job resources - OPTIMIZED FOR TEST
   download_memory_mb: 8192     # 8GB (vs 16GB production)
-  download_runtime: 60         # 1 hour (vs 4 hours production)
   extract_memory_mb: 8192      # 8GB (vs 16GB production)
-  extract_runtime: 30          # 30 minutes (vs 4 hours production)
   process_memory_mb: 8192      # 8GB (vs 20GB production)
-  process_runtime: 60          # 1 hour (vs 7 days production)
 
   # Qdrant insertion settings - TEST MODE
   qdrant:
@@ -105,6 +100,7 @@ clinical_trials:
 qdrant:
   # Storage
   storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
 
   # Insertion settings
   batch_size: 100              # Small batches for testing (vs 1000 production)
@@ -124,6 +120,5 @@ cluster:
   max_jobs: 10  # Reduced for testing
 
   # Resource defaults
-  default_memory_mb: 4096  # Reduced for testing
-  default_runtime: 60      # 1 hour (vs 24 hours production)
+  default_memory_mb: 8192       # 8GB for testing
   default_threads: 1
