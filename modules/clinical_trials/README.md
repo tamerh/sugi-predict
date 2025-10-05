@@ -54,24 +54,21 @@ modules/clinical_trials/
 │   ├── download_aact.py   # Download AACT database
 │   ├── extract_text.py    # Extract text from tables
 │   ├── process_trials.py  # Create embeddings
-│   ├── merge_trials.py    # (Unused - kept for future batching)
-│   └── clinical_trials.env # Script-level settings
+│   └── merge_trials.py    # (Unused - kept for future batching)
 └── README.md              # This file
 ```
 
 ## Configuration
 
-### Production (`config/config.yaml`)
-- Downloads full AACT database
-- Processes all 554K trials
-- Memory: 16GB/download, 16GB/extract, 20GB/process
-- Runtime: Days
+All configuration is centralized in `config/config.yaml` (production) or `config/test_config.yaml` (testing).
 
-### Test (`config/test_config.yaml`)
-- Downloads full database (one-time)
-- Processes only 100 trials
-- Memory: 8GB each step
-- Runtime: ~10 minutes
+**Key Settings:**
+- `clinical_trials.download_memory_mb` - Memory for download step (default: 16384)
+- `clinical_trials.extract_memory_mb` - Memory for extraction (default: 16384)
+- `clinical_trials.process_memory_mb` - Memory for processing (default: 20480)
+- `clinical_trials.test_mode` - Enable test mode (default: false)
+- `clinical_trials.test_trials_limit` - Limit trials in test mode (default: 100)
+- `cluster.default_runtime` - Runtime managed by bioyoda.sh (default: 7 days)
 
 ## Output
 
