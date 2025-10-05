@@ -126,8 +126,9 @@ checkpoint pubmed_download:
         updatefiles_flag = os.path.join(FINAL_DIR, ".download_updatefiles_complete"),
         deleted_pmids = os.path.join(RAW_DIR, "deleted.pmids.sorted.gz")
     params:
-        baseline_dir = os.path.join(RAW_DIR, "baseline"),
-        update_dir = os.path.join(RAW_DIR, "updatefiles"),
+        raw_dir = pubmed_config["raw_dir"],
+        baseline_dir = os.path.join(pubmed_config["raw_dir"], "baseline"),
+        update_dir = os.path.join(pubmed_config["raw_dir"], "updatefiles"),
         script = os.path.join(MODULE_SCRIPTS, "download.py"),
         debug_mode = pubmed_config.get("debug_mode", False),
         debug_limit = pubmed_config.get("debug_sample_size", 2),
@@ -141,14 +142,22 @@ checkpoint pubmed_download:
         mem_mb=config["cluster"]["default_memory_mb"]
     shell:
         """
-        echo "Starting PubMed download..." > {log}
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+        echo "Starting PubMed download..." >> {log}
+        echo "DEBUG: raw_dir param = {params.raw_dir}" >> {log}
+        echo "DEBUG: script = {params.script}" >> {log}
 
         # Add debug flag if debug mode is enabled
         if [ "{params.debug_mode}" = "True" ]; then
             echo "DEBUG MODE: Downloading only {params.debug_limit} files" >> {log}
-            python {params.script} --debug {params.debug_limit} >> {log} 2>&1
+            python {params.script} --raw-dir "{params.raw_dir}" --debug {params.debug_limit} >> {log} 2>&1
         else
-            python {params.script} >> {log} 2>&1
+            python {params.script} --raw-dir "{params.raw_dir}" --debug 0 >> {log} 2>&1
         fi
 
         # Create completion flags
@@ -184,11 +193,17 @@ rule pubmed_process_file:
     shell:
         """
         mkdir -p $(dirname {log})
-        echo "Processing {wildcards.filename}..." > {log}
+        echo "" >> {log}
+        echo "==================== RUN STARTED: $(date) ====================" >> {log}
+        echo "Processing {wildcards.filename}..." >> {log}
 
-        python {params.script} {input.xml_file} {params.output_dir} {params.limit_flag} >> {log} 2>&1
+        python {params.script} {input.xml_file} {params.output_dir} \
+            --deleted-pmids {input.deleted_pmids} \
+            --model-name {params.model} \
+            --vector-dim {params.vector_dim} \
+            {params.limit_flag} >> {log} 2>&1
 
-        echo "Processing completed" >> {log}
+        echo "Processing completed at: $(date)" >> {log}
         """
 
 # Rule 3: Merge all processed indices into master index
@@ -213,11 +228,18 @@ rule pubmed_merge:
         mem_mb=pubmed_config["merge_memory_mb"]
     shell:
         """
-        echo "Starting merge of $(echo {input.indices} | wc -w) index files..." > {log}
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+        echo "Starting merge of $(echo {input.indices} | wc -w) index files..." >> {log}
 
         python {params.script} \
             --processed-dir {params.processed_dir} \
             --output-dir {params.final_dir} \
+            --vector-dim {pubmed_config[vector_dimension]} \
             >> {log} 2>&1
 
         echo "Merge completed successfully" >> {log}
@@ -240,7 +262,13 @@ rule pubmed_validate:
         config["conda_env"]
     shell:
         """
-        echo "Validating final indices..." > {log}
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+        echo "Validating final indices..." >> {log}
 
         python -c "
 import faiss

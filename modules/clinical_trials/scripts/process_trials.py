@@ -216,18 +216,33 @@ class TrialTextProcessor:
 class ClinicalTrialsProcessor:
     """Main processor for clinical trials data to create FAISS embeddings."""
 
-    def __init__(self, model_name: str, vector_dimension: int):
+    def __init__(self, model_name: str, vector_dimension: int, encode_batch_size: int = 128, num_workers: int = 1):
         """Initialize the processor with embedding model."""
         self.model_name = model_name
         self.vector_dimension = vector_dimension
+        self.encode_batch_size = encode_batch_size
+        self.num_workers = num_workers
         self.model = None
         self.text_processor = TrialTextProcessor()
 
     def load_model(self) -> bool:
         """Load the sentence transformer model."""
         try:
+            import torch
             log_with_timestamp(f"Loading model: {self.model_name}")
-            self.model = SentenceTransformer(self.model_name)
+
+            # Check for GPU availability
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            log_with_timestamp(f"Using device: {device}")
+
+            self.model = SentenceTransformer(self.model_name, device=device)
+
+            # For CPU, warn about large batch sizes and log worker count
+            if device == 'cpu':
+                log_with_timestamp(f"CPU workers: {self.num_workers}")
+                if self.encode_batch_size > 64:
+                    log_with_timestamp(f"WARNING: Large batch size ({self.encode_batch_size}) on CPU may be slow")
+                    log_with_timestamp(f"Recommend: --encode-batch-size 32 for optimal CPU performance")
 
             # Verify model dimension
             test_embedding = self.model.encode("test")
@@ -272,9 +287,24 @@ class ClinicalTrialsProcessor:
             return np.array([]).reshape(0, self.vector_dimension), []
 
         # Generate embeddings in batches
-        log_with_timestamp("Generating embeddings...")
+        log_with_timestamp(f"Generating embeddings (batch_size={self.encode_batch_size})...")
+
+        # For single worker, use simple encoding. For multi-worker, let encode handle it internally
+        if self.num_workers > 1:
+            log_with_timestamp(f"Using {self.num_workers} CPU workers for parallel encoding...")
+
         try:
-            embeddings = self.model.encode(all_texts, batch_size=32, show_progress_bar=True)
+            import torch
+            # Set number of threads for PyTorch
+            if self.num_workers > 1:
+                torch.set_num_threads(self.num_workers)
+
+            embeddings = self.model.encode(
+                all_texts,
+                batch_size=self.encode_batch_size,
+                show_progress_bar=True,
+                convert_to_numpy=True
+            )
 
             log_with_timestamp(f"Generated {len(embeddings)} embeddings with dimension {embeddings.shape[1]}")
 
@@ -363,6 +393,14 @@ def main():
         help="Number of trials to process at once"
     )
     parser.add_argument(
+        "--encode-batch-size", type=int, default=128,
+        help="Batch size for model encoding (larger = faster, more memory)"
+    )
+    parser.add_argument(
+        "--num-workers", type=int, default=1,
+        help="Number of CPU workers for parallel encoding (0 = auto, recommend 8-16 for CPU)"
+    )
+    parser.add_argument(
         "--max-chunk-length", type=int, default=500,
         help="Maximum chunk length for text splitting"
     )
@@ -399,7 +437,7 @@ def main():
 
         # Initialize processor
         log_with_timestamp("=== Starting Clinical Trials Processing ===")
-        processor = ClinicalTrialsProcessor(args.model_name, args.vector_dimension)
+        processor = ClinicalTrialsProcessor(args.model_name, args.vector_dimension, args.encode_batch_size, args.num_workers)
         processor.text_processor.max_chunk_length = args.max_chunk_length
         processor.text_processor.min_text_length = args.min_text_length
 

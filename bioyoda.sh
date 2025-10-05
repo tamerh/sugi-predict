@@ -247,6 +247,9 @@ run() {
     # Remove --keep-going if you want fail-fast behavior (stop on first failure)
     snakemake_cmd="${snakemake_cmd} --use-conda --keep-going --rerun-incomplete --retries 3 --printshellcmds ${dryrun}"
 
+    # Pass execution mode to Snakemake config
+    snakemake_cmd="${snakemake_cmd} --config execution_mode=${execution_mode}"
+
     # Add target at the end
     if [[ "$module" != "all" ]]; then
         snakemake_cmd="${snakemake_cmd} -- ${module}"

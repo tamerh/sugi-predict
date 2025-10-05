@@ -52,7 +52,14 @@ rule clinical_trials_download:
         mem_mb=ct_config["download_memory_mb"]
     shell:
         """
-        echo "Starting AACT database download..." > {log}
+j        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
+        echo "Starting AACT database download..." >> {log}
 
         python {params.script} \
             --download-dir {params.download_dir} \
@@ -84,7 +91,7 @@ rule clinical_trials_extract:
         trials_json = ct_config["trials_json"],
         trials_csv = os.path.join(PROCESSED_DIR, "trials_data.csv")
     params:
-        script = os.path.join(MODULE_SCRIPTS, "extract_text.py"),
+        script = os.path.join(MODULE_SCRIPTS, "extract_text_optimized.py"),
         extract_dir = os.path.join(RAW_DIR, "extracted"),
         min_summary_length = ct_config.get("min_summary_length", 100),
         include_flags = (
@@ -105,7 +112,14 @@ rule clinical_trials_extract:
         mem_mb=ct_config["extract_memory_mb"]
     shell:
         """
-        echo "Starting text extraction from AACT tables..." > {log}
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
+        echo "Starting text extraction from AACT tables..." >> {log}
 
         python {params.script} \
             --extract-dir {params.extract_dir} \
@@ -133,6 +147,8 @@ rule clinical_trials_process:
         model = ct_config["model_name"],
         vector_dim = ct_config["vector_dimension"],
         batch_size = ct_config.get("batch_size", 1000),
+        encode_batch_size = ct_config.get("encode_batch_size", 128),
+        num_workers = ct_config.get("num_workers", 1),
         max_chunk_length = ct_config.get("max_chunk_length", 500),
         min_text_length = ct_config.get("min_text_length", 50),
         limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
@@ -141,12 +157,19 @@ rule clinical_trials_process:
         os.path.join(LOG_DIR, "process.log")
     conda:
         config["conda_env"]
-    threads: 1
+    threads: ct_config.get("num_workers", 1)
     resources:
         mem_mb=ct_config["process_memory_mb"]
     shell:
         """
-        echo "Starting clinical trials processing..." > {log}
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
+        echo "Starting clinical trials processing..." >> {log}
 
         python {params.script} \
             --input-json {input.trials_json} \
@@ -155,6 +178,8 @@ rule clinical_trials_process:
             --model-name {params.model} \
             --vector-dimension {params.vector_dim} \
             --batch-size {params.batch_size} \
+            --encode-batch-size {params.encode_batch_size} \
+            --num-workers {params.num_workers} \
             --max-chunk-length {params.max_chunk_length} \
             --min-text-length {params.min_text_length} \
             {params.limit_flag} \
@@ -182,7 +207,14 @@ rule clinical_trials_validate:
         config["conda_env"]
     shell:
         """
-        echo "Validating clinical trials indices..." > {log}
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
+        echo "Validating clinical trials indices..." >> {log}
 
         python -c "
 import faiss

@@ -47,166 +47,51 @@ rule start_qdrant_server:
     """
     Start Qdrant server (local mode or cluster job).
     Creates connection_info.txt with server hostname and port.
+    Server starts on-demand when insert rules need it.
+    Insert rules already have proper data dependencies.
     """
     output:
         connection_info = CONNECTION_INFO
     params:
+        script = f"{QDRANT_SCRIPTS}/start_server.sh",
         container = QDRANT_CONTAINER,
         config_file = QDRANT_CONFIG,
         storage = QDRANT_STORAGE,
         memory_mb = config["qdrant"]["server"]["memory_mb"],
         runtime = config["qdrant"]["server"]["runtime_hours"] * 3600,
         job_name = "qdrant_server",
-        is_cluster = True,
+        is_cluster = config.get("execution_mode", "local") == "cluster",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "start_qdrant_server_cluster.log")
     log:
         f"{QDRANT_LOG_DIR}/server.log"
     shell:
         """
-        # Check if container exists
-        if [ ! -f {params.container} ]; then
-            echo "ERROR: Qdrant container not found at {params.container}"
-            echo "Please build it first: cd {QDRANT_SETUP} && ./build_container.sh"
-            exit 1
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
         fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
 
         # Detect execution mode
         if [ "{params.is_cluster}" = "True" ]; then
-            echo "Starting Qdrant server via cluster job..."
             MODE="cluster"
         else
-            echo "Starting Qdrant server in local mode..."
             MODE="local"
         fi
 
-        if [ "$MODE" = "cluster" ]; then
-            # ====== CLUSTER MODE: Submit as job ======
-
-            # Create job script
-            cat > {QDRANT_STORAGE}/start_server.sh <<'JOBSCRIPT'
-#!/bin/bash
-#$ -N {params.job_name}
-#$ -q scc
-#$ -l h_vmem={params.memory_mb}M
-#$ -l h_rt={params.runtime}
-#$ -cwd
-#$ -V
-#$ -o {log}
-#$ -j y
-
-set -e
-
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Qdrant server..."
-echo "Job ID: $JOB_ID"
-echo "Hostname: $(hostname)"
-
-# Set variables
-QDRANT_HOST=$(hostname)
-QDRANT_PORT=6333
-
-# Create connection info file
-cat > {output.connection_info} <<EOF
-# Qdrant Connection Information
-# Generated: $(date)
-# Job ID: $JOB_ID
-QDRANT_HOST=$QDRANT_HOST
-QDRANT_PORT=$QDRANT_PORT
-QDRANT_URL=http://$QDRANT_HOST:$QDRANT_PORT
-EOF
-
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Connection info: {output.connection_info}"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Server URL: http://$QDRANT_HOST:$QDRANT_PORT"
-
-# Cleanup on exit
-cleanup() {{
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Shutting down Qdrant server..."
-    rm -f {output.connection_info}
-}}
-trap cleanup EXIT
-
-# Start Qdrant
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Singularity container..."
-singularity run \
-    --bind {params.storage}:/qdrant/storage \
-    --bind {params.config_file}:/opt/qdrant/config.yaml \
-    {params.container} \
-    --config-path /opt/qdrant/config.yaml
-
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant server stopped"
-JOBSCRIPT
-
-            chmod +x {QDRANT_STORAGE}/start_server.sh
-
-            # Submit the job
-            echo "Submitting Qdrant server job..."
-            qsub {QDRANT_STORAGE}/start_server.sh
-
-            # Wait for connection_info.txt to appear (max 5 minutes)
-            echo "Waiting for Qdrant server to start..."
-            for i in {{1..60}}; do
-                if [ -f {output.connection_info} ]; then
-                    echo "Qdrant server started successfully!"
-                    cat {output.connection_info}
-                    sleep 10  # Give it a bit more time to fully initialize
-                    exit 0
-                fi
-                echo "  Waiting... ($i/60)"
-                sleep 5
-            done
-
-            echo "ERROR: Qdrant server did not start within 5 minutes"
-            echo "Check logs: {log}"
-            exit 1
-
-        else
-            # ====== LOCAL MODE: Start in background ======
-
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Qdrant server locally..." | tee {log}
-
-            # Set variables
-            QDRANT_HOST="localhost"
-            QDRANT_PORT=6333
-
-            # Create connection info file
-            cat > {output.connection_info} <<EOF
-# Qdrant Connection Information (Local Mode)
-# Generated: $(date)
-QDRANT_HOST=$QDRANT_HOST
-QDRANT_PORT=$QDRANT_PORT
-QDRANT_URL=http://$QDRANT_HOST:$QDRANT_PORT
-EOF
-
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Connection info: {output.connection_info}" | tee -a {log}
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Server URL: http://$QDRANT_HOST:$QDRANT_PORT" | tee -a {log}
-
-            # Start Qdrant in background
-            singularity run \
-                --bind {params.storage}:/qdrant/storage \
-                --bind {params.config_file}:/opt/qdrant/config.yaml \
-                {params.container} \
-                --config-path /opt/qdrant/config.yaml \
-                >> {log} 2>&1 &
-
-            QDRANT_PID=$!
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant server started (PID: $QDRANT_PID)" | tee -a {log}
-
-            # Save PID for cleanup
-            echo $QDRANT_PID > {QDRANT_STORAGE}/qdrant.pid
-
-            # Wait for server to be ready
-            echo "Waiting for Qdrant to be ready..."
-            for i in {{1..30}}; do
-                if curl -s http://localhost:6333/health > /dev/null 2>&1; then
-                    echo "Qdrant server is ready!"
-                    exit 0
-                fi
-                echo "  Waiting... ($i/30)"
-                sleep 2
-            done
-
-            echo "WARNING: Qdrant may not be fully ready yet, but continuing..."
-            echo "Check logs: {log}"
-        fi
+        # Run the start server script
+        bash {params.script} \
+            --container {params.container} \
+            --config {params.config_file} \
+            --storage {params.storage} \
+            --memory-mb {params.memory_mb} \
+            --runtime {params.runtime} \
+            --job-name {params.job_name} \
+            --mode $MODE \
+            --connection-info {output.connection_info} \
+            --log {log} \
+            2>&1 | tee -a {log}
         """
 
 # ============================================================================
@@ -238,13 +123,20 @@ rule insert_pubmed_to_qdrant:
         f"{QDRANT_LOG_DIR}/insert_pubmed.log"
     shell:
         """
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
         # Source connection info
         source {input.connection_info}
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting PubMed to Qdrant..."
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting PubMed to Qdrant..." >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
 
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
@@ -286,13 +178,20 @@ rule insert_clinical_trials_to_qdrant:
         f"{QDRANT_LOG_DIR}/insert_clinical_trials.log"
     shell:
         """
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
         # Source connection info
         source {input.connection_info}
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Clinical Trials to Qdrant..."
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Clinical Trials to Qdrant..." >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
 
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
@@ -330,8 +229,15 @@ rule export_qdrant_to_faiss:
         f"{QDRANT_LOG_DIR}/export_to_faiss.log"
     shell:
         """
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS export not yet implemented"
-        echo "This will export Qdrant → FAISS for backup"
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS export not yet implemented" >> {log}
+        echo "This will export Qdrant → FAISS for backup" >> {log}
 
         # TODO: Implement export script
         touch {output.index}

@@ -9,31 +9,11 @@ from sentence_transformers import SentenceTransformer
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-# --- Load Configuration from pubmed.env ---
-def load_env_config():
-    """Load configuration from pubmed.env file."""
-    config = {}
-    env_file = os.path.join(os.path.dirname(__file__), 'pubmed.env')
-
-    if os.path.exists(env_file):
-        with open(env_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    config[key.strip()] = value.strip().strip('"').strip("'")
-
-    return config
-
-# Load configuration
-env_config = load_env_config()
-
 # --- Configuration ---
-MODEL_NAME = env_config.get('MODEL_NAME', 'all-MiniLM-L6-v2')
-VECTOR_DIMENSION = int(env_config.get('VECTOR_DIMENSION', '384'))
-BASE_DATA_DIR = env_config.get('BASE_DATA_DIR', '/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/pubmed')
-# Point to the new sorted file for efficiency
-DELETED_PMIDS_PATH = os.path.join(BASE_DATA_DIR, 'deleted.pmids.sorted.gz')
+# Will be set from command-line arguments in main()
+MODEL_NAME = None
+VECTOR_DIMENSION = None
+DELETED_PMIDS_PATH = None
 
 # --- Helper Functions ---
 def log_with_timestamp(message):
@@ -56,7 +36,7 @@ def load_deleted_pmids(path):
     return deleted_set
 
 # --- Main Processing Function ---
-def process_file(input_path, output_dir, deleted_pmids_set, limit=None):
+def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_dim, limit=None):
     """
     Processes a single gzipped PubMed XML file, creates a FAISS index and metadata file,
     skipping any PMIDs that are in the deleted_pmids_set.
@@ -65,6 +45,8 @@ def process_file(input_path, output_dir, deleted_pmids_set, limit=None):
         input_path: Path to input .xml.gz file
         output_dir: Directory to save output files
         deleted_pmids_set: Set of deleted PMIDs to skip
+        model_name: Name of the sentence transformer model
+        vector_dim: Dimension of the vectors
         limit: Optional limit on number of abstracts to process (for testing)
     """
     log_with_timestamp(f"--- Processing {os.path.basename(input_path)} ---")
@@ -80,11 +62,11 @@ def process_file(input_path, output_dir, deleted_pmids_set, limit=None):
         log_with_timestamp(f"Output for {base_name} already exists. Skipping.")
         return
 
-    log_with_timestamp(f"Loading sentence-transformer model: {MODEL_NAME}...")
-    model = SentenceTransformer(MODEL_NAME)
+    log_with_timestamp(f"Loading sentence-transformer model: {model_name}...")
+    model = SentenceTransformer(model_name)
     log_with_timestamp("Model loaded.")
 
-    index = faiss.IndexFlatL2(VECTOR_DIMENSION)
+    index = faiss.IndexFlatL2(vector_dim)
     metadata = {}
     vector_count = 0
     skipped_count = 0
@@ -137,13 +119,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process a single PubMed XML file.")
     parser.add_argument("input_file", type=str, help="Path to the input .xml.gz file.")
     parser.add_argument("output_dir", type=str, help="Directory to save the output files.")
+    parser.add_argument("--deleted-pmids", type=str, required=True, help="Path to deleted PMIDs file.")
+    parser.add_argument("--model-name", type=str, required=True, help="Name of the sentence transformer model.")
+    parser.add_argument("--vector-dim", type=int, required=True, help="Dimension of the vectors.")
     parser.add_argument("--limit", type=int, default=None,
                         help="Process only first N abstracts (for testing). Default: process all.")
 
     args = parser.parse_args()
 
     # Load the deleted PMIDs set once at the start of the script
-    deleted_pmids = load_deleted_pmids(DELETED_PMIDS_PATH)
+    deleted_pmids = load_deleted_pmids(args.deleted_pmids)
 
-    process_file(args.input_file, args.output_dir, deleted_pmids, limit=args.limit)
+    process_file(args.input_file, args.output_dir, deleted_pmids, args.model_name, args.vector_dim, limit=args.limit)
 

@@ -5,7 +5,6 @@ import sys
 import time
 from ftplib import FTP
 from tqdm import tqdm
-from config_loader import get_config
 from datetime import datetime
 
 def log(message):
@@ -14,15 +13,10 @@ def log(message):
     print(f"[{timestamp}] {message}", flush=True)
 
 # --- Configuration ---
-config = get_config()
-BASE_DATA_DIR = str(config.get_path('BASE_DATA_DIR'))
-BASELINE_DIR = os.path.join(BASE_DATA_DIR, 'baseline')
-UPDATE_DIR = os.path.join(BASE_DATA_DIR, 'updatefiles')
-
-# Ensure directories exist
-os.makedirs(BASE_DATA_DIR, exist_ok=True)
-os.makedirs(BASELINE_DIR, exist_ok=True)
-os.makedirs(UPDATE_DIR, exist_ok=True)
+# Will be set from command-line arguments in main()
+BASE_DATA_DIR = None
+BASELINE_DIR = None
+UPDATE_DIR = None
 
 PUBMED_FTP_SERVER = 'ftp.ncbi.nlm.nih.gov'
 BASELINE_FTP_PATH = '/pubmed/baseline/'
@@ -185,16 +179,29 @@ def sort_deleted_pmids(base_dir):
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    # Check for debug mode argument
-    debug_mode = False
-    debug_limit = 3
-    if len(sys.argv) > 1 and sys.argv[1] == '--debug':
-        debug_mode = True
-        if len(sys.argv) > 2:
-            try:
-                debug_limit = int(sys.argv[2])
-            except ValueError:
-                log(f"Invalid debug limit, using default: {debug_limit}")
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Download PubMed data from NCBI FTP')
+    parser.add_argument('--raw-dir', required=True, help='Base directory for raw data')
+    parser.add_argument('--debug', type=int, default=0, help='Debug mode: limit number of files to download (0 = disabled)')
+
+    args = parser.parse_args()
+
+    # Set configuration from arguments
+    BASE_DATA_DIR = args.raw_dir
+    BASELINE_DIR = os.path.join(BASE_DATA_DIR, 'baseline')
+    UPDATE_DIR = os.path.join(BASE_DATA_DIR, 'updatefiles')
+
+    # Ensure directories exist
+    os.makedirs(BASE_DATA_DIR, exist_ok=True)
+    os.makedirs(BASELINE_DIR, exist_ok=True)
+    os.makedirs(UPDATE_DIR, exist_ok=True)
+
+    # Check for debug mode
+    debug_mode = args.debug > 0
+    debug_limit = args.debug if debug_mode else 3
+
+    if debug_mode:
         log("=" * 70)
         log(f"DEBUG MODE: Limited download ({debug_limit} files)")
         log("=" * 70)

@@ -3,21 +3,16 @@ import json
 import faiss
 import numpy as np
 import psutil
+import argparse
 from datetime import datetime
 
 # --- Configuration ---
-from config_loader import get_config
-
-# --- Configuration from .env ---
-config = get_config()
-BASE_PROCESSED_DIR = str(config.get_path('PROCESSED_DIR'))
-
-# Check if MODEL_FINAL_DIR is set (for model-specific directory structure)
-FINAL_OUTPUT_DIR = os.environ.get('MODEL_FINAL_DIR', str(config.get_path('FINAL_DIR')))
-
-MASTER_INDEX_PATH = os.path.join(FINAL_OUTPUT_DIR, 'master_pubmed.index')
-MASTER_METADATA_PATH = os.path.join(FINAL_OUTPUT_DIR, 'master_metadata.json')
-VECTOR_DIMENSION = config.get_int('VECTOR_DIMENSION', 384)
+# Will be set from command-line arguments in main()
+BASE_PROCESSED_DIR = None
+FINAL_OUTPUT_DIR = None
+MASTER_INDEX_PATH = None
+MASTER_METADATA_PATH = None
+VECTOR_DIMENSION = None
 
 # --- Helper Functions ---
 def log_with_timestamp(message: str) -> None:
@@ -36,9 +31,9 @@ def get_memory_usage() -> tuple:
     )
 
 # --- Main Merging Logic ---
-def merge_all_parts():
+def merge_all_parts(processed_dir, output_dir, vector_dim):
     log_with_timestamp("--- Starting Merge Process ---")
-    os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # System information
     memory = psutil.virtual_memory()
@@ -47,13 +42,13 @@ def merge_all_parts():
     # 1. Discover all the individual file parts
     index_files = []
     metadata_files = []
-    for root, _, files in os.walk(BASE_PROCESSED_DIR):
+    for root, _, files in os.walk(processed_dir):
         for file in files:
             if file.endswith('.index'):
                 index_files.append(os.path.join(root, file))
             elif file.endswith('.json'):
                 metadata_files.append(os.path.join(root, file))
-    
+
     index_files.sort()
     metadata_files.sort()
 
@@ -64,11 +59,14 @@ def merge_all_parts():
     log_with_timestamp(f"Found {len(index_files)} index/metadata pairs to merge.")
 
     # 2. Initialize master index and metadata
-    master_index = faiss.IndexFlatL2(VECTOR_DIMENSION)
+    master_index = faiss.IndexFlatL2(vector_dim)
     master_metadata = {}
     master_vector_count = 0
 
-    log_with_timestamp(f"Initialized master index with dimension {VECTOR_DIMENSION}")
+    master_index_path = os.path.join(output_dir, 'master_pubmed.index')
+    master_metadata_path = os.path.join(output_dir, 'master_metadata.json')
+
+    log_with_timestamp(f"Initialized master index with dimension {vector_dim}")
 
     # 3. Iterate and merge
     for i in range(len(index_files)):
@@ -104,11 +102,11 @@ def merge_all_parts():
     log_with_timestamp(f"Memory status before saving: {used_mb:.1f}MB used, {avail_mb:.1f}MB available ({percent:.1f}%)")
 
     # 4. Save the final master files
-    log_with_timestamp(f"Saving master FAISS index to {MASTER_INDEX_PATH}...")
-    faiss.write_index(master_index, MASTER_INDEX_PATH)
+    log_with_timestamp(f"Saving master FAISS index to {master_index_path}...")
+    faiss.write_index(master_index, master_index_path)
 
-    log_with_timestamp(f"Saving master metadata to {MASTER_METADATA_PATH}...")
-    with open(MASTER_METADATA_PATH, 'w') as f:
+    log_with_timestamp(f"Saving master metadata to {master_metadata_path}...")
+    with open(master_metadata_path, 'w') as f:
         json.dump(master_metadata, f)
 
     # Final statistics
@@ -127,4 +125,11 @@ def merge_all_parts():
     log_with_timestamp("--- Merge Process Complete ---")
 
 if __name__ == "__main__":
-    merge_all_parts()
+    parser = argparse.ArgumentParser(description='Merge PubMed FAISS indices and metadata')
+    parser.add_argument('--processed-dir', required=True, help='Directory containing processed index files')
+    parser.add_argument('--output-dir', required=True, help='Directory to save merged output files')
+    parser.add_argument('--vector-dim', type=int, required=True, help='Dimension of the vectors')
+
+    args = parser.parse_args()
+
+    merge_all_parts(args.processed_dir, args.output_dir, args.vector_dim)

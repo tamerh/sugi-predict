@@ -9,24 +9,24 @@
 project_name: "bioyoda"
 conda_env: "bioyoda"
 
-# Base Paths
-base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda"
-data_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data"
-scripts_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/modules"
-logs_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs"
+# Base Paths - DEV ENVIRONMENT
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev"
+data_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data"
+scripts_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/modules"
+logs_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs"
 
 # PubMed Module Configuration - TEST MODE
 pubmed:
-  # Data directories (same as production - test will overwrite)
-  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/pubmed"
-  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/pubmed"
-  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/pubmed"
+  # Data directories - DEV ENVIRONMENT
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/raw/pubmed"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/pubmed"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/pubmed"
 
   # Files
-  file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/pubmed_files.txt"
-  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.json"
+  file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/pubmed_files.txt"
+  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/master_pubmed.index"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/master_pubmed.json"
 
   # Model settings (same as production)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -53,16 +53,16 @@ pubmed:
 
 # Clinical Trials Module Configuration - TEST MODE
 clinical_trials:
-  # Data directories (same as production)
-  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/clinical_trials"
-  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials"
-  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/clinical_trials"
+  # Data directories - DEV ENVIRONMENT
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/raw/clinical_trials"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/clinical_trials"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/clinical_trials"
 
   # Output files
-  trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials/trials_data.json"
-  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.json"
+  trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/clinical_trials/trials_data.json"
+  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials/clinical_trials.index"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials/clinical_trials.json"
 
   # Model settings (same as PubMed)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -70,6 +70,8 @@ clinical_trials:
 
   # Processing settings
   batch_size: 1000
+  encode_batch_size: 32        # Batch size for model encoding (optimized for CPU)
+  num_workers: 8               # Number of CPU workers for parallel encoding
   max_chunk_length: 500
   min_text_length: 50
   min_summary_length: 100
@@ -83,7 +85,7 @@ clinical_trials:
 
   # TEST MODE SETTINGS
   test_mode: true              # Enable test optimizations
-  test_trials_limit: 100       # Process only first 100 trials
+  test_trials_limit: 1000      # Process only first 1000 trials (updated from 100)
 
   # Job resources - OPTIMIZED FOR TEST
   download_memory_mb: 8192     # 8GB (vs 16GB production)
@@ -98,9 +100,9 @@ clinical_trials:
 
 # Qdrant Module Configuration - TEST MODE
 qdrant:
-  # Storage
-  storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
+  # Storage - DEV ENVIRONMENT
+  storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/qdrant"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/qdrant"
 
   # Insertion settings
   batch_size: 100              # Small batches for testing (vs 1000 production)
@@ -110,8 +112,8 @@ qdrant:
     memory_mb: 16384           # 16GB (vs 128GB production) - enough for test data
     runtime_hours: 4           # 4 hours (vs 48 hours production)
 
-# Output directory for final FAISS exports
-final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final"
+# Output directory for final FAISS exports - DEV ENVIRONMENT
+final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final"
 
 # HPC Cluster Configuration
 cluster:
