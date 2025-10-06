@@ -105,7 +105,7 @@ rule insert_pubmed_to_q:
     Waits for PubMed processing to complete before insertion.
     """
     input:
-        pubmed_complete = rules.pubmed_processing_complete.output.done,  # Wait for FAISS processing
+        pubmed_complete = rules.pubmed_processing_complete.output.done,
         connection_info = rules.start_q_server.output.connection_info
     output:
         done = f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done"
@@ -160,7 +160,7 @@ rule insert_clinical_trials_to_q:
     Independent of PubMed - can run separately.
     """
     input:
-        trials_data = CLINICAL_TRIALS_DATA,
+        trials_data = CLINICAL_TRIALS_DATA,  # This dependency ensures processing completes first
         connection_info = rules.start_q_server.output.connection_info
     output:
         done = f"{QDRANT_STORAGE}/collections/clinical_trials.done"

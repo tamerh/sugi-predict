@@ -142,10 +142,12 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     # Initialize Qdrant client
     log_with_timestamp("Connecting to Qdrant...")
     try:
-        client = QdrantClient(url=qdrant_url)
+        # Increase timeout to 300s (5 minutes) for slow NFS writes
+        client = QdrantClient(url=qdrant_url, timeout=300)
         # Test connection
         collections = client.get_collections()
         log_with_timestamp(f"Connected. Existing collections: {len(collections.collections)}")
+        log_with_timestamp(f"Client timeout set to 300 seconds")
     except Exception as e:
         log_with_timestamp(f"ERROR: Failed to connect to Qdrant at {qdrant_url}")
         log_with_timestamp(f"Error: {e}")

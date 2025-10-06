@@ -30,6 +30,11 @@ qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=4:00:00
 
 qlogin -pe smp 4 -q scc -l h_vmem=128G -l h_rt=4:00:00
 
+
+qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=168:00:00
+
+qlogin -pe smp 4 -q gpu -l h_vmem=64G -l h_rt=168:00:00
+
 mamba env create -f /data/scc/ag-gruber/GROUP/tgur/x/bioyoda/tamer.yml
 
 mamba create --name tamer python=3.12
@@ -59,3 +64,27 @@ https://scispace.com/
 https://www.semanticscholar.org/
 https://elicit.com/welcome
 https://scite.ai/pricing
+
+
+ What you CAN optimize for GPU nodes:
+
+  You can increase batch sizes when on GPU (GPUs have more memory and are faster):
+
+  # On GPU node, use larger batch sizes
+  python process_trials.py \
+    --encode-batch-size 256 \  # Instead of 128 (default)
+    --batch-size 5000 \         # Instead of 1000
+    --num-workers 1             # GPU doesn't need many CPU workers
+
+  For CPU nodes (what you have now):
+
+  # On CPU node, smaller batches with more workers
+  python process_trials.py \
+    --encode-batch-size 32 \    # Smaller for CPU
+    --batch-size 1000 \
+    --num-workers 8             # More CPU parallelism
+
+  So just request the GPU node and run the same command - it will automatically use the GPU! The only
+  optimization you'd want is to increase batch sizes to take advantage of GPU memory.
+
+  

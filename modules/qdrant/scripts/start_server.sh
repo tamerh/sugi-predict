@@ -98,25 +98,47 @@ JOBSCRIPT
 
     chmod +x "$STORAGE/start_server_job.sh"
 
-    # Submit the job
-    echo "Submitting Qdrant server job..."
-    qsub "$STORAGE/start_server_job.sh"
+    # Check if a job is already running or waiting
+    EXISTING_JOB=$(qstat -u $(whoami) 2>/dev/null | grep "$JOB_NAME" | awk '{print $1}' | head -1 || true)
 
-    # Wait for connection_info.txt to appear (max 5 minutes)
-    echo "Waiting for Qdrant server to start..."
-    for i in {1..60}; do
+    if [ -n "$EXISTING_JOB" ]; then
+        echo "Qdrant server job already exists: $EXISTING_JOB"
+        echo "Job status:"
+        qstat -j $EXISTING_JOB 2>/dev/null | grep -E "(job_number|state)" || true
+
+        # If connection info already exists, we're done
+        if [ -f "$CONNECTION_INFO" ]; then
+            echo "Connection info already exists, server is running"
+            cat "$CONNECTION_INFO"
+            exit 0
+        fi
+
+        echo "Waiting for job $EXISTING_JOB to start and create connection info..."
+    else
+        # Submit the job
+        echo "Submitting Qdrant server job..."
+        JOB_ID=$(qsub "$STORAGE/start_server_job.sh" | grep -oE '[0-9]+')
+        echo "Submitted job: $JOB_ID"
+    fi
+
+    # Wait for connection_info.txt to appear (max 30 minutes for job to start + server to initialize)
+    echo "Waiting for Qdrant server to start (this may take a while if job is queued)..."
+    for i in {1..360}; do
         if [ -f "$CONNECTION_INFO" ]; then
             echo "Qdrant server started successfully!"
             cat "$CONNECTION_INFO"
             sleep 10  # Give it a bit more time to fully initialize
             exit 0
         fi
-        echo "  Waiting... ($i/60)"
+        if [ $((i % 12)) -eq 0 ]; then
+            echo "  Still waiting... ($((i/12)) minutes elapsed)"
+        fi
         sleep 5
     done
 
-    echo "ERROR: Qdrant server did not start within 5 minutes"
+    echo "ERROR: Qdrant server did not start within 30 minutes"
     echo "Check logs: $LOG_FILE"
+    echo "Check job status with: qstat -u $(whoami)"
     exit 1
 
 else
