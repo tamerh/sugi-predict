@@ -1,112 +1,77 @@
 ##############################################################################
 #
-#   Qdrant Module Snakefile
+#   Qdrant Module Snakefile (Standalone)
 #   Vector database insertion and management
 #
 #   AUTHOR: Tamer Gur
 #   PROJECT: BioYoda - AI-powered biomedical search system
 #   LICENSE: Apache_2.0
 #
+#   This is a standalone Snakefile for Qdrant operations.
+#   It does NOT depend on the main data processing pipeline.
+#
 ##############################################################################
 
 import os
-import time
-import subprocess
+import sys
+
+# Load configuration
+configfile: "config/config.yaml"
 
 # Module-specific configuration
 QDRANT_MODULE_DIR = "modules/qdrant"
 QDRANT_SCRIPTS = f"{QDRANT_MODULE_DIR}/scripts"
-QDRANT_SETUP = f"{QDRANT_MODULE_DIR}/setup"
 
 # Paths from config
 QDRANT_STORAGE = config["qdrant"]["storage_dir"]
 QDRANT_LOG_DIR = config["qdrant"]["log_dir"]
-QDRANT_CONTAINER = f"{QDRANT_SETUP}/singularity/qdrant.sif"
-QDRANT_CONFIG = f"{QDRANT_SETUP}/singularity/config.yaml"
 CONNECTION_INFO = f"{QDRANT_STORAGE}/connection_info.txt"
 
-# Collection directories
+# Collection directories (where processed data lives)
 PUBMED_FAISS_DIR = config["pubmed"]["processed_dir"]
 CLINICAL_TRIALS_FAISS_DIR = config["clinical_trials"]["final_dir"]
-CLINICAL_TRIALS_DATA = config["clinical_trials"]["final_index"]
 
 # Ensure directories exist
 os.makedirs(QDRANT_STORAGE, exist_ok=True)
 os.makedirs(f"{QDRANT_STORAGE}/collections", exist_ok=True)
 os.makedirs(QDRANT_LOG_DIR, exist_ok=True)
 
-# Local rules - these run on head node, not submitted to cluster
-localrules: start_q_server, q_all
+# Local rules
+localrules: insert_all
 
 # ============================================================================
-# Rule: Start Qdrant Server
+# Top-level targets
 # ============================================================================
 
-# workflow.cores > 1  # Heuristic: cluster mode if cores > 1
-rule start_q_server:
-    """
-    Start Qdrant server (local mode or cluster job).
-    Creates connection_info.txt with server hostname and port.
-    Server starts on-demand when insert rules need it.
-    Insert rules already have proper data dependencies.
-    """
-    output:
-        connection_info = CONNECTION_INFO
-    params:
-        script = f"{QDRANT_SCRIPTS}/start_server.sh",
-        container = QDRANT_CONTAINER,
-        config_file = QDRANT_CONFIG,
-        storage = QDRANT_STORAGE,
-        memory_mb = config["qdrant"]["server"]["memory_mb"],
-        runtime = config["qdrant"]["server"]["runtime_hours"] * 3600,
-        job_name = "q_server",
-        is_cluster = config.get("execution_mode", "local") == "cluster",
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "start_q_server_cluster.log")
-    log:
-        f"{QDRANT_LOG_DIR}/server.log"
-    shell:
-        """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
+rule insert_all:
+    """Insert all datasets to Qdrant."""
+    input:
+        f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done",
+        f"{QDRANT_STORAGE}/collections/clinical_trials.done"
+    default_target: True
 
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
+rule insert_pubmed:
+    """Insert only PubMed to Qdrant."""
+    input:
+        f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done"
 
-        # Detect execution mode
-        if [ "{params.is_cluster}" = "True" ]; then
-            MODE="cluster"
-        else
-            MODE="local"
-        fi
-
-        # Run the start server script
-        bash {params.script} \
-            --container {params.container} \
-            --config {params.config_file} \
-            --storage {params.storage} \
-            --memory-mb {params.memory_mb} \
-            --runtime {params.runtime} \
-            --job-name {params.job_name} \
-            --mode $MODE \
-            --connection-info {output.connection_info} \
-            --log {log} \
-            2>&1 | tee -a {log}
-        """
+rule insert_clinical_trials:
+    """Insert only Clinical Trials to Qdrant."""
+    input:
+        f"{QDRANT_STORAGE}/collections/clinical_trials.done"
 
 # ============================================================================
 # Rule: Insert PubMed to Qdrant
 # ============================================================================
 
-rule insert_pubmed_to_q:
+rule insert_pubmed_to_qdrant:
     """
     Insert PubMed FAISS files to Qdrant collection.
-    Processes all individual FAISS files sequentially.
-    Waits for PubMed processing to complete before insertion.
+    Assumes Qdrant server is already running and connection_info.txt exists.
+    Assumes PubMed data processing is complete.
     """
     input:
-        pubmed_complete = rules.pubmed_processing_complete.output.done,
-        connection_info = rules.start_q_server.output.connection_info
+        connection_info = CONNECTION_INFO
     output:
         done = f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done"
     params:
@@ -114,9 +79,10 @@ rule insert_pubmed_to_q:
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = PUBMED_FAISS_DIR,
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_pubmed_to_q_cluster.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_pubmed_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["pubmed"]["qdrant"]["memory_mb"]
+        mem_mb = config["pubmed"]["qdrant"]["memory_mb"],
+        runtime = 604800  # 1 week
     conda:
         config["conda_env"]
     log:
@@ -130,13 +96,27 @@ rule insert_pubmed_to_q:
 
         echo "==================== RUN STARTED: $(date) ====================" > {log}
 
+        # Check if connection info exists
+        if [ ! -f {input.connection_info} ]; then
+            echo "ERROR: Connection info not found at {input.connection_info}" | tee -a {log}
+            echo "Please start Qdrant server first: ./bioyoda.sh qdrant start" | tee -a {log}
+            exit 1
+        fi
+
         # Source connection info
         source {input.connection_info}
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting PubMed to Qdrant..." >> {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting PubMed to Qdrant..." | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" | tee -a {log}
+
+        # Check if FAISS data exists (search recursively in subdirectories)
+        if [ ! -d {params.faiss_dir} ] || [ -z "$(find {params.faiss_dir} -name '*.index' -type f 2>/dev/null | head -1)" ]; then
+            echo "ERROR: No FAISS data found in {params.faiss_dir}" | tee -a {log}
+            echo "Please run PubMed processing first: ./bioyoda.sh run pubmed" | tee -a {log}
+            exit 1
+        fi
 
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
@@ -154,24 +134,25 @@ rule insert_pubmed_to_q:
 # Rule: Insert Clinical Trials to Qdrant
 # ============================================================================
 
-rule insert_clinical_trials_to_q:
+rule insert_clinical_trials_to_qdrant:
     """
     Insert Clinical Trials to Qdrant collection.
-    Independent of PubMed - can run separately.
+    Assumes Qdrant server is already running and connection_info.txt exists.
+    Assumes Clinical Trials data processing is complete.
     """
     input:
-        trials_data = CLINICAL_TRIALS_DATA,  # This dependency ensures processing completes first
-        connection_info = rules.start_q_server.output.connection_info
+        connection_info = CONNECTION_INFO
     output:
         done = f"{QDRANT_STORAGE}/collections/clinical_trials.done"
     params:
         collection = config["clinical_trials"]["qdrant"]["collection_name"],
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = CLINICAL_TRIALS_FAISS_DIR,
-        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",  # Will create separate script if needed
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_q_cluster.log")
+        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"]
+        mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"],
+        runtime = 604800  # 1 week
     conda:
         config["conda_env"]
     log:
@@ -185,13 +166,27 @@ rule insert_clinical_trials_to_q:
 
         echo "==================== RUN STARTED: $(date) ====================" > {log}
 
+        # Check if connection info exists
+        if [ ! -f {input.connection_info} ]; then
+            echo "ERROR: Connection info not found at {input.connection_info}" | tee -a {log}
+            echo "Please start Qdrant server first: ./bioyoda.sh qdrant start" | tee -a {log}
+            exit 1
+        fi
+
         # Source connection info
         source {input.connection_info}
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Clinical Trials to Qdrant..." >> {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Clinical Trials to Qdrant..." | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" | tee -a {log}
+
+        # Check if FAISS data exists (search recursively in subdirectories)
+        if [ ! -d {params.faiss_dir} ] || [ -z "$(find {params.faiss_dir} -name '*.index' -type f 2>/dev/null | head -1)" ]; then
+            echo "ERROR: No FAISS data found in {params.faiss_dir}" | tee -a {log}
+            echo "Please run Clinical Trials processing first: ./bioyoda.sh run clinical_trials" | tee -a {log}
+            exit 1
+        fi
 
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
@@ -201,55 +196,20 @@ rule insert_clinical_trials_to_q:
             2>&1 | tee -a {log}
 
         # Mark as done
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Clinical Trials insertion (TODO)" > {output.done}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Clinical Trials insertion complete" > {output.done}
         echo "Completed at: $(date)" >> {output.done}
         """
 
 # ============================================================================
-# Rule: Export Qdrant to FAISS (Optional Backup)
+# Pipeline Completion Handlers
 # ============================================================================
 
-rule export_q_to_faiss:
-    """
-    Export Qdrant collection back to FAISS format (lossless backup).
-    Optional step for archival purposes.
-    """
-    input:
-        done = rules.insert_pubmed_to_q.output.done,
-        connection_info = rules.start_q_server.output.connection_info
-    output:
-        index = f"{config['final_dir']}/pubmed/from_qdrant.index",
-        metadata = f"{config['final_dir']}/pubmed/from_qdrant_metadata.pkl"
-    params:
-        collection = config["pubmed"]["qdrant"]["collection_name"],
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "export_q_to_faiss.log")
-    resources:
-        mem_mb = 100000  # ~100GB for full export
-    log:
-        f"{QDRANT_LOG_DIR}/export_to_faiss.log"
-    shell:
-        """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
+onsuccess:
+    print("\n" + "="*80, file=sys.stderr)
+    print("Qdrant insertion completed successfully!", file=sys.stderr)
+    print("="*80, file=sys.stderr)
 
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
-
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS export not yet implemented" >> {log}
-        echo "This will export Qdrant → FAISS for backup" >> {log}
-
-        # TODO: Implement export script
-        touch {output.index}
-        touch {output.metadata}
-        """
-
-# ============================================================================
-# Top-level target for Qdrant module
-# ============================================================================
-
-rule q_all:
-    input:
-        rules.insert_pubmed_to_q.output.done,
-        rules.insert_clinical_trials_to_q.output.done
-    default_target: True
+onerror:
+    print("\n" + "="*80, file=sys.stderr)
+    print("Qdrant insertion failed!", file=sys.stderr)
+    print("="*80, file=sys.stderr)

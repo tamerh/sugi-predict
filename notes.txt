@@ -13,6 +13,8 @@ Lets plan the tasks and discuss first.
 bash -c "source ~/.bashrc && conda activate bioyoda && snakemake --help" 2>&1 | grep -A5 "positional arguments"           │
 
 
+./bioyoda.sh qdrant insert pubmed
+
  ./bioyoda.sh run clinical_trials --config config/test_config.yaml --local
 
 ./bioyoda.sh run pubmed --config config/test_config.yaml --local

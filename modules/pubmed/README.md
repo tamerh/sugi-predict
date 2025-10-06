@@ -1,220 +1,211 @@
 # PubMed Module
 
-Snakemake workflow for downloading, processing, and indexing PubMed literature for semantic search.
+Processes PubMed literature into FAISS vector indices for semantic search.
 
 ## Overview
 
-This module builds a semantic search index from PubMed abstracts using:
+This module downloads and processes PubMed abstracts to create semantic search indices:
 - **Model**: S-BioBERT (`pritamdeka/S-BioBERT-snli-multinli-stsb`) - 768 dimensions
-- **Vector DB**: FAISS (FlatL2 index) + Qdrant (automatic)
+- **Output**: FAISS indices (FlatL2) with metadata
 - **Source**: PubMed baseline + update files from NCBI FTP
 - **Scale**: ~1200+ files, ~30M abstracts
 
-**Note**: This module creates FAISS indices only. Qdrant vector database insertion happens automatically via the infrastructure module.
+**Note**: This module creates FAISS indices **only**. For Qdrant vector database insertion, see `modules/qdrant/README.md`.
 
 ## Quick Start
 
 ### Production Run
 ```bash
-# Full PubMed processing + automatic Qdrant insertion
+# Process all PubMed data
 ./bioyoda.sh run pubmed --cluster --bg --jobs 100
 
-# What happens:
-# 1. Downloads ~1200 PubMed XML files
-# 2. Processes in parallel → creates FAISS indices
-# 3. Auto-starts Qdrant server
-# 4. Sequentially inserts FAISS data to Qdrant
+# Monitor progress
+tail -f logs/bioyoda_pubmed_main.log
 ```
 
 ### Test Run
 ```bash
-# Fast test: 2 files × 1000 abstracts + Qdrant insertion
-./bioyoda.sh run pubmed --config config/test_config.yaml --cluster --bg --jobs 5
+# Process small sample (2 files, 1000 abstracts each)
+./bioyoda.sh run pubmed --config config/test_config.yaml --local
 
-# Monitor
-tail -f logs/bioyoda_pubmed_main.log
-tail -f logs/qdrant/insert_pubmed.log
+# Faster local testing
+./bioyoda.sh run pubmed --config config/test_config.yaml --cores 4
 ```
 
-## Pipeline Steps (This Module)
+## Pipeline Steps
 
-1. **Download** (`download.py`)
-   - Fetches PubMed XML files from NCBI FTP
-   - Downloads deleted PMIDs list
-   - Supports debug mode (limited files)
+### 1. Download (`download.py`)
+- Fetches PubMed XML files from NCBI FTP
+- Downloads deleted PMIDs list
+- Supports debug mode (limited files for testing)
 
-2. **Process** (`index.py`) - **Parallel on cluster**
-   - Parses XML to extract titles + abstracts
-   - Skips deleted PMIDs
-   - Creates embeddings using S-BioBERT
-   - Outputs: `*.index` (FAISS) + `*_metadata.pkl` (metadata)
-   - Supports `--limit N` for testing (processes first N abstracts)
-
-3. **Merge** (`merge0.py`) - **Optional**
-   - Combines all individual indices into master index
-   - Memory-efficient streaming approach
-   - **Performance**: ~700s for full dataset, 180MB RAM
-   - **Note**: Not required for Qdrant insertion (inserts from unmerged files)
-
-4. **Qdrant Insertion** (Automatic) - **See `modules/qdrant/` for details**
-   - Auto-started after FAISS creation completes
-   - Sequentially reads unmerged FAISS files
-   - Inserts to Qdrant `pubmed_abstracts` collection
-   - Creates searchable vector database
-
-## Directory Structure
-
+```bash
+# Output location
+data/raw/pubmed/
+├── baseline/*.xml.gz
+├── updatefiles/*.xml.gz
+└── deleted.pmids.sorted.gz
 ```
-modules/pubmed/
-├── Snakefile              # Workflow definition (4 rules)
-├── scripts/
-│   ├── download.py        # FTP download + deleted PMIDs
-│   ├── index.py           # XML parsing + FAISS indexing
-│   ├── merge0.py          # Index merging (fastest)
-│   ├── config_loader.py   # Config helper
-│   └── pubmed.env         # Script-level settings
-└── README.md              # This file
+
+### 2. Process (`index.py`) - Parallel on Cluster
+- Parses XML to extract titles + abstracts
+- Filters out deleted PMIDs
+- Generates embeddings using S-BioBERT
+- Creates FAISS indices + metadata files
+
+**Key Parameters**:
+- `--limit N`: Process only first N abstracts (for testing)
+- `--batch-size`: Embedding batch size (default: 128)
+
+```bash
+# Output per file
+data/processed/pubmed/baseline/
+├── pubmed25n0001.index          # FAISS vectors
+├── pubmed25n0001.json           # Metadata
+├── pubmed25n0002.index
+└── pubmed25n0002.json
+```
+
+### 3. Merge (Optional)
+Combines individual indices into master index. **Not required** - Qdrant inserts from unmerged files.
+
+```bash
+# Optional: create master index
+# Output: data/final/pubmed/master_pubmed.index
 ```
 
 ## Configuration
 
-### Production (`config/config.yaml`)
-- Downloads all files (~1200)
-- Processes all abstracts per file
-- Memory: 12GB/process, 256GB/merge
-- Runtime: Days
+### Production Mode (`config/config.yaml`)
+```yaml
+pubmed:
+  download_debug_mode: false          # All files
+  limit_abstracts_per_file: null      # All abstracts
+  batch_size: 128
+  memory_mb: 12000                    # 12GB per job
+```
 
-### Test (`config/test_config.yaml`)
-- Downloads 2 files only
-- Processes first 1000 abstracts/file
-- Memory: 4GB/process, 8GB/merge
-- Runtime: ~5 minutes
+### Test Mode (`config/test_config.yaml`)
+```yaml
+pubmed:
+  download_debug_mode: true           # 2 files only
+  limit_abstracts_per_file: 1000      # First 1000 abstracts
+  batch_size: 32
+  memory_mb: 4000                     # 4GB per job
+```
 
-## Output
+## Output Structure
 
 ```
 data/
 ├── raw/pubmed/
-│   ├── baseline/*.xml.gz           # Downloaded files
-│   ├── updatefiles/*.xml.gz
-│   └── deleted.pmids.sorted.gz     # Deleted PMIDs
+│   ├── baseline/
+│   │   ├── pubmed25n0001.xml.gz
+│   │   └── pubmed25n0002.xml.gz
+│   ├── updatefiles/
+│   └── deleted.pmids.sorted.gz
+│
 ├── processed/pubmed/
-│   ├── baseline/*.index + *.json   # Per-file indices
-│   └── updatefiles/*.index + *.json
-└── final/pubmed/
-    ├── master_pubmed.index         # Merged FAISS index
-    └── master_metadata.json        # Merged metadata
+│   ├── baseline/
+│   │   ├── pubmed25n0001.index      # FAISS vectors
+│   │   ├── pubmed25n0001.json       # Metadata (PMID, title, etc.)
+│   │   ├── pubmed25n0002.index
+│   │   └── pubmed25n0002.json
+│   └── updatefiles/
+│
+└── final/pubmed/                     # Optional merged index
+    ├── master_pubmed.index
+    └── master_pubmed.json
 ```
 
-## Key Features
+## Metadata Format
 
-### Deduplication
-- Tracks deleted PMIDs from NCBI
-- Skips deleted articles during indexing
-- Maintains data integrity
+Each `.json` file contains metadata for vectors:
 
-### Testing Support
-- `test_mode: true` - Fast pipeline testing
-- `test_abstracts_limit: 1000` - Limit abstracts/file
-- Separate test config for safe experimentation
-
-### HPC Optimization
-- Checkpoint-based workflow (download → process → merge)
-- Dynamic file discovery (handles variable FTP content)
-- SGE cluster integration
-- Parallel file processing
-
-## Monitoring
-
-```bash
-# Watch main pipeline log
-tail -f logs/bioyoda_pubmed_main.log
-
-# Check individual file processing
-ls -lh logs/pubmed/process/baseline/
-
-# Monitor cluster jobs
-qstat | grep pubmed
-```
-
-## Stopping Pipeline
-
-```bash
-# Stop running pipeline
-./bioyoda.sh stop pubmed
-
-# Stop and clean intermediate files
-./bioyoda.sh stop pubmed --clean
+```json
+{
+  "0": {
+    "pmid": "12345678",
+    "title": "Study title...",
+    "abstract": "Full abstract text...",
+    "journal": "Journal Name",
+    "pub_date": "2024-01-15",
+    "authors": ["Author A", "Author B"],
+    "mesh_terms": ["Term1", "Term2"]
+  },
+  "1": { ... }
+}
 ```
 
 ## Performance
 
-**Test Mode** (2 files × 1000 abstracts):
-- Download: ~30s
-- Process: ~2-3 min
-- Merge: <10s
-- **Total: ~5 minutes**
+### Test Mode
+- Files: 2
+- Abstracts: ~2000
+- Runtime: 10-20 minutes
+- Memory: 4-8GB
 
-**Production** (full dataset):
-- Download: Hours
-- Process: Days (parallel on cluster)
-- Merge: ~12 minutes
-- **Total: Days (cluster-dependent)**
-
-## Troubleshooting
-
-**Issue**: Pipeline stuck at download
-- **Check**: Network/FTP connection
-- **Log**: `logs/pubmed/download.log`
-
-**Issue**: Out of memory during merge
-- **Solution**: Increase `merge_memory_mb` in config
-- **Current**: 256GB for production, 8GB for test
-
-**Issue**: Process fails on specific file
-- **Check**: `logs/pubmed/process/baseline/<filename>.log`
-- **Action**: File may be corrupted, re-download
-
-## Scripts Reference
-
-### `download.py`
-```bash
-python download.py                 # Full download
-python download.py --debug 5       # Download 5 files only
-```
-
-### `index.py`
-```bash
-python index.py input.xml.gz output_dir/           # Full file
-python index.py input.xml.gz output_dir/ --limit 100  # First 100 abstracts
-```
-
-### `merge0.py`
-```bash
-python merge0.py --processed-dir data/processed/pubmed \
-                 --output-dir data/final/pubmed
-```
-
-## Model Details
-
-**S-BioBERT** (`pritamdeka/S-BioBERT-snli-multinli-stsb`):
-- Pre-trained on biomedical literature
-- Fine-tuned for semantic similarity
-- 768-dimensional embeddings
-- Optimized for PubMed abstracts
-
-**Alternatives tested**:
-- `all-MiniLM-L6-v2` (384d) - General purpose, smaller
-- `dmis-lab/biobert-base-cased-v1.1` (768d) - Pure BioBERT
-
-## History
-
-- **Sep 2024**: Initial implementation with bash scripts
-- **Sep 2024**: Merge script optimization (merge0.py 57% faster)
-- **Oct 2024**: Snakemake integration
-- **Oct 2024**: Test mode implementation
-- **Oct 2024**: Background execution + stop functionality
+### Production Mode
+- Files: ~1200
+- Abstracts: ~30M
+- Runtime: 10-12 hours (parallel on cluster)
+- Memory: 8-12GB per job
 
 ## Next Steps
 
-See `vibe/clinical_trials_integration_plan.md` for planned ClinicalTrials.gov integration.
+After processing PubMed data, you can:
+
+1. **Insert to Qdrant** (for vector search):
+   ```bash
+   ./bioyoda.sh qdrant start
+   ./bioyoda.sh qdrant insert pubmed
+   ```
+
+2. **Validate outputs**:
+   ```bash
+   ./bioyoda.sh validate pubmed
+   ```
+
+3. **Check status**:
+   ```bash
+   ./bioyoda.sh status
+   ```
+
+## Troubleshooting
+
+### Download Issues
+```bash
+# Check raw directory
+ls -lh data/raw/pubmed/baseline/
+
+# Re-run download only
+snakemake --snakefile modules/pubmed/Snakefile pubmed_download
+```
+
+### Processing Issues
+```bash
+# Check individual job logs
+tail -f logs/cluster/index_pubmed*.log
+
+# Test with single file locally
+python modules/pubmed/scripts/index.py \
+  --input data/raw/pubmed/baseline/pubmed25n0001.xml.gz \
+  --output data/processed/pubmed/baseline/pubmed25n0001 \
+  --limit 100
+```
+
+### Memory Issues
+- Reduce batch size in config
+- Increase `mem_mb` for cluster jobs
+- Use test config for development
+
+## Related Documentation
+
+- **Root README**: `../../README.md` - Overall system architecture
+- **Qdrant Module**: `../qdrant/README.md` - Vector database operations
+- **Configuration**: `../../config/README.md` - Config options
+
+---
+
+**Module Version**: 0.2.0
+**Last Updated**: October 2025

@@ -85,9 +85,10 @@ BioYoda v${bioyoda_version} - AI-powered biomedical search system
 Usage: $0 <command> [options]
 
 Commands:
-    run <module> [options]    Run a specific module workflow
+    run <module> [options]    Run data processing pipeline (PubMed/Clinical Trials)
     stop <module> [options]   Stop a running pipeline
     status                    Show pipeline status
+    qdrant <subcommand>       Manage Qdrant vector database (start/stop/insert/status)
     validate <module>         Validate module outputs
     clean [module]            Clean intermediate files
     dryrun <module>           Show what would be executed (dry run)
@@ -97,12 +98,15 @@ Commands:
     version                   Show version information
 
 Dataset Modules:
-    pubmed                    PubMed literature processing (+ auto Qdrant insertion)
-    clinical_trials           Clinical trials data processing (+ auto Qdrant insertion)
+    pubmed                    PubMed literature processing (FAISS creation)
+    clinical_trials           Clinical trials data processing (FAISS creation)
     all                       Run all dataset modules
 
-Note: Qdrant vector database insertion is automatic when running dataset modules.
-      The Qdrant infrastructure module is triggered automatically, not run standalone.
+Qdrant Subcommands:
+    start                     Start Qdrant server (local or cluster)
+    stop                      Stop Qdrant server
+    status                    Check Qdrant server status and collections
+    insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, or all)
 
 Run Options:
     --cluster                 Submit jobs to SGE cluster
@@ -113,30 +117,47 @@ Run Options:
     --config FILE             Use custom config file (default: config/config.yaml)
     --dryrun                  Show what would be executed without running
 
+Qdrant Start Options:
+    --mode <local|cluster>    Run mode (default: local)
+    --queue <name>            SGE queue name (default: scc, can use: gpu)
+    --runtime <hours>         Runtime in hours (default: 48)
+    --memory <mb>             Memory in MB (default: 32000)
+
+Qdrant Insert Options:
+    --cluster                 Submit insertion jobs to cluster
+    --local                   Run insertion locally (default)
+    --cores N                 Number of cores (for local mode)
+    --jobs N                  Max parallel jobs (for cluster mode)
+
 Stop Options:
     --clean, -c               Also clean intermediate files after stopping
 
 Examples:
-    # Run PubMed pipeline (creates FAISS + auto inserts to Qdrant)
+    # Data Processing Pipeline (no Qdrant)
     $0 run pubmed --cluster --bg --jobs 50
-
-    # Run test pipeline with small dataset
-    $0 run pubmed --config config/test_config.yaml --cluster --bg --jobs 5
-
-    # Run Clinical Trials (creates data + auto inserts to Qdrant)
     $0 run clinical_trials --cluster --bg --jobs 20
-
-    # Run all datasets (PubMed + Clinical Trials + Qdrant)
     $0 run all --cluster --bg --jobs 100
+
+    # Qdrant Operations (separate from data processing)
+    # 1. Start Qdrant server on GPU node for long-running session
+    $0 qdrant start --mode cluster --queue gpu --runtime 168
+
+    # 2. Check server status
+    $0 qdrant status
+
+    # 3. Insert data when ready (can be done days later)
+    $0 qdrant insert pubmed --cluster --jobs 10
+    $0 qdrant insert clinical_trials --cluster --jobs 10
+    $0 qdrant insert all --cluster --jobs 20
+
+    # 4. Stop server when done
+    $0 qdrant stop
 
     # Monitor progress
     tail -f logs/bioyoda_pubmed_main.log
     tail -f logs/qdrant/insert_pubmed.log
 
     # Stop running pipeline
-    $0 stop pubmed
-
-    # Stop and clean intermediate files
     $0 stop pubmed --clean
 
     # Dry run to see what would execute
@@ -145,12 +166,11 @@ Examples:
     # Generate workflow visualization
     $0 dag pubmed
 
-    # Check pipeline status (shows FAISS + Qdrant status)
+    # Check overall status
     $0 status
 
     # Validate outputs
     $0 validate pubmed
-    $0 validate qdrant
 
     # Clean specific module
     $0 clean pubmed
@@ -295,10 +315,6 @@ run() {
 ${snakemake_cmd}
 EXIT_CODE=\$?
 
-# Cleanup Qdrant server
-$(declare -f stop_qdrant_server)
-stop_qdrant_server
-
 # Remove PID file
 rm -f "${pid_file}"
 
@@ -317,9 +333,6 @@ WRAPPER
         log_info "Executing: ${snakemake_cmd}"
         eval ${snakemake_cmd}
         local exit_code=$?
-
-        # Always cleanup Qdrant server
-        stop_qdrant_server
 
         if [[ ${exit_code} -eq 0 ]]; then
             log_success "Pipeline completed successfully!"
@@ -694,9 +707,6 @@ stop() {
     log_info "Cleaning up Snakemake locks..."
     rm -rf .snakemake/locks/ 2>/dev/null || true
 
-    # Stop Qdrant server if running
-    stop_qdrant_server
-
     # Optional: clean intermediate files
     if [[ "${clean}" == true ]]; then
         log_warning "Cleaning intermediate files for ${module}..."
@@ -705,6 +715,218 @@ stop() {
     fi
 
     log_success "Stop completed"
+}
+
+##############################################################################
+# Qdrant Management Functions
+##############################################################################
+
+qdrant() {
+    if [[ $# -eq 0 ]]; then
+        log_error "No qdrant subcommand specified"
+        echo ""
+        echo "Available subcommands:"
+        echo "  start    - Start Qdrant server (local or cluster)"
+        echo "  stop     - Stop Qdrant server"
+        echo "  status   - Check Qdrant server status"
+        echo "  insert   - Insert data to Qdrant (pubmed, clinical_trials, or all)"
+        echo ""
+        echo "Examples:"
+        echo "  $0 qdrant start --mode cluster --queue gpu"
+        echo "  $0 qdrant insert pubmed"
+        echo "  $0 qdrant status"
+        echo "  $0 qdrant stop"
+        exit 1
+    fi
+
+    local subcommand=$1
+    shift
+
+    case $subcommand in
+        start)
+            qdrant_start "$@"
+            ;;
+        stop)
+            qdrant_stop "$@"
+            ;;
+        status)
+            qdrant_status "$@"
+            ;;
+        insert)
+            qdrant_insert "$@"
+            ;;
+        *)
+            log_error "Unknown qdrant subcommand: $subcommand"
+            exit 1
+            ;;
+    esac
+}
+
+qdrant_start() {
+    local mode="local"
+    local queue="scc"
+    local runtime_hours=48
+    local memory_mb=32000
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --mode)
+                mode="$2"
+                shift 2
+                ;;
+            --queue)
+                queue="$2"
+                shift 2
+                ;;
+            --runtime)
+                runtime_hours="$2"
+                shift 2
+                ;;
+            --memory)
+                memory_mb="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    log_info "Starting Qdrant server (mode=${mode}, queue=${queue})"
+
+    # Ensure log directories exist
+    mkdir -p logs/qdrant
+    mkdir -p data/qdrant
+
+    # Call start_server.sh directly
+    bash modules/qdrant/scripts/start_server.sh \
+        --container modules/qdrant/setup/singularity/qdrant.sif \
+        --config modules/qdrant/setup/singularity/config.yaml \
+        --storage data/qdrant \
+        --memory-mb ${memory_mb} \
+        --runtime $((runtime_hours * 3600)) \
+        --job-name q_server \
+        --mode ${mode} \
+        --connection-info data/qdrant/connection_info.txt \
+        --log logs/qdrant/server.log \
+        --queue ${queue}
+
+    if [[ $? -eq 0 ]]; then
+        log_success "Qdrant server started successfully"
+        if [[ -f "data/qdrant/connection_info.txt" ]]; then
+            echo ""
+            cat data/qdrant/connection_info.txt
+        fi
+    else
+        log_error "Failed to start Qdrant server"
+        exit 1
+    fi
+}
+
+qdrant_stop() {
+    log_info "Stopping Qdrant server..."
+    bash modules/qdrant/scripts/stop_server.sh
+}
+
+qdrant_status() {
+    bash modules/qdrant/scripts/check_status.sh
+}
+
+qdrant_insert() {
+    if [[ $# -eq 0 ]]; then
+        log_error "No dataset specified for insertion"
+        echo ""
+        echo "Available datasets:"
+        echo "  pubmed           - Insert PubMed data"
+        echo "  clinical_trials  - Insert Clinical Trials data"
+        echo "  all              - Insert all datasets"
+        exit 1
+    fi
+
+    local dataset=$1
+    shift
+
+    # Parse additional options
+    local execution_mode="local"
+    local cores=1
+    local jobs=10
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --cluster)
+                execution_mode="cluster"
+                shift
+                ;;
+            --local)
+                execution_mode="local"
+                shift
+                ;;
+            --cores)
+                cores="$2"
+                shift 2
+                ;;
+            --jobs)
+                jobs="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    log_info "Inserting ${dataset} to Qdrant (mode=${execution_mode})"
+
+    # Check prerequisites
+    check_snakemake
+
+    # Build Snakemake command for Qdrant insertion
+    local snakemake_cmd="snakemake --snakefile modules/qdrant/Snakefile --configfile ${config_file} --latency-wait 60"
+
+    # Add execution mode options
+    if [[ "$execution_mode" == "cluster" ]]; then
+        log_info "Submitting jobs to SGE cluster (max ${jobs} parallel jobs)"
+        snakemake_cmd="${snakemake_cmd} --executor cluster-generic \
+            --cluster-generic-submit-cmd 'qsub -cwd -V -q scc -N {rule}.{jobid} -pe smp {threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y' \
+            --jobs ${jobs} \
+            --default-resources mem_mb=8192 runtime=604800 threads=1"
+    else
+        log_info "Running locally with ${cores} cores"
+        snakemake_cmd="${snakemake_cmd} --cores ${cores}"
+    fi
+
+    # Add other options
+    snakemake_cmd="${snakemake_cmd} --use-conda --rerun-incomplete --printshellcmds"
+
+    # Add target
+    case $dataset in
+        pubmed)
+            snakemake_cmd="${snakemake_cmd} -- insert_pubmed"
+            ;;
+        clinical_trials)
+            snakemake_cmd="${snakemake_cmd} -- insert_clinical_trials"
+            ;;
+        all)
+            snakemake_cmd="${snakemake_cmd} -- insert_all"
+            ;;
+        *)
+            log_error "Unknown dataset: ${dataset}"
+            exit 1
+            ;;
+    esac
+
+    log_info "Executing: ${snakemake_cmd}"
+    eval ${snakemake_cmd}
+
+    if [[ $? -eq 0 ]]; then
+        log_success "Insertion completed successfully!"
+    else
+        log_error "Insertion failed! Check logs for details."
+        exit 1
+    fi
 }
 
 ##############################################################################
@@ -746,6 +968,9 @@ main() {
             ;;
         unlock)
             unlock "$@"
+            ;;
+        qdrant)
+            qdrant "$@"
             ;;
         help|--help|-h)
             help

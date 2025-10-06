@@ -15,6 +15,7 @@ JOB_NAME=""
 MODE=""
 CONNECTION_INFO=""
 LOG_FILE=""
+QUEUE="scc"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
         --mode) MODE="$2"; shift 2 ;;
         --connection-info) CONNECTION_INFO="$2"; shift 2 ;;
         --log) LOG_FILE="$2"; shift 2 ;;
+        --queue) QUEUE="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -47,7 +49,7 @@ if [ "$MODE" = "cluster" ]; then
     cat > "$STORAGE/start_server_job.sh" <<JOBSCRIPT
 #!/bin/bash
 #$ -N $JOB_NAME
-#$ -q scc
+#$ -q $QUEUE
 #$ -l h_vmem=${MEMORY_MB}M
 #$ -l h_rt=$RUNTIME
 #$ -cwd

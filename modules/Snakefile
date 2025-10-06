@@ -11,13 +11,12 @@
 
 import sys
 import os
-import subprocess
 
 # Load configuration
 configfile: "config/config.yaml"
 
 # Local rules (don't submit to cluster)
-localrules: all, pubmed_all, clinical_trials_all, q_all
+localrules: all, pubmed, clinical_trials
 
 # Create logging directory
 os.makedirs(config["logs_dir"], exist_ok=True)
@@ -42,85 +41,35 @@ def estimate_mb_required(file_path, size_factor=8000, min_mb=8000, max_mb=30000)
     else:
         return int(size_factor)
 
-# Include module workflows
+# Include module workflows (data processing only)
 include: "pubmed/Snakefile"
 include: "clinical_trials/Snakefile"
-include: "qdrant/Snakefile"
 
-# Top-level target: build all modules
+# Top-level target: build all data modules
 rule all:
     input:
         rules.pubmed_all.input,
-        rules.clinical_trials_all.input,
-        rules.q_all.input
+        rules.clinical_trials_all.input
 
-# Individual module targets
-# Dataset modules automatically trigger Qdrant insertion
+# Individual module targets (data processing only)
 rule pubmed:
     input:
-        rules.pubmed_all.input,                          # FAISS creation
-        rules.insert_pubmed_to_q.output.done       # Auto-insert to Qdrant
+        rules.pubmed_all.input
 
 rule clinical_trials:
     input:
-        rules.clinical_trials_all.input,                 # Data creation
-        rules.insert_clinical_trials_to_q.output.done  # Auto-insert to Qdrant
-
-# Note: Qdrant is an infrastructure module, not run standalone
-# It's automatically triggered by dataset modules
+        rules.clinical_trials_all.input
 
 ##############################################################################
-# Cleanup Handlers
+# Pipeline Completion Handlers
 ##############################################################################
-
-def stop_qdrant_server():
-    """Stop Qdrant server on pipeline completion or failure."""
-    import signal
-
-    qdrant_pid_file = "data/qdrant/qdrant.pid"
-    connection_info = "data/qdrant/connection_info.txt"
-
-    # Check for local PID file
-    if os.path.exists(qdrant_pid_file):
-        try:
-            with open(qdrant_pid_file, 'r') as f:
-                qdrant_pid = int(f.read().strip())
-
-            try:
-                os.kill(qdrant_pid, signal.SIGTERM)
-                print(f"[Cleanup] Stopped Qdrant server (PID: {qdrant_pid})", file=sys.stderr)
-            except ProcessLookupError:
-                print(f"[Cleanup] Qdrant process {qdrant_pid} not found", file=sys.stderr)
-
-            os.remove(qdrant_pid_file)
-        except Exception as e:
-            print(f"[Cleanup] Error stopping Qdrant: {e}", file=sys.stderr)
-
-    # Check for cluster job
-    try:
-        result = subprocess.run(['qstat', '-u', os.getenv('USER', '')],
-                              capture_output=True, text=True, timeout=5)
-        if 'qdrant_server' in result.stdout:
-            qdrant_jobs = [line.split()[0] for line in result.stdout.split('\n')
-                          if 'qdrant_server' in line]
-            for job_id in qdrant_jobs:
-                subprocess.run(['qdel', job_id], capture_output=True)
-                print(f"[Cleanup] Cancelled Qdrant cluster job: {job_id}", file=sys.stderr)
-    except Exception:
-        pass  # qstat may not be available or timeout
-
-    # Clean up connection info
-    if os.path.exists(connection_info):
-        os.remove(connection_info)
 
 onsuccess:
     print("\n" + "="*80, file=sys.stderr)
-    print("Pipeline completed successfully!", file=sys.stderr)
+    print("Data processing pipeline completed successfully!", file=sys.stderr)
     print("="*80, file=sys.stderr)
-    stop_qdrant_server()
 
 onerror:
     print("\n" + "="*80, file=sys.stderr)
     print("Pipeline failed!", file=sys.stderr)
     print("="*80, file=sys.stderr)
-    stop_qdrant_server()

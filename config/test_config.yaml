@@ -37,7 +37,7 @@ pubmed:
 
   # TEST MODE SETTINGS
   test_mode: true              # Enable test optimizations
-  test_abstracts_limit: 1000   # Process only first 1000 abstracts per file
+  test_abstracts_limit: 100   # Process only first 100 abstracts per file
   debug_mode: true             # Download only limited files
   debug_sample_size: 2         # Number of files to download
 
@@ -85,7 +85,7 @@ clinical_trials:
 
   # TEST MODE SETTINGS
   test_mode: true              # Enable test optimizations
-  test_trials_limit: 1000      # Process only first 1000 trials (updated from 100)
+  test_trials_limit: 100      # Process only first 100 trials
 
   # Job resources - OPTIMIZED FOR TEST
   download_memory_mb: 8192     # 8GB (vs 16GB production)

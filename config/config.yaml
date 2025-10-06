@@ -10,23 +10,23 @@ project_name: "bioyoda"
 conda_env: "bioyoda"
 
 # Base Paths
-base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda"
-data_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data"
-scripts_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/modules"
-logs_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs"
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev"
+data_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data"
+scripts_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/modules"
+logs_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs"
 
 # PubMed Module Configuration
 pubmed:
   # Data directories
-  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/pubmed"
-  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/pubmed"
-  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/pubmed"
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/raw/pubmed"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/pubmed"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/pubmed"
 
   # Files
-  file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/pubmed_files.txt"
-  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/pubmed/master_pubmed.json"
+  file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/pubmed_files.txt"
+  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/master_pubmed.index"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/master_pubmed.json"
 
   # Model settings
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -54,15 +54,15 @@ pubmed:
 # Clinical Trials Module Configuration
 clinical_trials:
   # Data directories
-  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/raw/clinical_trials"
-  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials"
-  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/clinical_trials"
+  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/raw/clinical_trials"
+  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/clinical_trials"
+  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/clinical_trials"
 
   # Output files
-  trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/processed/clinical_trials/trials_data.json"
-  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final/clinical_trials/clinical_trials.json"
+  trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/clinical_trials/trials_data.json"
+  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials/clinical_trials.index"
+  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials/clinical_trials.json"
 
   # Model settings (same as PubMed for consistency)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -100,11 +100,11 @@ clinical_trials:
 # Qdrant Module Configuration
 qdrant:
   # Storage
-  storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/qdrant"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant"
+  storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/qdrant"
+  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/qdrant"
 
   # Insertion settings
-  batch_size: 1000
+  batch_size: 500  # Reduced from 1000 for better NFS performance
 
   # Server settings (for auto-start via Snakemake)
   server:
@@ -112,7 +112,7 @@ qdrant:
     runtime_hours: 48      # 2 days
 
 # Output directory for final FAISS exports
-final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/data/final"
+final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final"
 
 # HPC Cluster Configuration
 cluster:

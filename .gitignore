@@ -14,3 +14,5 @@ results*
 logs/pids/
 tieri_snakemakes
 .snakemake
+data_prod
+logs_prod
