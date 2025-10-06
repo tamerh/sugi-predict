@@ -192,7 +192,7 @@ run() {
                 jobs="$2"
                 shift 2
                 ;;
-            --dryrun)
+            --dryrun|--dry-run|-n)
                 dryrun="-n"
                 shift
                 ;;
@@ -234,9 +234,9 @@ run() {
         # Snakemake 9+ uses executor plugins instead of --cluster
         # Using -e parameter to redirect stderr to LOG_cluster_log (like tieri)
         snakemake_cmd="${snakemake_cmd} --executor cluster-generic \
-            --cluster-generic-submit-cmd 'qsub -cwd -V -q scc -N {rule}.{jobid} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y' \
+            --cluster-generic-submit-cmd 'qsub -cwd -V -q scc -N {rule}.{jobid} -pe smp {threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y' \
             --jobs ${jobs} \
-            --default-resources mem_mb=8192 runtime=604800"
+            --default-resources mem_mb=8192 runtime=604800 threads=1"
     else
         log_info "Running locally with ${cores} cores"
         snakemake_cmd="${snakemake_cmd} --cores ${cores}"

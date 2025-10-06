@@ -17,7 +17,7 @@ import subprocess
 configfile: "config/config.yaml"
 
 # Local rules (don't submit to cluster)
-localrules: all, pubmed_all, clinical_trials_all, qdrant_all
+localrules: all, pubmed_all, clinical_trials_all, q_all
 
 # Create logging directory
 os.makedirs(config["logs_dir"], exist_ok=True)
@@ -52,19 +52,19 @@ rule all:
     input:
         rules.pubmed_all.input,
         rules.clinical_trials_all.input,
-        rules.qdrant_all.input
+        rules.q_all.input
 
 # Individual module targets
 # Dataset modules automatically trigger Qdrant insertion
 rule pubmed:
     input:
         rules.pubmed_all.input,                          # FAISS creation
-        rules.insert_pubmed_to_qdrant.output.done       # Auto-insert to Qdrant
+        rules.insert_pubmed_to_q.output.done       # Auto-insert to Qdrant
 
 rule clinical_trials:
     input:
         rules.clinical_trials_all.input,                 # Data creation
-        rules.insert_clinical_trials_to_qdrant.output.done  # Auto-insert to Qdrant
+        rules.insert_clinical_trials_to_q.output.done  # Auto-insert to Qdrant
 
 # Note: Qdrant is an infrastructure module, not run standalone
 # It's automatically triggered by dataset modules

@@ -36,14 +36,14 @@ os.makedirs(f"{QDRANT_STORAGE}/collections", exist_ok=True)
 os.makedirs(QDRANT_LOG_DIR, exist_ok=True)
 
 # Local rules - these run on head node, not submitted to cluster
-localrules: start_qdrant_server, qdrant_all
+localrules: start_q_server, q_all
 
 # ============================================================================
 # Rule: Start Qdrant Server
 # ============================================================================
 
 # workflow.cores > 1  # Heuristic: cluster mode if cores > 1
-rule start_qdrant_server:
+rule start_q_server:
     """
     Start Qdrant server (local mode or cluster job).
     Creates connection_info.txt with server hostname and port.
@@ -59,9 +59,9 @@ rule start_qdrant_server:
         storage = QDRANT_STORAGE,
         memory_mb = config["qdrant"]["server"]["memory_mb"],
         runtime = config["qdrant"]["server"]["runtime_hours"] * 3600,
-        job_name = "qdrant_server",
+        job_name = "q_server",
         is_cluster = config.get("execution_mode", "local") == "cluster",
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "start_qdrant_server_cluster.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "start_q_server_cluster.log")
     log:
         f"{QDRANT_LOG_DIR}/server.log"
     shell:
@@ -98,7 +98,7 @@ rule start_qdrant_server:
 # Rule: Insert PubMed to Qdrant
 # ============================================================================
 
-rule insert_pubmed_to_qdrant:
+rule insert_pubmed_to_q:
     """
     Insert PubMed FAISS files to Qdrant collection.
     Processes all individual FAISS files sequentially.
@@ -106,7 +106,7 @@ rule insert_pubmed_to_qdrant:
     """
     input:
         pubmed_complete = rules.pubmed_processing_complete.output.done,  # Wait for FAISS processing
-        connection_info = rules.start_qdrant_server.output.connection_info
+        connection_info = rules.start_q_server.output.connection_info
     output:
         done = f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done"
     params:
@@ -114,7 +114,7 @@ rule insert_pubmed_to_qdrant:
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = PUBMED_FAISS_DIR,
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_pubmed_to_qdrant_cluster.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_pubmed_to_q_cluster.log")
     resources:
         mem_mb = config["pubmed"]["qdrant"]["memory_mb"]
     conda:
@@ -154,14 +154,14 @@ rule insert_pubmed_to_qdrant:
 # Rule: Insert Clinical Trials to Qdrant
 # ============================================================================
 
-rule insert_clinical_trials_to_qdrant:
+rule insert_clinical_trials_to_q:
     """
     Insert Clinical Trials to Qdrant collection.
     Independent of PubMed - can run separately.
     """
     input:
         trials_data = CLINICAL_TRIALS_DATA,
-        connection_info = rules.start_qdrant_server.output.connection_info
+        connection_info = rules.start_q_server.output.connection_info
     output:
         done = f"{QDRANT_STORAGE}/collections/clinical_trials.done"
     params:
@@ -169,7 +169,7 @@ rule insert_clinical_trials_to_qdrant:
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = CLINICAL_TRIALS_FAISS_DIR,
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",  # Will create separate script if needed
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_qdrant_cluster.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_q_cluster.log")
     resources:
         mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"]
     conda:
@@ -209,20 +209,20 @@ rule insert_clinical_trials_to_qdrant:
 # Rule: Export Qdrant to FAISS (Optional Backup)
 # ============================================================================
 
-rule export_qdrant_to_faiss:
+rule export_q_to_faiss:
     """
     Export Qdrant collection back to FAISS format (lossless backup).
     Optional step for archival purposes.
     """
     input:
-        done = rules.insert_pubmed_to_qdrant.output.done,
-        connection_info = rules.start_qdrant_server.output.connection_info
+        done = rules.insert_pubmed_to_q.output.done,
+        connection_info = rules.start_q_server.output.connection_info
     output:
         index = f"{config['final_dir']}/pubmed/from_qdrant.index",
         metadata = f"{config['final_dir']}/pubmed/from_qdrant_metadata.pkl"
     params:
         collection = config["pubmed"]["qdrant"]["collection_name"],
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "export_qdrant_to_faiss.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "export_q_to_faiss.log")
     resources:
         mem_mb = 100000  # ~100GB for full export
     log:
@@ -248,8 +248,8 @@ rule export_qdrant_to_faiss:
 # Top-level target for Qdrant module
 # ============================================================================
 
-rule qdrant_all:
+rule q_all:
     input:
-        rules.insert_pubmed_to_qdrant.output.done,
-        rules.insert_clinical_trials_to_qdrant.output.done
+        rules.insert_pubmed_to_q.output.done,
+        rules.insert_clinical_trials_to_q.output.done
     default_target: True
