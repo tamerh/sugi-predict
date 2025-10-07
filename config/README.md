@@ -4,13 +4,14 @@ This directory contains configuration files for the BioYoda pipeline.
 
 ## Available Configurations
 
-### 1. `config.yaml` - Production Configuration
-**Purpose**: Full-scale PubMed processing for production use
+### 1. `config.yaml` - Production Configuration (CPU)
+**Purpose**: Full-scale processing for production use (CPU optimized)
 
 **Key Settings**:
 - Downloads all PubMed baseline + update files (~1200 files)
 - Processes complete abstracts from each file (~30k abstracts per file)
 - Memory: 12GB per process job, 256GB for merge
+- Batch size: 128 for encoding
 - Runtime: Up to 7 days per job
 - Output: `data/final/pubmed/`
 
@@ -23,7 +24,37 @@ This directory contains configuration files for the BioYoda pipeline.
 
 ---
 
-### 2. `test_config.yaml` - Test Configuration
+### 2. `config_gpu.yaml` - GPU Configuration
+**Purpose**: GPU-accelerated processing for faster performance
+
+**Key Settings**:
+- Same data processing as production config
+- Memory: 16GB per process job (GPU nodes have more RAM)
+- Batch size: 256 for encoding (larger for GPU)
+- Worker count: 4 (GPU handles parallelism)
+- Queue: `gpu` by default
+- Max jobs: 50 (limited GPU slots)
+- Conda env: `bioyoda_gpu` or `bioyoda_gpu_cuda11`
+
+**Usage**:
+```bash
+# Default CUDA 12.4 nodes (scc213, scc192, spiderman, hulk, scc195-199)
+./bioyoda.sh run pubmed --cluster --jobs 50 --config config/config_gpu.yaml
+
+# CUDA 11.4 nodes (scc116, scc117, scc066)
+./bioyoda.sh run clinical_trials --cluster --config config/config_gpu.yaml --cuda11.4
+```
+
+**Expected Duration**: Faster than CPU mode (depends on GPU availability)
+
+**Benefits**:
+- 2-4x faster embedding generation
+- Larger batch processing
+- Better for large datasets
+
+---
+
+### 3. `test_config.yaml` - Test Configuration
 **Purpose**: Fast end-to-end pipeline testing
 
 **Key Settings**:
@@ -44,10 +75,17 @@ This directory contains configuration files for the BioYoda pipeline.
 
 ## When to Use Each Configuration
 
-### Use `config.yaml` (Production) When:
-- ✓ Running final production pipeline
+### Use `config.yaml` (Production CPU) When:
+- ✓ Running final production pipeline on CPU nodes
 - ✓ Building complete PubMed index
 - ✓ Need full dataset for research/production
+- ✓ GPU nodes are unavailable or busy
+
+### Use `config_gpu.yaml` (Production GPU) When:
+- ✓ GPU nodes are available
+- ✓ Need faster processing times
+- ✓ Processing large embedding batches
+- ✓ Want to optimize resource usage with GPU acceleration
 
 ### Use `test_config.yaml` (Test) When:
 - ✓ Testing pipeline changes
@@ -105,8 +143,39 @@ To create a custom configuration:
 
 ---
 
-## Example Workflow
+## GPU Environment Setup
 
+BioYoda supports two CUDA versions for different GPU node sets:
+
+### CUDA 12.4 (Default)
+**Environment**: `config/tamer_gpu.yml`
+**Nodes**: scc213, scc192, spiderman, hulk, scc195-scc199
+
+```bash
+conda env create -f config/tamer_gpu.yml
+conda activate bioyoda_gpu
+```
+
+### CUDA 11.8 (Older Nodes)
+**Environment**: `config/tamer_gpu_cuda11.yml`
+**Nodes**: scc116, scc117, scc066
+
+```bash
+conda env create -f config/tamer_gpu_cuda11.yml
+conda activate bioyoda_gpu_cuda11
+```
+
+**Usage**:
+```bash
+# Use CUDA 11.4 nodes with --cuda11.4 flag
+./bioyoda.sh run clinical_trials --cluster --config config/config_gpu.yaml --cuda11.4
+```
+
+---
+
+## Example Workflows
+
+### Workflow 1: Test First
 ```bash
 # 1. Test the pipeline (fast)
 ./bioyoda.sh run pubmed --config config/test_config.yaml --cluster --jobs 5
@@ -114,6 +183,24 @@ To create a custom configuration:
 # 2. Check test results
 ls -lh data/test/final/pubmed/
 
-# 3. If tests pass, run production
-./bioyoda.sh run pubmed --cluster --jobs 100
+# 3. If tests pass, run production with GPU
+./bioyoda.sh run pubmed --cluster --jobs 50 --config config/config_gpu.yaml
+```
+
+### Workflow 2: GPU Processing with Different CUDA Versions
+```bash
+# Process with default CUDA 12.4 nodes
+./bioyoda.sh run pubmed --cluster --bg --jobs 50 --config config/config_gpu.yaml
+
+# Process with CUDA 11.4 nodes (if 12.4 nodes are busy)
+./bioyoda.sh run clinical_trials --cluster --bg --config config/config_gpu.yaml --cuda11.4
+```
+
+### Workflow 3: Mixed CPU/GPU
+```bash
+# Heavy processing on GPU
+./bioyoda.sh run clinical_trials --cluster --config config/config_gpu.yaml --cuda11.4
+
+# Other tasks on CPU
+./bioyoda.sh run pubmed --cluster --config config/config.yaml
 ```

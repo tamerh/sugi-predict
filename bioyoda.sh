@@ -116,6 +116,7 @@ Run Options:
     --jobs N                  Max parallel jobs on cluster (default: 100)
     --config FILE             Use custom config file (default: config/config.yaml)
     --dryrun                  Show what would be executed without running
+    --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066) with bioyoda_gpu_cuda11 env
 
 Qdrant Start Options:
     --mode <local|cluster>    Run mode (default: local)
@@ -128,6 +129,7 @@ Qdrant Insert Options:
     --local                   Run insertion locally (default)
     --cores N                 Number of cores (for local mode)
     --jobs N                  Max parallel jobs (for cluster mode)
+    --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066) with bioyoda_gpu_cuda11 env
 
 Stop Options:
     --clean, -c               Also clean intermediate files after stopping
@@ -137,6 +139,9 @@ Examples:
     $0 run pubmed --cluster --bg --jobs 50
     $0 run clinical_trials --cluster --bg --jobs 20
     $0 run all --cluster --bg --jobs 100
+
+    # Use CUDA 11.4 nodes instead
+    $0 run pubmed --cluster --bg --jobs 50 --cuda11.4
 
     # Qdrant Operations (separate from data processing)
     # 1. Start Qdrant server on GPU node for long-running session
@@ -149,6 +154,9 @@ Examples:
     $0 qdrant insert pubmed --cluster --jobs 10
     $0 qdrant insert clinical_trials --cluster --jobs 10
     $0 qdrant insert all --cluster --jobs 20
+
+    # Use CUDA 11.4 nodes for insertion
+    $0 qdrant insert pubmed --cluster --jobs 10 --cuda11.4
 
     # 4. Stop server when done
     $0 qdrant stop
@@ -192,6 +200,7 @@ run() {
     local dryrun=""
     local custom_config=""
     local background=false
+    local cuda_version=""
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -224,6 +233,10 @@ run() {
                 background=true
                 shift
                 ;;
+            --cuda11.4)
+                cuda_version="11.4"
+                shift
+                ;;
             *)
                 module="$1"
                 shift
@@ -233,6 +246,18 @@ run() {
 
     # Use custom config if provided, otherwise use default
     local active_config="${custom_config:-$config_file}"
+
+    # Auto-detect GPU queue and use config_gpu.yaml if no custom config specified
+    if [[ -z "$custom_config" ]] && [[ "$execution_mode" == "cluster" ]]; then
+        local queue=$(grep -A2 "^cluster:" ${active_config} | grep "default_queue:" | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/' || echo "scc")
+        if [[ "$queue" == "gpu" ]]; then
+            # Check if config_gpu.yaml exists
+            if [[ -f "config/config_gpu.yaml" ]]; then
+                active_config="config/config_gpu.yaml"
+                log_info "Auto-selected GPU config: config_gpu.yaml (queue=gpu detected)"
+            fi
+        fi
+    fi
 
     log_info "Running BioYoda pipeline: module=${module}, mode=${execution_mode}, config=${active_config}"
 
@@ -250,11 +275,37 @@ run() {
 
     # Add execution mode options
     if [[ "$execution_mode" == "cluster" ]]; then
-        log_info "Submitting jobs to SGE cluster (max ${jobs} parallel jobs)"
+        # Get queue from config file (default: scc)
+        local queue=$(grep -A2 "^cluster:" ${active_config} | grep "default_queue:" | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/' || echo "scc")
+
+        # Build resource requirements and conda environment based on queue
+        local gpu_resource=""
+        local node_restriction=""
+        local conda_env_override=""
+        if [[ "$queue" == "gpu" ]]; then
+            gpu_resource="-l gpu=1"
+
+            # Check if CUDA 11.4 is requested
+            if [[ "$cuda_version" == "11.4" ]]; then
+                # Restrict to nodes with CUDA 11.4: scc116, scc117, scc066
+                node_restriction="-l hostname='\"'\"'scc116|scc117|scc066'\"'\"'"
+                conda_env_override="conda_env=bioyoda_gpu_cuda11"
+                log_info "Submitting jobs to GPU cluster (queue=${queue}, env=bioyoda_gpu_cuda11, CUDA 11.4 nodes: scc116, scc117, scc066, max ${jobs} parallel jobs)"
+            else
+                # Restrict to nodes with CUDA 12.8: scc213, scc192, spiderman, hulk, scc195-scc199
+                # Using single quotes inside to avoid shell interpretation of pipe
+                node_restriction="-l hostname='\"'\"'scc213|scc192|spiderman|hulk|scc195|scc196|scc197|scc198|scc199'\"'\"'"
+                conda_env_override="conda_env=bioyoda_gpu"
+                log_info "Submitting jobs to GPU cluster (queue=${queue}, env=bioyoda_gpu, CUDA 12.8 nodes only, max ${jobs} parallel jobs)"
+            fi
+        else
+            log_info "Submitting jobs to SGE cluster (queue=${queue}, max ${jobs} parallel jobs)"
+        fi
+
         # Snakemake 9+ uses executor plugins instead of --cluster
         # Using -e parameter to redirect stderr to LOG_cluster_log (like tieri)
         snakemake_cmd="${snakemake_cmd} --executor cluster-generic \
-            --cluster-generic-submit-cmd 'qsub -cwd -V -q scc -N {rule}.{jobid} -pe smp {threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y' \
+            --cluster-generic-submit-cmd 'qsub -cwd -V -q ${queue} ${gpu_resource} ${node_restriction} -N {rule}.{jobid} -pe smp {threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y' \
             --jobs ${jobs} \
             --default-resources mem_mb=8192 runtime=604800 threads=1"
     else
@@ -267,8 +318,12 @@ run() {
     # Remove --keep-going if you want fail-fast behavior (stop on first failure)
     snakemake_cmd="${snakemake_cmd} --use-conda --keep-going --rerun-incomplete --retries 3 --printshellcmds ${dryrun}"
 
-    # Pass execution mode to Snakemake config
-    snakemake_cmd="${snakemake_cmd} --config execution_mode=${execution_mode}"
+    # Build config overrides (all in one --config)
+    local config_overrides="execution_mode=${execution_mode}"
+    if [[ -n "$conda_env_override" ]]; then
+        config_overrides="${config_overrides} ${conda_env_override}"
+    fi
+    snakemake_cmd="${snakemake_cmd} --config ${config_overrides}"
 
     # Add target at the end
     if [[ "$module" != "all" ]]; then
@@ -852,6 +907,7 @@ qdrant_insert() {
     local execution_mode="local"
     local cores=1
     local jobs=10
+    local cuda_version=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -871,6 +927,10 @@ qdrant_insert() {
                 jobs="$2"
                 shift 2
                 ;;
+            --cuda11.4)
+                cuda_version="11.4"
+                shift
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 exit 1
@@ -883,14 +943,52 @@ qdrant_insert() {
     # Check prerequisites
     check_snakemake
 
+    # Auto-detect GPU queue and use config_gpu.yaml if on cluster
+    local active_config="${config_file}"
+    if [[ "$execution_mode" == "cluster" ]]; then
+        local queue=$(grep -A2 "^cluster:" ${config_file} | grep "default_queue:" | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/' || echo "scc")
+        if [[ "$queue" == "gpu" ]]; then
+            # Check if config_gpu.yaml exists
+            if [[ -f "config/config_gpu.yaml" ]]; then
+                active_config="config/config_gpu.yaml"
+                log_info "Auto-selected GPU config: config_gpu.yaml (queue=gpu detected)"
+            fi
+        fi
+    fi
+
     # Build Snakemake command for Qdrant insertion
-    local snakemake_cmd="snakemake --snakefile modules/qdrant/Snakefile --configfile ${config_file} --latency-wait 60"
+    local snakemake_cmd="snakemake --snakefile modules/qdrant/Snakefile --configfile ${active_config} --latency-wait 60"
 
     # Add execution mode options
     if [[ "$execution_mode" == "cluster" ]]; then
-        log_info "Submitting jobs to SGE cluster (max ${jobs} parallel jobs)"
+        # Get queue from active config file (default: scc)
+        local queue=$(grep -A2 "^cluster:" ${active_config} | grep "default_queue:" | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/' || echo "scc")
+
+        # Build resource requirements and conda environment based on queue
+        local gpu_resource=""
+        local node_restriction=""
+        local conda_env_override=""
+        if [[ "$queue" == "gpu" ]]; then
+            gpu_resource="-l gpu=1"
+
+            # Check if CUDA 11.4 is requested
+            if [[ "$cuda_version" == "11.4" ]]; then
+                # Restrict to nodes with CUDA 11.4: scc116, scc117, scc066
+                node_restriction="-l hostname=\\\"scc116|scc117|scc066\\\""
+                conda_env_override="conda_env=bioyoda_gpu_cuda11"
+                log_info "Submitting jobs to GPU cluster (queue=${queue}, env=bioyoda_gpu_cuda11, CUDA 11.4 nodes: scc116, scc117, scc066, max ${jobs} parallel jobs)"
+            else
+                # Restrict to nodes with CUDA 12.8: scc213, scc192, spiderman, hulk, scc195-scc199
+                node_restriction="-l hostname=\\\"scc213|scc192|spiderman|hulk|scc195|scc196|scc197|scc198|scc199\\\""
+                conda_env_override="conda_env=bioyoda_gpu"
+                log_info "Submitting jobs to GPU cluster (queue=${queue}, env=bioyoda_gpu, CUDA 12.8 nodes only, max ${jobs} parallel jobs)"
+            fi
+        else
+            log_info "Submitting jobs to SGE cluster (queue=${queue}, max ${jobs} parallel jobs)"
+        fi
+
         snakemake_cmd="${snakemake_cmd} --executor cluster-generic \
-            --cluster-generic-submit-cmd 'qsub -cwd -V -q scc -N {rule}.{jobid} -pe smp {threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y' \
+            --cluster-generic-submit-cmd 'qsub -cwd -V -q ${queue} ${gpu_resource} ${node_restriction} -N {rule}.{jobid} -pe smp {threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y' \
             --jobs ${jobs} \
             --default-resources mem_mb=8192 runtime=604800 threads=1"
     else
@@ -900,6 +998,11 @@ qdrant_insert() {
 
     # Add other options
     snakemake_cmd="${snakemake_cmd} --use-conda --rerun-incomplete --printshellcmds"
+
+    # Add conda env override if GPU queue
+    if [[ -n "$conda_env_override" ]]; then
+        snakemake_cmd="${snakemake_cmd} --config ${conda_env_override}"
+    fi
 
     # Add target
     case $dataset in

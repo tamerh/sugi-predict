@@ -22,9 +22,14 @@ BioYoda is a Snakemake-based pipeline for processing biomedical literature and c
 ### Prerequisites
 
 ```bash
-# Create conda environment
+# Create conda environment (CPU)
 conda env create -f tamer.yml
 conda activate bioyoda
+
+# OR: Create GPU environment (for accelerated processing)
+conda env create -f config/tamer_gpu.yml       # CUDA 12.4
+conda env create -f config/tamer_gpu_cuda11.yml # CUDA 11.8
+conda activate bioyoda_gpu
 
 # Verify Snakemake is installed
 snakemake --version
@@ -52,15 +57,18 @@ snakemake --version
 ### Production Workflow
 
 ```bash
-# Step 1: Process all data on cluster
-./bioyoda.sh run pubmed --cluster --bg --jobs 100
-./bioyoda.sh run clinical_trials --cluster --bg --jobs 20
+# Step 1: Process all data on cluster (with GPU acceleration)
+./bioyoda.sh run pubmed --cluster --bg --jobs 100 --config config/config_gpu.yaml
+./bioyoda.sh run clinical_trials --cluster --bg --jobs 20 --config config/config_gpu.yaml
+
+# For CUDA 11.4 nodes (scc116, scc117, scc066):
+./bioyoda.sh run clinical_trials --cluster --bg --config config/config_gpu.yaml --cuda11.4
 
 # Step 2: Start Qdrant on GPU node for long-running session
 ./bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
 
 # Step 3: Insert data when ready (can be done days later)
-./bioyoda.sh qdrant insert all --cluster --jobs 20
+./bioyoda.sh qdrant insert all --cluster --jobs 20 --config config/config_gpu.yaml
 
 # Step 4: Monitor
 ./bioyoda.sh qdrant status
@@ -137,11 +145,17 @@ modules/
 ### Data Processing
 
 ```bash
-# Process PubMed data
+# Process PubMed data (CPU)
 ./bioyoda.sh run pubmed --cluster --bg --jobs 50
 
-# Process Clinical Trials
-./bioyoda.sh run clinical_trials --cluster --bg --jobs 20
+# Process with GPU acceleration
+./bioyoda.sh run pubmed --cluster --bg --jobs 50 --config config/config_gpu.yaml
+
+# Process Clinical Trials with GPU (CUDA 12.4 nodes)
+./bioyoda.sh run clinical_trials --cluster --bg --jobs 20 --config config/config_gpu.yaml
+
+# Process with CUDA 11.4 nodes (scc116, scc117, scc066)
+./bioyoda.sh run clinical_trials --cluster --bg --config config/config_gpu.yaml --cuda11.4
 
 # Process all datasets
 ./bioyoda.sh run all --cluster --bg --jobs 100
@@ -170,8 +184,11 @@ tail -f logs/bioyoda_pubmed_main.log
 ./bioyoda.sh qdrant insert clinical_trials
 ./bioyoda.sh qdrant insert all
 
-# Insert with cluster resources
-./bioyoda.sh qdrant insert pubmed --cluster --jobs 10
+# Insert with cluster resources and GPU acceleration
+./bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --config config/config_gpu.yaml
+
+# Insert with CUDA 11.4 nodes
+./bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --config config/config_gpu.yaml --cuda11.4
 
 # Stop server
 ./bioyoda.sh qdrant stop
@@ -226,11 +243,26 @@ Small dataset for fast validation:
 
 ### Production Mode (`config/config.yaml`)
 
-Full datasets:
+Full datasets (CPU optimized):
 - PubMed: ~30M abstracts
 - Clinical Trials: ~500K trials
 - Qdrant: Optimized batches
 - Runtime: ~10-12 hours for data processing
+
+### GPU Mode (`config/config_gpu.yaml`)
+
+GPU-accelerated processing:
+- Larger batch sizes (256 vs 128)
+- More memory per job (16GB)
+- Optimized for GPU nodes
+- Faster processing times
+- Use with `--config config/config_gpu.yaml`
+
+### GPU Environments
+
+Two CUDA versions supported:
+- **CUDA 12.4**: `tamer_gpu.yml` - Default GPU nodes (scc213, scc192, spiderman, hulk, scc195-199)
+- **CUDA 11.8**: `tamer_gpu_cuda11.yml` - Older GPU nodes (scc116, scc117, scc066) - use with `--cuda11.4` flag
 
 ## Directory Structure
 

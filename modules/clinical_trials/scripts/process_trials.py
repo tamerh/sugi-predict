@@ -235,7 +235,7 @@ class ClinicalTrialsProcessor:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             log_with_timestamp(f"Using device: {device}")
 
-            self.model = SentenceTransformer(self.model_name, device=device)
+            self.model = SentenceTransformer(self.model_name, device=device, model_args={"use_safetensors": True})
 
             # For CPU, warn about large batch sizes and log worker count
             if device == 'cpu':

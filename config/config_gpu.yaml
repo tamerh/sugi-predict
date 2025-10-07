@@ -1,13 +1,13 @@
 ##############################################################################
 #
-#   BioYoda Configuration File
-#   Central configuration for all pipeline modules
+#   BioYoda GPU Configuration File
+#   Optimized configuration for GPU-accelerated processing
 #
 ##############################################################################
 
 # Project Settings
 project_name: "bioyoda"
-conda_env: "bioyoda"
+conda_env: "bioyoda_gpu"
 
 # Base Paths
 base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev"
@@ -32,24 +32,26 @@ pubmed:
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
   vector_dimension: 768
 
-  # Processing settings
+  # Processing settings - GPU optimized
   batch_size: 1000
+  encode_batch_size: 256        # Larger batch size for GPU (128-512 optimal)
+  num_workers: 4                # Moderate workers for GPU
 
-  # Job resources
-  process_memory_mb: 12288  # 12GB
-  process_runtime: 10080     # 168 hours in minutes
-  merge_memory_mb: 262144    # 256GB
-  merge_runtime: 10080       # 168 hours in minutes
+  # Job resources - GPU optimized
+  process_memory_mb: 16384      # 16GB for GPU processing
+  process_runtime: 10080        # 168 hours in minutes
+  merge_memory_mb: 262144       # 256GB
+  merge_runtime: 10080          # 168 hours in minutes
 
   # Qdrant insertion settings
   qdrant:
     collection_name: "pubmed_abstracts"
-    memory_mb: 8192
+    memory_mb: 16384            # More memory for GPU nodes
     runtime_hours: 8
 
   # Debug settings
-  debug_mode: false         # Set to true to download/process limited files
-  debug_sample_size: 2     # Number of files to process in debug mode
+  debug_mode: false
+  debug_sample_size: 2
 
 # Clinical Trials Module Configuration
 clinical_trials:
@@ -68,10 +70,10 @@ clinical_trials:
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
   vector_dimension: 768
 
-  # Processing settings
+  # Processing settings - GPU optimized
   batch_size: 1000
-  encode_batch_size: 64        # Batch size for model encoding (32-64 optimal for CPU, 128-256 for GPU)
-  num_workers: 16             # Number of CPU workers for parallel encoding (use 8-16 for production)
+  encode_batch_size: 256        # Larger batch size for GPU (128-512 optimal)
+  num_workers: 1                # Moderate workers for GPU
   max_chunk_length: 500
   min_text_length: 50
   min_summary_length: 100
@@ -83,18 +85,18 @@ clinical_trials:
   include_interventions: true
   exclude_withdrawn: true
 
-  # Job resources - PRODUCTION
-  download_memory_mb: 16384    # 16GB for download + extraction
-  download_runtime: 240        # 4 hours
-  extract_memory_mb: 16384     # 16GB for table joins
-  extract_runtime: 240         # 4 hours
-  process_memory_mb: 20480     # 20GB for embedding generation
-  process_runtime: 10080       # 7 days (554K trials)
+  # Job resources - GPU optimized
+  download_memory_mb: 16384     # 16GB for download + extraction
+  download_runtime: 240         # 4 hours
+  extract_memory_mb: 16384      # 16GB for table joins
+  extract_runtime: 240          # 4 hours
+  process_memory_mb: 4096      # 4GB for GPU embedding generation
+  process_runtime: 10080        # 7 days (554K trials)
 
   # Qdrant insertion settings
   qdrant:
     collection_name: "clinical_trials"
-    memory_mb: 8192
+    memory_mb: 16384            # More memory for GPU nodes
     runtime_hours: 4
 
 # Qdrant Module Configuration
@@ -104,12 +106,12 @@ qdrant:
   log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/qdrant"
 
   # Insertion settings
-  batch_size: 500  # Reduced from 1000 for better NFS performance
+  batch_size: 1000              # Larger batches for GPU processing
 
   # Server settings (for auto-start via Snakemake)
   server:
-    memory_mb: 131072      # 128GB for server
-    runtime_hours: 48      # 2 days
+    memory_mb: 131072           # 128GB for server
+    runtime_hours: 48           # 2 days
 
 # Output directory for final FAISS exports
 final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final"
@@ -117,9 +119,9 @@ final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final"
 # HPC Cluster Configuration
 cluster:
   type: "sge"
-  default_queue: "scc"
-  max_jobs: 100
+  default_queue: "gpu"          # Use GPU queue by default
+  max_jobs: 50                  # Fewer parallel jobs for GPU (limited GPU slots)
 
   # Resource defaults
-  default_memory_mb: 8192
+  default_memory_mb: 16384      # More memory for GPU nodes
   default_threads: 1

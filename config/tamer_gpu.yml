@@ -1,0 +1,29 @@
+name: bioyoda_gpu
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.12
+  - pytorch-cuda=12.4
+  - pytorch
+  - torchvision
+  - torchaudio
+  - faiss-gpu
+  - sentence-transformers
+  - requests
+  - tqdm
+  - pandas
+  - lxml
+  - psutil
+  - qdrant-client
+  - psycopg2-binary
+  - beautifulsoup4
+  - postgresql
+  - snakemake>=9.0
+  - graphviz
+  - pip
+  - pip:
+    - snakemake-executor-plugin-cluster-generic

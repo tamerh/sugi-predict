@@ -13,6 +13,12 @@ Lets plan the tasks and discuss first.
 bash -c "source ~/.bashrc && conda activate bioyoda && snakemake --help" 2>&1 | grep -A5 "positional arguments"           │
 
 
+qstat -g c
+
+qstat -f
+
+./bioyoda.sh run clinical_trials --cluster --bg --cuda11.4
+
 ./bioyoda.sh qdrant insert pubmed
 
  ./bioyoda.sh run clinical_trials --config config/test_config.yaml --local
@@ -20,7 +26,9 @@ bash -c "source ~/.bashrc && conda activate bioyoda && snakemake --help" 2>&1 | 
 ./bioyoda.sh run pubmed --config config/test_config.yaml --local
 
 
-  ./bioyoda.sh run clinical_trials --config config/test_config.yaml --local --bg
+./bioyoda.sh run clinical_trials --cluster --bg
+
+./bioyoda.sh run clinical_trials --config config/test_config.yaml --local --bg
 
 ./bioyoda.sh run pubmed --cluster --jobs 1
 
