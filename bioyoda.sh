@@ -115,6 +115,7 @@ Run Options:
     --cores N                 Number of cores to use (default: 1)
     --jobs N                  Max parallel jobs on cluster (default: 100)
     --config FILE             Use custom config file (default: config/config.yaml)
+    --test                    Use test config (config/test_config.yaml)
     --dryrun                  Show what would be executed without running
     --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066) with bioyoda_gpu_cuda11 env
 
@@ -129,6 +130,7 @@ Qdrant Insert Options:
     --local                   Run insertion locally (default)
     --cores N                 Number of cores (for local mode)
     --jobs N                  Max parallel jobs (for cluster mode)
+    --test                    Use test config (config/test_config.yaml)
     --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066) with bioyoda_gpu_cuda11 env
 
 Stop Options:
@@ -139,6 +141,9 @@ Examples:
     $0 run pubmed --cluster --bg --jobs 50
     $0 run clinical_trials --cluster --bg --jobs 20
     $0 run all --cluster --bg --jobs 100
+
+    # Test with small dataset
+    $0 run pubmed --test --local
 
     # Use CUDA 11.4 nodes instead
     $0 run pubmed --cluster --bg --jobs 50 --cuda11.4
@@ -201,6 +206,7 @@ run() {
     local custom_config=""
     local background=false
     local cuda_version=""
+    local use_test_config=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -229,6 +235,10 @@ run() {
                 custom_config="$2"
                 shift 2
                 ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
             --bg|-b)
                 background=true
                 shift
@@ -244,8 +254,14 @@ run() {
         esac
     done
 
-    # Use custom config if provided, otherwise use default
-    local active_config="${custom_config:-$config_file}"
+    # Determine active config: --config takes precedence, then --test, then default
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+        log_info "Using test configuration: config/test_config.yaml"
+    fi
 
     # Auto-detect GPU queue and use config_gpu.yaml if no custom config specified
     if [[ -z "$custom_config" ]] && [[ "$execution_mode" == "cluster" ]]; then
@@ -316,7 +332,12 @@ run() {
     # Add other options
     # --keep-going: Continue with independent jobs even if some fail (good for parallel file processing)
     # Remove --keep-going if you want fail-fast behavior (stop on first failure)
-    snakemake_cmd="${snakemake_cmd} --use-conda --keep-going --rerun-incomplete --retries 3 --printshellcmds ${dryrun}"
+    # In test mode, no retries for faster feedback
+    local retries=3
+    if [[ "$use_test_config" == true ]]; then
+        retries=0
+    fi
+    snakemake_cmd="${snakemake_cmd} --use-conda --keep-going --rerun-incomplete --retries ${retries} --printshellcmds ${dryrun}"
 
     # Build config overrides (all in one --config)
     local config_overrides="execution_mode=${execution_mode}"
@@ -908,6 +929,7 @@ qdrant_insert() {
     local cores=1
     local jobs=10
     local cuda_version=""
+    local use_test_config=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -927,6 +949,10 @@ qdrant_insert() {
                 jobs="$2"
                 shift 2
                 ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
             --cuda11.4)
                 cuda_version="11.4"
                 shift
@@ -943,10 +969,16 @@ qdrant_insert() {
     # Check prerequisites
     check_snakemake
 
-    # Auto-detect GPU queue and use config_gpu.yaml if on cluster
-    local active_config="${config_file}"
-    if [[ "$execution_mode" == "cluster" ]]; then
-        local queue=$(grep -A2 "^cluster:" ${config_file} | grep "default_queue:" | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/' || echo "scc")
+    # Determine config file
+    local active_config="$config_file"
+    if [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+        log_info "Using test configuration: config/test_config.yaml"
+    fi
+
+    # Auto-detect GPU queue and use config_gpu.yaml if on cluster (unless test mode)
+    if [[ "$use_test_config" == false ]] && [[ "$execution_mode" == "cluster" ]]; then
+        local queue=$(grep -A2 "^cluster:" ${active_config} | grep "default_queue:" | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/' || echo "scc")
         if [[ "$queue" == "gpu" ]]; then
             # Check if config_gpu.yaml exists
             if [[ -f "config/config_gpu.yaml" ]]; then
@@ -997,7 +1029,12 @@ qdrant_insert() {
     fi
 
     # Add other options
-    snakemake_cmd="${snakemake_cmd} --use-conda --rerun-incomplete --printshellcmds"
+    # In test mode, no retries for faster feedback
+    local retries=3
+    if [[ "$use_test_config" == true ]]; then
+        retries=0
+    fi
+    snakemake_cmd="${snakemake_cmd} --use-conda --rerun-incomplete --retries ${retries} --printshellcmds"
 
     # Add conda env override if GPU queue
     if [[ -n "$conda_env_override" ]]; then

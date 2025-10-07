@@ -13,12 +13,22 @@ import glob
 # Load module-specific configuration
 ct_config = config["clinical_trials"]
 
-# Directory paths
-RAW_DIR = ct_config["raw_dir"]
-PROCESSED_DIR = ct_config["processed_dir"]
-FINAL_DIR = ct_config["final_dir"]
-LOG_DIR = ct_config["log_dir"]
-MODULE_SCRIPTS = os.path.join(config["scripts_dir"], "clinical_trials", "scripts")
+# Construct paths from base_dir (defined in main Snakefile)
+BASE_DIR = config["base_dir"]
+RAW_DIR = os.path.join(BASE_DIR, "data", "raw", "clinical_trials")
+PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials")
+FINAL_DIR = os.path.join(BASE_DIR, "data", "final", "clinical_trials")
+LOG_DIR = os.path.join(BASE_DIR, "logs", "clinical_trials")
+MODULE_SCRIPTS = os.path.join(BASE_DIR, "modules", "clinical_trials", "scripts")
+
+# Update config with constructed paths for downstream use
+ct_config["raw_dir"] = RAW_DIR
+ct_config["processed_dir"] = PROCESSED_DIR
+ct_config["final_dir"] = FINAL_DIR
+ct_config["log_dir"] = LOG_DIR
+ct_config["trials_json"] = os.path.join(PROCESSED_DIR, "trials_data.json")
+ct_config["final_index"] = os.path.join(FINAL_DIR, "clinical_trials.index")
+ct_config["final_metadata"] = os.path.join(FINAL_DIR, "clinical_trials.json")
 
 # Create directories
 os.makedirs(RAW_DIR, exist_ok=True)
@@ -52,7 +62,7 @@ rule clinical_trials_download:
         mem_mb=ct_config["download_memory_mb"]
     shell:
         """
-j        # Backup previous log if it exists
+        # Backup previous log if it exists
         if [ -f {log} ]; then
             mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
         fi
@@ -83,57 +93,57 @@ j        # Backup previous log if it exists
         """
 
 # Rule 2: Extract text from AACT tables to JSON
-#rule clinical_trials_extract:
-#    input:
-#        extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
-#        download_flag = os.path.join(FINAL_DIR, ".download_complete")
-#    output:
-#        trials_json = ct_config["trials_json"],
-#        trials_csv = os.path.join(PROCESSED_DIR, "trials_data.csv")
-#    params:
-#        script = os.path.join(MODULE_SCRIPTS, "extract_text_optimized.py"),
-#        extract_dir = os.path.join(RAW_DIR, "extracted"),
-#        min_summary_length = ct_config.get("min_summary_length", 100),
-#        include_flags = (
-#            ("--include-detailed-description " if ct_config.get("include_detailed_description", True) else "") +
-#            ("--include-outcomes " if ct_config.get("include_outcomes", True) else "") +
-#            ("--include-eligibility " if ct_config.get("include_eligibility", True) else "") +
-#            ("--include-interventions " if ct_config.get("include_interventions", True) else "") +
-#            ("--exclude-withdrawn " if ct_config.get("exclude_withdrawn", True) else "")
-#        ),
-#        limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
-#        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_extract.log")
-#    log:
-#        os.path.join(LOG_DIR, "extract.log")
-#    conda:
-#        config["conda_env"]
-#    threads: 1
-#    resources:
-#        mem_mb=ct_config["extract_memory_mb"]
-#    shell:
-#        """
-#        # Backup previous log if it exists
-#        if [ -f {log} ]; then
-#            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-#        fi
-#
-#        echo "==================== RUN STARTED: $(date) ====================" > {log}
-#
-#        echo "Starting text extraction from AACT tables..." >> {log}
-#
-#        python {params.script} \
-#            --extract-dir {params.extract_dir} \
-#            --output-json {output.trials_json} \
-#            --output-csv {output.trials_csv} \
-#            --min-summary-length {params.min_summary_length} \
-#            {params.include_flags} \
-#            {params.limit_flag} \
-#            >> {log} 2>&1
-#
-#        echo "Extraction completed successfully" >> {log}
-#        echo "Output JSON: {output.trials_json}" >> {log}
-#        echo "Output CSV: {output.trials_csv}" >> {log}
-#        """
+rule clinical_trials_extract:
+    input:
+        extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
+        download_flag = os.path.join(FINAL_DIR, ".download_complete")
+    output:
+        trials_json = ct_config["trials_json"],
+        trials_csv = os.path.join(PROCESSED_DIR, "trials_data.csv")
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "extract_text_optimized.py"),
+        extract_dir = os.path.join(RAW_DIR, "extracted"),
+        min_summary_length = ct_config.get("min_summary_length", 100),
+        include_flags = (
+            ("--include-detailed-description " if ct_config.get("include_detailed_description", True) else "") +
+            ("--include-outcomes " if ct_config.get("include_outcomes", True) else "") +
+            ("--include-eligibility " if ct_config.get("include_eligibility", True) else "") +
+            ("--include-interventions " if ct_config.get("include_interventions", True) else "") +
+            ("--exclude-withdrawn " if ct_config.get("exclude_withdrawn", True) else "")
+        ),
+        limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_extract.log")
+    log:
+        os.path.join(LOG_DIR, "extract.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=ct_config["extract_memory_mb"]
+    shell:
+        """
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
+        echo "Starting text extraction from AACT tables..." >> {log}
+
+        python {params.script} \
+            --extract-dir {params.extract_dir} \
+            --output-json {output.trials_json} \
+            --output-csv {output.trials_csv} \
+            --min-summary-length {params.min_summary_length} \
+            {params.include_flags} \
+            {params.limit_flag} \
+            >> {log} 2>&1
+
+        echo "Extraction completed successfully" >> {log}
+        echo "Output JSON: {output.trials_json}" >> {log}
+        echo "Output CSV: {output.trials_csv}" >> {log}
+        """
 
 # Rule 3: Process trials to create FAISS embeddings
 rule clinical_trials_process:

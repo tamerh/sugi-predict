@@ -18,18 +18,25 @@ import sys
 # Load configuration
 configfile: "config/config.yaml"
 
-# Module-specific configuration
-QDRANT_MODULE_DIR = "modules/qdrant"
-QDRANT_SCRIPTS = f"{QDRANT_MODULE_DIR}/scripts"
+# Construct paths from base_dir
+BASE_DIR = config["base_dir"]
 
-# Paths from config
-QDRANT_STORAGE = config["qdrant"]["storage_dir"]
-QDRANT_LOG_DIR = config["qdrant"]["log_dir"]
-CONNECTION_INFO = f"{QDRANT_STORAGE}/connection_info.txt"
+# Module-specific paths
+QDRANT_MODULE_DIR = os.path.join(BASE_DIR, "modules", "qdrant")
+QDRANT_SCRIPTS = os.path.join(QDRANT_MODULE_DIR, "scripts")
+
+# Storage and log paths
+QDRANT_STORAGE = os.path.join(BASE_DIR, "data", "qdrant")
+QDRANT_LOG_DIR = os.path.join(BASE_DIR, "logs", "qdrant")
+CONNECTION_INFO = os.path.join(QDRANT_STORAGE, "connection_info.txt")
+
+# Update config with constructed paths
+config["qdrant"]["storage_dir"] = QDRANT_STORAGE
+config["qdrant"]["log_dir"] = QDRANT_LOG_DIR
 
 # Collection directories (where processed data lives)
-PUBMED_FAISS_DIR = config["pubmed"]["processed_dir"]
-CLINICAL_TRIALS_FAISS_DIR = config["clinical_trials"]["final_dir"]
+PUBMED_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "pubmed")
+CLINICAL_TRIALS_FAISS_DIR = os.path.join(BASE_DIR, "data", "final", "clinical_trials")
 
 # Ensure directories exist
 os.makedirs(QDRANT_STORAGE, exist_ok=True)

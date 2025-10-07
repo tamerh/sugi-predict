@@ -9,24 +9,12 @@
 project_name: "bioyoda"
 conda_env: "bioyoda"
 
-# Base Paths - DEV ENVIRONMENT
-base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev"
-data_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data"
-scripts_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/modules"
-logs_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs"
+# Base Paths - CHANGE THIS FOR DIFFERENT ENVIRONMENTS
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2"
 
 # PubMed Module Configuration - TEST MODE
 pubmed:
-  # Data directories - DEV ENVIRONMENT
-  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/raw/pubmed"
-  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/pubmed"
-  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/pubmed"
-
-  # Files
-  file_list: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/pubmed_files.txt"
-  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/master_pubmed.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/pubmed/master_pubmed.json"
+  # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Model settings (same as production)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -53,16 +41,7 @@ pubmed:
 
 # Clinical Trials Module Configuration - TEST MODE
 clinical_trials:
-  # Data directories - DEV ENVIRONMENT
-  raw_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/raw/clinical_trials"
-  processed_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/clinical_trials"
-  final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/clinical_trials"
-
-  # Output files
-  trials_json: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/processed/clinical_trials/trials_data.json"
-  final_index: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials/clinical_trials.index"
-  final_metadata: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final/clinical_trials/clinical_trials.json"
+  # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Model settings (same as PubMed)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -100,9 +79,7 @@ clinical_trials:
 
 # Qdrant Module Configuration - TEST MODE
 qdrant:
-  # Storage - DEV ENVIRONMENT
-  storage_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/qdrant"
-  log_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/logs/qdrant"
+  # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Insertion settings
   batch_size: 100              # Small batches for testing (vs 1000 production)
@@ -112,8 +89,7 @@ qdrant:
     memory_mb: 16384           # 16GB (vs 128GB production) - enough for test data
     runtime_hours: 4           # 4 hours (vs 48 hours production)
 
-# Output directory for final FAISS exports - DEV ENVIRONMENT
-final_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/data/final"
+# NOTE: final_dir is constructed from base_dir in Snakefile
 
 # HPC Cluster Configuration
 cluster:

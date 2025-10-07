@@ -11,12 +11,22 @@ import glob
 # Get PubMed-specific configuration
 pubmed_config = config["pubmed"]
 
-# Paths
-RAW_DIR = pubmed_config["raw_dir"]
-PROCESSED_DIR = pubmed_config["processed_dir"]
-FINAL_DIR = pubmed_config["final_dir"]
-LOG_DIR = pubmed_config["log_dir"]
-MODULE_SCRIPTS = os.path.join(config["scripts_dir"], "pubmed", "scripts")
+# Construct paths from base_dir (defined in main Snakefile)
+BASE_DIR = config["base_dir"]
+RAW_DIR = os.path.join(BASE_DIR, "data", "raw", "pubmed")
+PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "pubmed")
+FINAL_DIR = os.path.join(BASE_DIR, "data", "final", "pubmed")
+LOG_DIR = os.path.join(BASE_DIR, "logs", "pubmed")
+MODULE_SCRIPTS = os.path.join(BASE_DIR, "modules", "pubmed", "scripts")
+
+# Update config with constructed paths for downstream use
+pubmed_config["raw_dir"] = RAW_DIR
+pubmed_config["processed_dir"] = PROCESSED_DIR
+pubmed_config["final_dir"] = FINAL_DIR
+pubmed_config["log_dir"] = LOG_DIR
+pubmed_config["file_list"] = os.path.join(FINAL_DIR, "pubmed_files.txt")
+pubmed_config["final_index"] = os.path.join(FINAL_DIR, "master_pubmed.index")
+pubmed_config["final_metadata"] = os.path.join(FINAL_DIR, "master_pubmed.json")
 
 # Create directories
 os.makedirs(RAW_DIR, exist_ok=True)

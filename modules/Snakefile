@@ -15,6 +15,13 @@ import os
 # Load configuration
 configfile: "config/config.yaml"
 
+# Construct paths from base_dir
+BASE_DIR = config["base_dir"]
+config["data_dir"] = os.path.join(BASE_DIR, "data")
+config["scripts_dir"] = os.path.join(BASE_DIR, "modules")
+config["logs_dir"] = os.path.join(BASE_DIR, "logs")
+config["final_dir"] = os.path.join(BASE_DIR, "data", "final")
+
 # Local rules (don't submit to cluster)
 localrules: all, pubmed, clinical_trials
 
