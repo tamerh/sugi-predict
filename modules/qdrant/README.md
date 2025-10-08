@@ -177,7 +177,7 @@ modules/qdrant/
 
 ### Clinical Trials (`clinical_trials`)
 
-- **Source**: `data/final/clinical_trials/`
+- **Source**: `data/processed/clinical_trials/` (chunked indices)
 - **Vectors**: ~3M chunks (production), ~500 (test)
 - **Metadata**: NCT ID, chunk type, title, status, conditions
 - **Insertion Time**: 30-60 minutes (production)
@@ -282,7 +282,7 @@ tail -f logs/qdrant/server.log
 
 # Check if data exists
 ls -lh data/processed/pubmed/baseline/*.index
-ls -lh data/final/clinical_trials/*.index
+ls -lh data/processed/clinical_trials/*.index
 
 # Check insertion logs
 tail -f logs/qdrant/insert_pubmed.log

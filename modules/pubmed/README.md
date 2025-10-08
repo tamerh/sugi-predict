@@ -71,7 +71,7 @@ Combines individual indices into master index. **Not required** - Qdrant inserts
 
 ```bash
 # Optional: create master index
-# Output: data/final/pubmed/master_pubmed.index
+# Output: data/merged/pubmed/master_pubmed.index
 ```
 
 ## Configuration
@@ -113,7 +113,7 @@ data/
 │   │   └── pubmed25n0002.json
 │   └── updatefiles/
 │
-└── final/pubmed/                     # Optional merged index
+└── merged/pubmed/                    # Optional merged index
     ├── master_pubmed.index
     └── master_pubmed.json
 ```

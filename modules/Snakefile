@@ -26,7 +26,7 @@ BASE_DIR = config["base_dir"]
 config["data_dir"] = os.path.join(BASE_DIR, "data")
 config["scripts_dir"] = os.path.join(PROJECT_ROOT, "modules")  # Scripts in project root
 config["logs_dir"] = os.path.join(BASE_DIR, "logs")
-config["final_dir"] = os.path.join(BASE_DIR, "data", "final")
+config["merged_dir"] = os.path.join(BASE_DIR, "data", "merged")
 config["project_root"] = PROJECT_ROOT  # Make available to other Snakefiles
 
 # Local rules (don't submit to cluster)

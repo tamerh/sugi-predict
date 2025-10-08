@@ -21,23 +21,23 @@ PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.pat
 
 RAW_DIR = os.path.join(BASE_DIR, "raw_data", "clinical_trials")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials")
-FINAL_DIR = os.path.join(BASE_DIR, "data", "final", "clinical_trials")
+MERGED_DIR = os.path.join(BASE_DIR, "data", "merged", "clinical_trials")
 LOG_DIR = os.path.join(BASE_DIR, "logs", "clinical_trials")
 MODULE_SCRIPTS = os.path.join(PROJECT_ROOT, "modules", "clinical_trials", "scripts")  # Scripts in project root
 
 # Update config with constructed paths for downstream use
 ct_config["raw_dir"] = RAW_DIR
 ct_config["processed_dir"] = PROCESSED_DIR
-ct_config["final_dir"] = FINAL_DIR
+ct_config["merged_dir"] = MERGED_DIR
 ct_config["log_dir"] = LOG_DIR
 ct_config["trials_json"] = os.path.join(PROCESSED_DIR, "trials_data.json")
-ct_config["final_index"] = os.path.join(FINAL_DIR, "clinical_trials.index")
-ct_config["final_metadata"] = os.path.join(FINAL_DIR, "clinical_trials.json")
+ct_config["final_index"] = os.path.join(MERGED_DIR, "clinical_trials.index")
+ct_config["final_metadata"] = os.path.join(MERGED_DIR, "clinical_trials.json")
 
 # Create directories
 os.makedirs(RAW_DIR, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)
-os.makedirs(FINAL_DIR, exist_ok=True)
+os.makedirs(MERGED_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # Helper function to aggregate chunk indices after checkpoint
@@ -126,7 +126,7 @@ rule clinical_trials_download:
     output:
         snapshot_zip = os.path.join(RAW_DIR, "aact_snapshot.zip"),
         extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
-        download_flag = os.path.join(FINAL_DIR, ".download_complete")
+        download_flag = os.path.join(RAW_DIR, ".download_complete")
     params:
         script = os.path.join(MODULE_SCRIPTS, "download_aact.py"),
         download_dir = RAW_DIR,
@@ -176,7 +176,7 @@ rule clinical_trials_download:
 checkpoint clinical_trials_extract:
     input:
         extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
-        download_flag = os.path.join(FINAL_DIR, ".download_complete")
+        download_flag = os.path.join(RAW_DIR, ".download_complete")
     output:
         manifest = os.path.join(PROCESSED_DIR, "chunk_manifest.json")
     params:
@@ -338,8 +338,8 @@ rule clinical_trials_merge:
     input:
         chunk_indices = aggregate_trial_chunk_indices
     output:
-        index = os.path.join(FINAL_DIR, "master_clinical_trials.index"),
-        metadata = os.path.join(FINAL_DIR, "master_clinical_trials.json")
+        index = os.path.join(MERGED_DIR, "master_clinical_trials.index"),
+        metadata = os.path.join(MERGED_DIR, "master_clinical_trials.json")
     params:
         script = os.path.join(MODULE_SCRIPTS, "merge_trials.py"),
         processed_dir = PROCESSED_DIR,
@@ -397,10 +397,10 @@ rule clinical_trials_merge:
 # Only applies if you ran clinical_trials_merge
 rule clinical_trials_validate:
     input:
-        index = os.path.join(FINAL_DIR, "master_clinical_trials.index"),
-        metadata = os.path.join(FINAL_DIR, "master_clinical_trials.json")
+        index = os.path.join(MERGED_DIR, "master_clinical_trials.index"),
+        metadata = os.path.join(MERGED_DIR, "master_clinical_trials.json")
     output:
-        validation_report = os.path.join(FINAL_DIR, "validation_report.txt")
+        validation_report = os.path.join(MERGED_DIR, "validation_report.txt")
     params:
         vector_dim = ct_config["vector_dimension"],
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_validate.log")

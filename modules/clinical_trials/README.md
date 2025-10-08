@@ -49,7 +49,7 @@ snakemake --cores 1 \
   --configfile config/config.yaml \
   clinical_trials_merge
 
-# Output: out/data/final/clinical_trials/master_clinical_trials.index
+# Output: out/data/merged/clinical_trials/master_clinical_trials.index
 ```
 
 ## Pipeline Steps
@@ -135,7 +135,7 @@ out/data/processed/clinical_trials/
 
 **Output**:
 ```bash
-out/data/final/clinical_trials/
+out/data/merged/clinical_trials/
 ├── master_clinical_trials.index
 └── master_clinical_trials.json
 ```
@@ -227,7 +227,7 @@ out/
 │   ├── ...
 │   └── chunk_manifest.json                 # Discovery info
 │
-└── data/final/clinical_trials/              # Only if merge run
+└── data/merged/clinical_trials/             # Only if merge run
     ├── master_clinical_trials.index        # Optional merged index
     └── master_clinical_trials.json         # Optional merged metadata
 ```

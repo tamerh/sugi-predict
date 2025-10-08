@@ -115,12 +115,12 @@ class TestPathConstruction:
         # Simulate path construction from Snakefile
         raw_dir = os.path.join(base_dir, 'raw_data', 'pubmed')
         processed_dir = os.path.join(base_dir, 'data', 'processed', 'pubmed')
-        final_dir = os.path.join(base_dir, 'data', 'final', 'pubmed')
+        merged_dir = os.path.join(base_dir, 'data', 'merged', 'pubmed')
 
         # Paths should be well-formed
         assert 'raw_data/pubmed' in raw_dir
         assert 'data/processed/pubmed' in processed_dir
-        assert 'data/final/pubmed' in final_dir
+        assert 'data/merged/pubmed' in merged_dir
 
 
 class TestModelConfiguration:

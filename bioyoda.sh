@@ -444,11 +444,11 @@ status() {
     # Check PubMed status
     echo ""
     echo "=== PubMed Module ==="
-    if [[ -f "${base_dir}/data/final/pubmed/master_pubmed.index" ]]; then
-        local size=$(du -h ${base_dir}/data/final/pubmed/master_pubmed.index | cut -f1)
-        log_success "Final index exists (${size})"
+    if [[ -f "${base_dir}/data/merged/pubmed/master_pubmed.index" ]]; then
+        local size=$(du -h ${base_dir}/data/merged/pubmed/master_pubmed.index | cut -f1)
+        log_success "Merged index exists (${size})"
     else
-        log_warning "Final index not found"
+        log_warning "Merged index not found"
     fi
 
     # Count processed files
@@ -517,7 +517,7 @@ validate() {
 
     case $module in
         pubmed)
-            if [[ ! -f "${base_dir}/data/final/pubmed/master_pubmed.index" ]]; then
+            if [[ ! -f "${base_dir}/data/merged/pubmed/master_pubmed.index" ]]; then
                 log_error "PubMed index not found. Run pipeline first."
                 exit 1
             fi
@@ -527,9 +527,9 @@ validate() {
                 pubmed_validate --cores 1 --use-conda
 
             # Display validation report
-            if [[ -f "${base_dir}/data/final/pubmed/validation_report.txt" ]]; then
+            if [[ -f "${base_dir}/data/merged/pubmed/validation_report.txt" ]]; then
                 echo ""
-                cat ${base_dir}/data/final/pubmed/validation_report.txt
+                cat ${base_dir}/data/merged/pubmed/validation_report.txt
             fi
             ;;
         qdrant)

@@ -93,7 +93,7 @@ tail -f logs/qdrant/insert_pubmed.log
 │  ↓ Create FAISS         ↓ Create FAISS                       │
 │                                                               │
 │  Output: data/processed/pubmed/                              │
-│          data/final/clinical_trials/                         │
+│          data/processed/clinical_trials/                     │
 └─────────────────────────────────────────────────────────────┘
                             ↓
                    (Data files ready)
@@ -285,7 +285,7 @@ bioyoda/
 │   │   └── clinical_trials/
 │   ├── data/               # Generated/processed data
 │   │   ├── processed/      # Per-file FAISS indices
-│   │   ├── final/          # Final indices (merged or single)
+│   │   ├── merged/         # Merged FAISS indices (optional)
 │   │   └── qdrant/         # Qdrant storage & connection info
 │   └── logs/               # Pipeline logs
 │       ├── cluster/        # SGE job logs

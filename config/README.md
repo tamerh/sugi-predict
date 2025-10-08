@@ -13,7 +13,7 @@ This directory contains configuration files for the BioYoda pipeline.
 - Memory: 12GB per process job, 256GB for merge
 - Batch size: 128 for encoding
 - Runtime: Up to 7 days per job
-- Output: `data/final/pubmed/`
+- Output: `data/merged/pubmed/`
 
 **Usage**:
 ```bash
@@ -62,7 +62,7 @@ This directory contains configuration files for the BioYoda pipeline.
 - Processes only first 1000 abstracts per file (test mode)
 - Memory: 4GB per process job, 8GB for merge
 - Runtime: 1 hour per job, 30 min for merge
-- Output: `data/test/final/pubmed/`
+- Output: `test_out/data/merged/pubmed/`
 
 **Usage**:
 ```bash
@@ -181,7 +181,7 @@ conda activate bioyoda_gpu_cuda11
 ./bioyoda.sh run pubmed --config config/test_config.yaml --cluster --jobs 5
 
 # 2. Check test results
-ls -lh data/test/final/pubmed/
+ls -lh test_out/data/merged/pubmed/
 
 # 3. If tests pass, run production with GPU
 ./bioyoda.sh run pubmed --cluster --jobs 50 --config config/config_gpu.yaml

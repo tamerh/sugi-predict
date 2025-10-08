@@ -19,18 +19,18 @@ PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.pat
 
 RAW_DIR = os.path.join(BASE_DIR, "raw_data", "pubmed")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "pubmed")
-FINAL_DIR = os.path.join(BASE_DIR, "data", "final", "pubmed")
+MERGED_DIR = os.path.join(BASE_DIR, "data", "merged", "pubmed")
 LOG_DIR = os.path.join(BASE_DIR, "logs", "pubmed")
 MODULE_SCRIPTS = os.path.join(PROJECT_ROOT, "modules", "pubmed", "scripts")  # Scripts in project root
 
 # Update config with constructed paths for downstream use
 pubmed_config["raw_dir"] = RAW_DIR
 pubmed_config["processed_dir"] = PROCESSED_DIR
-pubmed_config["final_dir"] = FINAL_DIR
+pubmed_config["merged_dir"] = MERGED_DIR
 pubmed_config["log_dir"] = LOG_DIR
-pubmed_config["file_list"] = os.path.join(FINAL_DIR, "pubmed_files.txt")
-pubmed_config["final_index"] = os.path.join(FINAL_DIR, "master_pubmed.index")
-pubmed_config["final_metadata"] = os.path.join(FINAL_DIR, "master_pubmed.json")
+pubmed_config["file_list"] = os.path.join(MERGED_DIR, "pubmed_files.txt")
+pubmed_config["final_index"] = os.path.join(MERGED_DIR, "master_pubmed.index")
+pubmed_config["final_metadata"] = os.path.join(MERGED_DIR, "master_pubmed.json")
 
 # Create directories
 os.makedirs(RAW_DIR, exist_ok=True)
@@ -39,7 +39,7 @@ os.makedirs(os.path.join(RAW_DIR, "updatefiles"), exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(os.path.join(PROCESSED_DIR, "baseline"), exist_ok=True)
 os.makedirs(os.path.join(PROCESSED_DIR, "updatefiles"), exist_ok=True)
-os.makedirs(FINAL_DIR, exist_ok=True)
+os.makedirs(MERGED_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 
 # Helper function to get XML file path from wildcards
@@ -136,8 +136,8 @@ rule pubmed_processing_complete:
 # This is a checkpoint because we don't know how many files will be downloaded
 checkpoint pubmed_download:
     output:
-        baseline_flag = os.path.join(FINAL_DIR, ".download_baseline_complete"),
-        updatefiles_flag = os.path.join(FINAL_DIR, ".download_updatefiles_complete"),
+        baseline_flag = os.path.join(RAW_DIR, ".download_baseline_complete"),
+        updatefiles_flag = os.path.join(RAW_DIR, ".download_updatefiles_complete"),
         deleted_pmids = os.path.join(RAW_DIR, "deleted.pmids.sorted.gz")
     params:
         raw_dir = pubmed_config["raw_dir"],
@@ -227,11 +227,11 @@ rule pubmed_merge:
         indices = aggregate_processed_indices
     output:
         index = pubmed_config["final_index"],
-        metadata = os.path.join(FINAL_DIR, "master_metadata.json")  # merge0.py outputs JSON
+        metadata = os.path.join(MERGED_DIR, "master_metadata.json")  # merge0.py outputs JSON
     params:
         script = os.path.join(MODULE_SCRIPTS, "merge0.py"),
         processed_dir = PROCESSED_DIR,
-        final_dir = FINAL_DIR,
+        merged_dir = MERGED_DIR,
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_merge.log")
     log:
         os.path.join(LOG_DIR, "merge.log")
@@ -252,7 +252,7 @@ rule pubmed_merge:
 
         python {params.script} \
             --processed-dir {params.processed_dir} \
-            --output-dir {params.final_dir} \
+            --output-dir {params.merged_dir} \
             --vector-dim {pubmed_config[vector_dimension]} \
             >> {log} 2>&1
 
@@ -260,13 +260,13 @@ rule pubmed_merge:
         echo "Final index size: $(du -h {output.index})" >> {log}
         """
 
-# Rule 4: Validate final indices
+# Rule 4: Validate merged indices
 rule pubmed_validate:
     input:
         index = pubmed_config["final_index"],
         metadata = pubmed_config["final_metadata"]
     output:
-        validation_report = os.path.join(FINAL_DIR, "validation_report.txt")
+        validation_report = os.path.join(MERGED_DIR, "validation_report.txt")
     params:
         vector_dim = pubmed_config["vector_dimension"],
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_validate.log")
