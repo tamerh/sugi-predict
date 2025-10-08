@@ -73,10 +73,14 @@ clinical_trials:
   # Processing settings - GPU optimized
   batch_size: 1000
   encode_batch_size: 256        # Larger batch size for GPU (128-512 optimal)
-  num_workers: 1                # Moderate workers for GPU
+  num_workers: 1                # GPU handles parallelism internally
   max_chunk_length: 500
   min_text_length: 50
   min_summary_length: 100
+
+  # Chunking strategy for parallel processing (NEW)
+  enable_chunking: true         # Enable chunking for multi-GPU parallelism
+  trials_per_chunk: 100000      # Larger chunks for GPU (50K-100K+ for GPU batch efficiency)
 
   # Text extraction flags
   include_detailed_description: true
@@ -90,8 +94,10 @@ clinical_trials:
   download_runtime: 240         # 4 hours
   extract_memory_mb: 16384      # 16GB for table joins
   extract_runtime: 240          # 4 hours
-  process_memory_mb: 4096      # 4GB for GPU embedding generation
-  process_runtime: 10080        # 7 days (554K trials)
+  process_memory_mb: 16384      # 16GB per GPU chunk
+  process_runtime: 480          # 8 hours per chunk (GPU is much faster)
+  merge_memory_mb: 32768        # 32GB for merging all chunks
+  merge_runtime: 240            # 4 hours for merge
 
   # Qdrant insertion settings
   qdrant:

@@ -40,11 +40,86 @@ os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(FINAL_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# Helper function to aggregate chunk indices after checkpoint
+def aggregate_trial_chunk_indices(wildcards):
+    """
+    Aggregate all processed chunk index files after checkpoint completes.
+    This is called after the extract checkpoint finishes and discovers chunks.
+    """
+    # Wait for checkpoint to complete
+    checkpoints.clinical_trials_extract.get()
+
+    import sys
+    import json
+
+    # Use config directly to avoid global variable pollution
+    ct_processed_dir = config["clinical_trials"]["processed_dir"]
+
+    # Load chunk manifest
+    manifest_path = os.path.join(ct_processed_dir, "chunk_manifest.json")
+
+    if not os.path.exists(manifest_path):
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] ERROR: Manifest not found at {manifest_path}\n")
+        sys.stderr.flush()
+        return []
+
+    with open(manifest_path, 'r') as f:
+        manifest = json.load(f)
+
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Manifest loaded: chunked={manifest['chunked']}\n")
+    sys.stderr.flush()
+
+    if manifest['chunked']:
+        # Return list of chunk indices (NOT merged!)
+        indices = []
+        for chunk_info in manifest['chunks']:
+            chunk_filename = chunk_info['filename'].replace('.json', '.index')
+            chunk_index_path = os.path.join(ct_processed_dir, chunk_filename)
+            indices.append(chunk_index_path)
+            sys.stderr.write(f"[CHECKPOINT AGGREGATION]   -> {chunk_index_path}\n")
+
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] Total chunk indices: {len(indices)}\n")
+        sys.stderr.flush()
+        return indices
+    else:
+        # Single file mode - return the single processed index
+        single_index_path = os.path.join(ct_processed_dir, "clinical_trials_single.index")
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] Single file mode: {single_index_path}\n")
+        sys.stderr.flush()
+        return [single_index_path]
+
+
 # Top-level rule for clinical_trials module
+# Default: produces chunk indices only (NO merge)
+# Similar to PubMed: individual files ready for Qdrant insertion
 rule clinical_trials_all:
     input:
-        ct_config["final_index"],
-        ct_config["final_metadata"]
+        aggregate_trial_chunk_indices
+
+# Completion marker for Qdrant dependency
+rule clinical_trials_processing_complete:
+    input:
+        indices = aggregate_trial_chunk_indices
+    output:
+        done = os.path.join(PROCESSED_DIR, ".processing_complete")
+    params:
+        processed_dir = PROCESSED_DIR,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_processing_complete.log")
+    shell:
+        """
+        # Count actual index files created
+        INDEX_COUNT=$(find {params.processed_dir} -name "*.index" 2>/dev/null | wc -l)
+
+        echo "Clinical Trials FAISS processing complete" > {output.done}
+        echo "Processed chunk files: $INDEX_COUNT" >> {output.done}
+        echo "Index files from input: $(echo {input.indices} | wc -w)" >> {output.done}
+        echo "Completed at: $(date)" >> {output.done}
+
+        if [ "$INDEX_COUNT" -eq 0 ]; then
+            echo "ERROR: No index files were created!" | tee -a {output.done}
+            exit 1
+        fi
+        """
 
 # Rule 1: Download AACT database snapshot
 rule clinical_trials_download:
@@ -96,18 +171,20 @@ rule clinical_trials_download:
         echo "Download and extraction completed successfully" >> {log}
         """
 
-# Rule 2: Extract text from AACT tables to JSON
-rule clinical_trials_extract:
+# Checkpoint 2: Extract text from AACT tables to JSON (with optional chunking)
+# This is a checkpoint because we don't know how many chunks will be created
+checkpoint clinical_trials_extract:
     input:
         extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
         download_flag = os.path.join(FINAL_DIR, ".download_complete")
     output:
-        trials_json = ct_config["trials_json"],
-        trials_csv = os.path.join(PROCESSED_DIR, "trials_data.csv")
+        manifest = os.path.join(PROCESSED_DIR, "chunk_manifest.json")
     params:
         script = os.path.join(MODULE_SCRIPTS, "extract_text_optimized.py"),
         extract_dir = os.path.join(RAW_DIR, "extracted"),
+        output_json = ct_config["trials_json"],
         min_summary_length = ct_config.get("min_summary_length", 100),
+        chunk_size = ct_config.get("trials_per_chunk", 0) if ct_config.get("enable_chunking", False) else 0,
         include_flags = (
             ("--include-detailed-description " if ct_config.get("include_detailed_description", True) else "") +
             ("--include-outcomes " if ct_config.get("include_outcomes", True) else "") +
@@ -137,25 +214,74 @@ rule clinical_trials_extract:
 
         python {params.script} \
             --extract-dir {params.extract_dir} \
-            --output-json {output.trials_json} \
-            --output-csv {output.trials_csv} \
+            --output-json {params.output_json} \
             --min-summary-length {params.min_summary_length} \
+            --chunk-size {params.chunk_size} \
             {params.include_flags} \
             {params.limit_flag} \
             >> {log} 2>&1
 
         echo "Extraction completed successfully" >> {log}
-        echo "Output JSON: {output.trials_json}" >> {log}
-        echo "Output CSV: {output.trials_csv}" >> {log}
+        echo "Chunk size: {params.chunk_size}" >> {log}
+        echo "Manifest: {output.manifest}" >> {log}
         """
 
-# Rule 3: Process trials to create FAISS embeddings
-rule clinical_trials_process:
+# Rule 3a: Process individual chunk (for chunked mode)
+rule clinical_trials_process_chunk:
+    input:
+        chunk_json = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}.json")
+    output:
+        index = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}.index"),
+        metadata = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}_metadata.json")  # Different name to avoid cycle
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "process_trials_chunk.py"),
+        model = ct_config["model_name"],
+        vector_dim = ct_config["vector_dimension"],
+        encode_batch_size = ct_config.get("encode_batch_size", 128),
+        num_workers = ct_config.get("num_workers", 1),
+        max_chunk_length = ct_config.get("max_chunk_length", 500),
+        min_text_length = ct_config.get("min_text_length", 50),
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_process_chunk.{chunk_id}.log")
+    log:
+        os.path.join(LOG_DIR, "process_chunk_{chunk_id}.log")
+    conda:
+        config["conda_env"]
+    threads: ct_config.get("num_workers", 1)
+    resources:
+        mem_mb=ct_config["process_memory_mb"]
+    shell:
+        """
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+        echo "Processing chunk {wildcards.chunk_id}..." >> {log}
+
+        python {params.script} \
+            --input-json {input.chunk_json} \
+            --output-index {output.index} \
+            --output-metadata {output.metadata} \
+            --model-name {params.model} \
+            --vector-dimension {params.vector_dim} \
+            --encode-batch-size {params.encode_batch_size} \
+            --num-workers {params.num_workers} \
+            --max-chunk-length {params.max_chunk_length} \
+            --min-text-length {params.min_text_length} \
+            >> {log} 2>&1
+
+        echo "Chunk processing completed successfully" >> {log}
+        echo "Index: {output.index}" >> {log}
+        """
+
+# Rule 3b: Process single file (for non-chunked mode, backward compatibility)
+rule clinical_trials_process_single:
     input:
         trials_json = ct_config["trials_json"]
     output:
-        index = ct_config["final_index"],
-        metadata = ct_config["final_metadata"]
+        index = os.path.join(PROCESSED_DIR, "clinical_trials_single.index"),
+        metadata = os.path.join(PROCESSED_DIR, "clinical_trials_single.json")
     params:
         script = os.path.join(MODULE_SCRIPTS, "process_trials.py"),
         model = ct_config["model_name"],
@@ -205,11 +331,74 @@ rule clinical_trials_process:
         echo "Index size: $(du -h {output.index})" >> {log}
         """
 
-# Rule 4: Validate final indices (optional)
+# Rule 3c: OPTIONAL - Merge chunked indices into single master index
+# This is NOT run by default (like pubmed_merge)
+# Only run explicitly if you need a single merged index for analysis
+rule clinical_trials_merge:
+    input:
+        chunk_indices = aggregate_trial_chunk_indices
+    output:
+        index = os.path.join(FINAL_DIR, "master_clinical_trials.index"),
+        metadata = os.path.join(FINAL_DIR, "master_clinical_trials.json")
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "merge_trials.py"),
+        processed_dir = PROCESSED_DIR,
+        vector_dim = ct_config["vector_dimension"],
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_merge.log")
+    log:
+        os.path.join(LOG_DIR, "merge.log")
+    conda:
+        config["conda_env"]
+    threads: 1
+    resources:
+        mem_mb=ct_config.get("merge_memory_mb", 32768)
+    shell:
+        """
+        # Backup previous log if it exists
+        if [ -f {log} ]; then
+            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
+        fi
+
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+        echo "Starting merge of $(echo {input.chunk_indices} | wc -w) chunk files..." >> {log}
+
+        # Check if we're in chunked mode or single file mode
+        NUM_INPUTS=$(echo {input.chunk_indices} | wc -w)
+
+        if [ "$NUM_INPUTS" -eq 1 ]; then
+            # Single file mode - just copy the file
+            echo "Single file mode detected - copying files directly" >> {log}
+            SINGLE_INDEX=$(echo {input.chunk_indices} | awk '{{print $1}}')
+            SINGLE_METADATA=${{SINGLE_INDEX%.index}}.json
+
+            cp "$SINGLE_INDEX" {output.index} >> {log} 2>&1
+            cp "$SINGLE_METADATA" {output.metadata} >> {log} 2>&1
+
+            echo "Files copied successfully" >> {log}
+        else
+            # Chunked mode - run merge script
+            echo "Chunked mode detected - running merge script" >> {log}
+
+            python {params.script} \
+                --processed-dir {params.processed_dir} \
+                --output-index {output.index} \
+                --output-metadata {output.metadata} \
+                --vector-dim {params.vector_dim} \
+                >> {log} 2>&1
+
+            echo "Merge completed successfully" >> {log}
+        fi
+
+        echo "Final index size: $(du -h {output.index})" >> {log}
+        echo "Final metadata size: $(du -h {output.metadata})" >> {log}
+        """
+
+# Rule 4: OPTIONAL - Validate merged master index
+# Only applies if you ran clinical_trials_merge
 rule clinical_trials_validate:
     input:
-        index = ct_config["final_index"],
-        metadata = ct_config["final_metadata"]
+        index = os.path.join(FINAL_DIR, "master_clinical_trials.index"),
+        metadata = os.path.join(FINAL_DIR, "master_clinical_trials.json")
     output:
         validation_report = os.path.join(FINAL_DIR, "validation_report.txt")
     params:

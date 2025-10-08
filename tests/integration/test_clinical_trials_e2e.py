@@ -1,10 +1,17 @@
 """
-End-to-end test for Clinical Trials pipeline
+End-to-end test for Clinical Trials pipeline (Chunked Architecture)
 
 This test actually RUNS the full pipeline in test mode and validates output.
 Uses test_out/ directory for all outputs (easy to inspect and debug).
 
-With test config (100 trials limit): Should take ~5-10 minutes.
+Tests the NEW chunked architecture where pipeline outputs individual chunk files:
+- trials_chunk_0001.json (input: extracted trials)
+- trials_chunk_0001.index (output: FAISS index)
+- trials_chunk_0001_metadata.json (output: processed metadata)
+- trials_chunk_0002.json, .index, _metadata.json
+- etc.
+
+With test config (100 trials, 50 per chunk = 2 chunks): Should take ~5-10 minutes.
 
 Usage:
     ./run_tests.sh clinical_trials  (includes E2E)
@@ -31,12 +38,17 @@ def run_pipeline_e2e():
 
     output_dir = Path(config['base_dir'])
 
-    # Clean test_out/ if it exists (fresh start for each test run)
-    if output_dir.exists():
-        print(f"\n{'='*80}")
-        print(f"Cleaning previous test output: {output_dir}")
-        print(f"{'='*80}\n")
-        shutil.rmtree(output_dir)
+    # Clean only data/ and logs/, preserve raw_data/ to avoid re-downloading 2.2GB
+    print(f"\n{'='*80}")
+    print(f"Cleaning test output: {output_dir}/data and {output_dir}/logs")
+    print(f"Preserving: {output_dir}/raw_data (2.2GB download)")
+    print(f"{'='*80}\n")
+
+    for subdir in ['data', 'logs']:
+        path_to_clean = output_dir / subdir
+        if path_to_clean.exists():
+            print(f"  Removing: {path_to_clean}")
+            shutil.rmtree(path_to_clean)
 
     # Run pipeline
     cmd = [
@@ -113,64 +125,111 @@ class TestClinicalTrialsEndToEnd:
 
     @pytest.mark.e2e
     @pytest.mark.slow
+    def test_chunk_manifest_created(self, run_pipeline_e2e):
+        """Test that chunk manifest is created with correct info"""
+        output_dir = run_pipeline_e2e['output_dir']
+        config = run_pipeline_e2e['config']
+        processed_dir = output_dir / 'data' / 'processed' / 'clinical_trials'
+
+        # Check for chunk manifest
+        manifest_file = processed_dir / 'chunk_manifest.json'
+        assert manifest_file.exists(), "Chunk manifest not created"
+
+        # Load and validate manifest
+        with open(manifest_file) as f:
+            manifest = json.load(f)
+
+        assert manifest['chunked'] == True, "Manifest should indicate chunked mode"
+        assert 'num_chunks' in manifest, "Missing num_chunks in manifest"
+        assert 'trials_per_chunk' in manifest, "Missing trials_per_chunk in manifest"
+        assert 'chunks' in manifest, "Missing chunks list in manifest"
+        assert len(manifest['chunks']) > 0, "Chunks list is empty"
+
+        # Verify chunk files match manifest
+        chunk_indices = list(processed_dir.glob('trials_chunk_*.index'))
+        assert len(chunk_indices) == manifest['num_chunks'], \
+            f"Mismatch: {len(chunk_indices)} index files vs {manifest['num_chunks']} in manifest"
+
+    @pytest.mark.e2e
+    @pytest.mark.slow
     def test_processes_with_limit(self, run_pipeline_e2e):
         """Test that test mode processes limited trials"""
         output_dir = run_pipeline_e2e['output_dir']
         config = run_pipeline_e2e['config']
 
-        final_dir = output_dir / 'data' / 'final' / 'clinical_trials'
-        assert final_dir.exists(), "Final directory not created"
+        # Check for chunk files in processed directory (NEW chunked architecture)
+        processed_dir = output_dir / 'data' / 'processed' / 'clinical_trials'
+        assert processed_dir.exists(), "Processed directory not created"
 
-        index_file = final_dir / 'clinical_trials.index'
-        assert index_file.exists(), "Index file not created"
+        # Find all chunk index files
+        chunk_indices = list(processed_dir.glob('trials_chunk_*.index'))
+        assert len(chunk_indices) > 0, "No chunk index files created"
 
-        # Check vector counts
+        # Check vector counts across all chunks
         if config['clinical_trials'].get('test_mode'):
             limit = config['clinical_trials'].get('test_trials_limit', 100)
 
-            index = faiss.read_index(str(index_file))
+            total_vectors = 0
+            for chunk_index in chunk_indices:
+                index = faiss.read_index(str(chunk_index))
+                total_vectors += index.ntotal
+
             # Each trial can have multiple chunks, so allow some variance
             # With 100 trials and ~3-5 chunks per trial, expect ~300-500 vectors
-            assert index.ntotal > 0, "Index is empty"
-            assert index.ntotal <= limit * 10, \
-                f"Index has {index.ntotal} vectors, expected <={limit * 10} for {limit} trials"
+            assert total_vectors > 0, "All chunk indices are empty"
+            assert total_vectors <= limit * 10, \
+                f"Total vectors {total_vectors}, expected <={limit * 10} for {limit} trials"
 
     @pytest.mark.e2e
     @pytest.mark.slow
     def test_final_index_valid(self, run_pipeline_e2e):
-        """Test that final index is a valid FAISS index"""
+        """Test that chunk indices are valid FAISS indices"""
         output_dir = run_pipeline_e2e['output_dir']
-        final_dir = output_dir / 'data' / 'final' / 'clinical_trials'
+        processed_dir = output_dir / 'data' / 'processed' / 'clinical_trials'
 
-        index_file = final_dir / 'clinical_trials.index'
-        assert index_file.exists(), "Index file not found"
+        # Find all chunk index files
+        chunk_indices = list(processed_dir.glob('trials_chunk_*.index'))
+        assert len(chunk_indices) > 0, "No chunk index files found"
 
-        # Validate index
-        index = faiss.read_index(str(index_file))
-        assert index.ntotal > 0, "Index is empty"
-        assert index.d == 768, f"Index has wrong dimension: {index.d}"
+        # Validate each chunk index
+        total_vectors = 0
+        for chunk_index in chunk_indices:
+            index = faiss.read_index(str(chunk_index))
+            assert index.ntotal > 0, f"Chunk index {chunk_index.name} is empty"
+            assert index.d == 768, f"Chunk index {chunk_index.name} has wrong dimension: {index.d}"
+            total_vectors += index.ntotal
+
+        assert total_vectors > 0, "All chunk indices are empty"
 
     @pytest.mark.e2e
     @pytest.mark.slow
     def test_metadata_created(self, run_pipeline_e2e):
-        """Test that metadata file is created with correct structure"""
+        """Test that chunk metadata files are created with correct structure"""
         output_dir = run_pipeline_e2e['output_dir']
-        final_dir = output_dir / 'data' / 'final' / 'clinical_trials'
+        processed_dir = output_dir / 'data' / 'processed' / 'clinical_trials'
 
-        metadata_file = final_dir / 'clinical_trials.json'
-        assert metadata_file.exists(), "Metadata file not created"
+        # Find all chunk metadata files (with _metadata.json suffix)
+        chunk_metadata_files = list(processed_dir.glob('trials_chunk_*_metadata.json'))
+        assert len(chunk_metadata_files) > 0, "No chunk metadata files created"
 
-        # Load and validate metadata
-        with open(metadata_file) as f:
-            metadata = json.load(f)
+        # Load and validate metadata from each chunk
+        total_entries = 0
+        for metadata_file in chunk_metadata_files:
+            with open(metadata_file) as f:
+                metadata = json.load(f)
 
-        assert len(metadata) > 0, "Metadata is empty"
+            # Metadata is a dict with numeric string keys
+            assert isinstance(metadata, dict), f"Metadata in {metadata_file.name} is not a dict"
+            assert len(metadata) > 0, f"Metadata in {metadata_file.name} is empty"
+            total_entries += len(metadata)
 
-        # Check structure of first entry
-        first_entry = next(iter(metadata.values()))
-        assert 'nct_id' in first_entry, "Missing nct_id in metadata"
-        assert 'text' in first_entry, "Missing text in metadata"
-        assert 'chunk_type' in first_entry, "Missing chunk_type in metadata"
+            # Check structure of first entry
+            first_entry = next(iter(metadata.values()))
+            assert 'nct_id' in first_entry, f"Missing nct_id in {metadata_file.name}"
+            assert 'text' in first_entry, f"Missing text in {metadata_file.name}"
+            assert 'chunk_type' in first_entry, f"Missing chunk_type in {metadata_file.name}"
+
+        assert total_entries > 0, "All chunk metadata files are empty"
 
     @pytest.mark.e2e
     @pytest.mark.slow
@@ -192,19 +251,26 @@ class TestClinicalTrialsEndToEnd:
     def test_trial_metadata_structure(self, run_pipeline_e2e):
         """Test that trials have correct metadata fields"""
         output_dir = run_pipeline_e2e['output_dir']
-        final_dir = output_dir / 'data' / 'final' / 'clinical_trials'
+        processed_dir = output_dir / 'data' / 'processed' / 'clinical_trials'
 
-        metadata_file = final_dir / 'clinical_trials.json'
+        # Find all chunk metadata files (with _metadata.json suffix)
+        chunk_metadata_files = list(processed_dir.glob('trials_chunk_*_metadata.json'))
+        assert len(chunk_metadata_files) > 0, "No chunk metadata files found"
 
-        with open(metadata_file) as f:
-            metadata = json.load(f)
+        # Check metadata structure across all chunks
+        for metadata_file in chunk_metadata_files:
+            with open(metadata_file) as f:
+                metadata = json.load(f)
 
-        # Check all entries have required fields
-        for entry in metadata.values():
-            assert entry['nct_id'].startswith('NCT'), \
-                f"Invalid NCT ID: {entry.get('nct_id')}"
-            assert len(entry['text']) > 0, "Empty text in metadata"
-            # Valid chunk types from clinical trials processing
-            valid_chunk_types = ['title', 'summary', 'description', 'eligibility', 'interventions', 'outcomes']
-            assert entry['chunk_type'] in valid_chunk_types, \
-                f"Invalid chunk_type: {entry.get('chunk_type')}"
+            # Metadata is a dict with numeric string keys
+            assert isinstance(metadata, dict), f"Metadata in {metadata_file.name} is not a dict"
+
+            # Check all entries have required fields
+            for entry in metadata.values():
+                assert entry['nct_id'].startswith('NCT'), \
+                    f"Invalid NCT ID: {entry.get('nct_id')}"
+                assert len(entry['text']) > 0, "Empty text in metadata"
+                # Valid chunk types from clinical trials processing
+                valid_chunk_types = ['title', 'summary', 'description', 'eligibility', 'interventions', 'outcomes']
+                assert entry['chunk_type'] in valid_chunk_types, \
+                    f"Invalid chunk_type: {entry.get('chunk_type')}"

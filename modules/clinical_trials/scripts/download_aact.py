@@ -116,17 +116,21 @@ class AACTDownloader:
             log_with_timestamp(f"ERROR: Failed to parse snapshot page: {e}")
             raise
 
-    def download_snapshot(self, snapshot_info: dict, download_dir: str) -> str:
+    def download_snapshot(self, snapshot_info: dict, download_dir: str, force: bool = False) -> str:
         """Download the AACT flat file snapshot."""
         filename = snapshot_info['filename']
         url = snapshot_info['url']
         local_path = os.path.join(download_dir, filename)
 
         # Check if file already exists
-        if os.path.exists(local_path):
+        if os.path.exists(local_path) and not force:
             file_size = os.path.getsize(local_path)
             log_with_timestamp(f"Snapshot already exists: {local_path} ({file_size/1024/1024:.1f}MB)")
+            log_with_timestamp("Skipping download (use --force to re-download)")
             return local_path
+        elif os.path.exists(local_path) and force:
+            log_with_timestamp(f"Force mode: removing existing file {local_path}")
+            os.remove(local_path)
 
         log_with_timestamp(f"Downloading flat file snapshot from {url}")
         log_with_timestamp(f"Saving to: {local_path}")
@@ -174,8 +178,26 @@ class AACTDownloader:
                 os.remove(local_path)
             raise
 
-    def extract_snapshot(self, zip_path: str, extract_dir: str) -> dict:
+    def extract_snapshot(self, zip_path: str, extract_dir: str, skip_if_exists: bool = False) -> dict:
         """Extract the AACT flat file snapshot and return info about extracted files."""
+
+        # Check if extraction already exists
+        extraction_info_path = os.path.join(extract_dir, 'extraction_info.json')
+        if skip_if_exists and os.path.exists(extraction_info_path):
+            log_with_timestamp(f"Extraction info already exists: {extraction_info_path}")
+            log_with_timestamp("Skipping extraction (use --force to re-extract)")
+
+            # Load and return existing extraction info
+            try:
+                with open(extraction_info_path, 'r') as f:
+                    info = json.load(f)
+                extracted_files = info.get('tables', {})
+                log_with_timestamp(f"Loaded existing extraction info: {len(extracted_files)} tables")
+                return extracted_files
+            except Exception as e:
+                log_with_timestamp(f"WARNING: Could not load extraction info: {e}")
+                log_with_timestamp("Proceeding with fresh extraction...")
+
         log_with_timestamp(f"Extracting snapshot to {extract_dir}")
 
         try:
@@ -255,6 +277,14 @@ def main():
         "--extract-only",
         help="Only extract from existing file (provide file path)"
     )
+    parser.add_argument(
+        "--skip-if-exists", action="store_true", default=True,
+        help="Skip download/extraction if files already exist (default: True)"
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Force re-download and re-extraction even if files exist"
+    )
 
     args = parser.parse_args()
 
@@ -266,15 +296,23 @@ def main():
         downloader = AACTDownloader()
         download_path = None
 
+        # Override skip_if_exists with force flag
+        skip_if_exists = args.skip_if_exists and not args.force
+
         # Download phase
         if not args.extract_only:
             log_with_timestamp("=== Starting AACT Flat Files Download ===")
+
+            if args.force:
+                log_with_timestamp("Force mode enabled: will re-download and re-extract")
+            elif skip_if_exists:
+                log_with_timestamp("Skip mode enabled: will skip if files exist")
 
             # Get latest snapshot info
             snapshot_info = downloader.get_latest_snapshot_info()
 
             # Download snapshot
-            download_path = downloader.download_snapshot(snapshot_info, args.download_dir)
+            download_path = downloader.download_snapshot(snapshot_info, args.download_dir, force=args.force)
 
             if args.download_only:
                 log_with_timestamp("Download complete! Use --extract-only to extract the files.")
@@ -290,7 +328,7 @@ def main():
                 return 1
 
             # Extract files
-            extracted_files = downloader.extract_snapshot(extract_file, args.extract_dir)
+            extracted_files = downloader.extract_snapshot(extract_file, args.extract_dir, skip_if_exists=skip_if_exists)
 
             # Save extraction info for other scripts
             info_path = os.path.join(args.extract_dir, 'extraction_info.json')

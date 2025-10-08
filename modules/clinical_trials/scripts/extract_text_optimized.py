@@ -277,7 +277,7 @@ def main():
     )
     parser.add_argument(
         "--output-json", required=True,
-        help="Output JSON file for extracted trials data"
+        help="Output JSON file for extracted trials data (or prefix if chunking)"
     )
     parser.add_argument(
         "--output-csv",
@@ -310,6 +310,10 @@ def main():
     parser.add_argument(
         "--exclude-withdrawn", action="store_true", default=True,
         help="Exclude withdrawn studies"
+    )
+    parser.add_argument(
+        "--chunk-size", type=int, default=0,
+        help="Trials per chunk (0 = single file, >0 = chunked output)"
     )
 
     args = parser.parse_args()
@@ -348,18 +352,87 @@ def main():
             log_with_timestamp("WARNING: No studies extracted")
             return 1
 
-        # Save to JSON
-        log_with_timestamp(f"Saving {len(extracted_studies):,} studies to JSON: {args.output_json}")
-        os.makedirs(os.path.dirname(os.path.abspath(args.output_json)), exist_ok=True)
+        # Determine output strategy based on chunk_size
+        chunk_size = args.chunk_size
+        output_dir = os.path.dirname(os.path.abspath(args.output_json))
+        os.makedirs(output_dir, exist_ok=True)
 
-        with open(args.output_json, 'w') as f:
-            json.dump(extracted_studies, f, indent=2)
+        if chunk_size > 0:
+            # Chunked output
+            log_with_timestamp(f"=== CHUNKED OUTPUT MODE: {chunk_size} trials per chunk ===")
 
-        json_size = os.path.getsize(args.output_json) / 1024 / 1024
-        log_with_timestamp(f"JSON saved: {json_size:.1f}MB")
+            total_studies = len(extracted_studies)
+            num_chunks = (total_studies + chunk_size - 1) // chunk_size
+            log_with_timestamp(f"Creating {num_chunks} chunks from {total_studies} studies")
 
-        # Save to CSV if requested
-        if args.output_csv:
+            chunk_files = []
+            for chunk_idx in range(num_chunks):
+                start_idx = chunk_idx * chunk_size
+                end_idx = min(start_idx + chunk_size, total_studies)
+                chunk_data = extracted_studies[start_idx:end_idx]
+
+                # Generate chunk filename: trials_chunk_0001.json
+                chunk_filename = f"trials_chunk_{chunk_idx+1:04d}.json"
+                chunk_path = os.path.join(output_dir, chunk_filename)
+
+                log_with_timestamp(f"Writing chunk {chunk_idx+1}/{num_chunks}: {chunk_filename} ({len(chunk_data)} trials)")
+                with open(chunk_path, 'w') as f:
+                    json.dump(chunk_data, f, indent=2)
+
+                chunk_size_mb = os.path.getsize(chunk_path) / 1024 / 1024
+                chunk_files.append({
+                    'chunk_id': chunk_idx + 1,
+                    'filename': chunk_filename,
+                    'path': chunk_path,
+                    'num_trials': len(chunk_data),
+                    'size_mb': round(chunk_size_mb, 2)
+                })
+
+            # Create manifest file
+            manifest_path = os.path.join(output_dir, "chunk_manifest.json")
+            manifest = {
+                'chunked': True,
+                'total_trials': total_studies,
+                'num_chunks': num_chunks,
+                'trials_per_chunk': chunk_size,
+                'chunks': chunk_files,
+                'extraction_time': datetime.now().isoformat()
+            }
+
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+
+            log_with_timestamp(f"Chunk manifest saved: {manifest_path}")
+            log_with_timestamp(f"Created {num_chunks} chunk files")
+
+        else:
+            # Single file output (original behavior)
+            log_with_timestamp(f"=== SINGLE FILE OUTPUT MODE ===")
+            log_with_timestamp(f"Saving {len(extracted_studies):,} studies to JSON: {args.output_json}")
+
+            with open(args.output_json, 'w') as f:
+                json.dump(extracted_studies, f, indent=2)
+
+            json_size = os.path.getsize(args.output_json) / 1024 / 1024
+            log_with_timestamp(f"JSON saved: {json_size:.1f}MB")
+
+            # Create manifest for single file
+            manifest_path = os.path.join(output_dir, "chunk_manifest.json")
+            manifest = {
+                'chunked': False,
+                'total_trials': len(extracted_studies),
+                'num_chunks': 1,
+                'output_file': args.output_json,
+                'extraction_time': datetime.now().isoformat()
+            }
+
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+
+            log_with_timestamp(f"Manifest saved: {manifest_path}")
+
+        # Save to CSV if requested (only for single file mode)
+        if args.output_csv and chunk_size == 0:
             log_with_timestamp(f"Saving basic info to CSV: {args.output_csv}")
 
             # Create simplified version for CSV
