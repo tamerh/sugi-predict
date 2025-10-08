@@ -20,8 +20,7 @@ bioyoda_version="0.1.0"
 conda_env="bioyoda"
 config_file="config/config.yaml"
 snakefile="modules/Snakefile"
-log_dir="logs"
-pid_dir="logs/pids"
+# Note: log_dir and pid_dir are set dynamically based on base_dir from config
 
 # Color codes for output
 RED='\033[0;31m'
@@ -281,8 +280,17 @@ run() {
     check_conda_env
     check_snakemake
 
-    # Create necessary directories
-    mkdir -p logs/cluster
+    # Extract base_dir from config to create logs in correct location
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
+
+    # Set pid_dir based on base_dir
+    local pid_dir="${base_dir}/logs/pids"
+
+    # Create necessary directories (use base_dir for logs)
+    mkdir -p ${base_dir}/logs/cluster
     mkdir -p ${pid_dir}
 
     # Build Snakemake command
@@ -748,6 +756,13 @@ stop() {
 
     log_info "Stopping BioYoda pipeline: module=${module}"
 
+    # Extract base_dir from config to find pid files
+    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
+    local pid_dir="${base_dir}/logs/pids"
+
     # Check for PID files (cluster or local)
     local pid_file=""
     local is_cluster=false
@@ -872,28 +887,34 @@ qdrant_start() {
 
     log_info "Starting Qdrant server (mode=${mode}, queue=${queue})"
 
-    # Ensure log directories exist
-    mkdir -p logs/qdrant
-    mkdir -p data/qdrant
+    # Use base_dir from config for consistent output location
+    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
+
+    # Ensure log directories exist (use base_dir)
+    mkdir -p ${base_dir}/logs/qdrant
+    mkdir -p ${base_dir}/data/qdrant
 
     # Call start_server.sh directly
     bash modules/qdrant/scripts/start_server.sh \
         --container modules/qdrant/setup/singularity/qdrant.sif \
         --config modules/qdrant/setup/singularity/config.yaml \
-        --storage data/qdrant \
+        --storage ${base_dir}/data/qdrant \
         --memory-mb ${memory_mb} \
         --runtime $((runtime_hours * 3600)) \
         --job-name q_server \
         --mode ${mode} \
-        --connection-info data/qdrant/connection_info.txt \
-        --log logs/qdrant/server.log \
+        --connection-info ${base_dir}/data/qdrant/connection_info.txt \
+        --log ${base_dir}/logs/qdrant/server.log \
         --queue ${queue}
 
     if [[ $? -eq 0 ]]; then
         log_success "Qdrant server started successfully"
-        if [[ -f "data/qdrant/connection_info.txt" ]]; then
+        if [[ -f "${base_dir}/data/qdrant/connection_info.txt" ]]; then
             echo ""
-            cat data/qdrant/connection_info.txt
+            cat ${base_dir}/data/qdrant/connection_info.txt
         fi
     else
         log_error "Failed to start Qdrant server"
