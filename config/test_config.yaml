@@ -16,7 +16,7 @@ base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/test_out"
 # PubMed Module Configuration - TEST MODE
 pubmed:
   # NOTE: Directories are constructed from base_dir in Snakefile
-
+j
   # Model settings (same as production)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
   vector_dimension: 768

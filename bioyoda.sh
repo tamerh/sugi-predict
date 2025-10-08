@@ -166,8 +166,8 @@ Examples:
     $0 qdrant stop
 
     # Monitor progress
-    tail -f logs/bioyoda_pubmed_main.log
-    tail -f logs/qdrant/insert_pubmed.log
+    tail -f out/logs/bioyoda_pubmed_main.log
+    tail -f out/logs/qdrant/insert_pubmed.log
 
     # Stop running pipeline
     $0 stop pubmed --clean
@@ -381,7 +381,7 @@ run() {
     fi
 
     # Execute
-    local main_log="${log_dir}/bioyoda_${module}_main.log"
+    local main_log="${base_dir}/logs/bioyoda_${module}_main.log"
 
     if [[ "$background" == true ]]; then
         log_info "Starting pipeline in background..."
@@ -435,18 +435,24 @@ status() {
         exit 1
     fi
 
+    # Extract base_dir from config
+    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
+
     # Check PubMed status
     echo ""
     echo "=== PubMed Module ==="
-    if [[ -f "data/final/pubmed/master_pubmed.index" ]]; then
-        local size=$(du -h data/final/pubmed/master_pubmed.index | cut -f1)
+    if [[ -f "${base_dir}/data/final/pubmed/master_pubmed.index" ]]; then
+        local size=$(du -h ${base_dir}/data/final/pubmed/master_pubmed.index | cut -f1)
         log_success "Final index exists (${size})"
     else
         log_warning "Final index not found"
     fi
 
     # Count processed files
-    local processed_count=$(find data/processed/pubmed -name "*.index" 2>/dev/null | wc -l)
+    local processed_count=$(find ${base_dir}/data/processed/pubmed -name "*.index" 2>/dev/null | wc -l)
     log_info "Processed files: ${processed_count}"
 
     # Check for running jobs
@@ -460,8 +466,8 @@ status() {
 
     echo ""
     echo "=== Clinical Trials Module ==="
-    if [[ -f "data/processed/clinical_trials/trials_data.json" ]]; then
-        local size=$(du -h data/processed/clinical_trials/trials_data.json | cut -f1)
+    if [[ -f "${base_dir}/data/processed/clinical_trials/trials_data.json" ]]; then
+        local size=$(du -h ${base_dir}/data/processed/clinical_trials/trials_data.json | cut -f1)
         log_success "Trials data exists (${size})"
     else
         log_warning "Trials data not found"
@@ -471,29 +477,29 @@ status() {
     echo "=== Qdrant Module ==="
 
     # Check if Qdrant server is running
-    if [[ -f "data/qdrant/connection_info.txt" ]]; then
+    if [[ -f "${base_dir}/data/qdrant/connection_info.txt" ]]; then
         log_success "Qdrant server connection info found"
-        cat data/qdrant/connection_info.txt | grep QDRANT_URL
+        cat ${base_dir}/data/qdrant/connection_info.txt | grep QDRANT_URL
     else
         log_info "Qdrant server not running"
     fi
 
     # Check collections
-    if [[ -f "data/qdrant/collections/pubmed_abstracts.done" ]]; then
+    if [[ -f "${base_dir}/data/qdrant/collections/pubmed_abstracts.done" ]]; then
         log_success "PubMed collection complete"
     else
         log_info "PubMed collection not completed"
     fi
 
-    if [[ -f "data/qdrant/collections/clinical_trials.done" ]]; then
+    if [[ -f "${base_dir}/data/qdrant/collections/clinical_trials.done" ]]; then
         log_success "Clinical Trials collection complete"
     else
         log_info "Clinical Trials collection not completed"
     fi
 
     # Check storage size
-    if [[ -d "data/qdrant/storage" ]]; then
-        local qdrant_size=$(du -sh data/qdrant/storage 2>/dev/null | cut -f1)
+    if [[ -d "${base_dir}/data/qdrant/storage" ]]; then
+        local qdrant_size=$(du -sh ${base_dir}/data/qdrant/storage 2>/dev/null | cut -f1)
         log_info "Qdrant storage size: ${qdrant_size}"
     fi
 }
@@ -501,11 +507,17 @@ status() {
 validate() {
     local module="${1:-pubmed}"
 
+    # Extract base_dir from config
+    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
+
     log_info "Validating module: ${module}"
 
     case $module in
         pubmed)
-            if [[ ! -f "data/final/pubmed/master_pubmed.index" ]]; then
+            if [[ ! -f "${base_dir}/data/final/pubmed/master_pubmed.index" ]]; then
                 log_error "PubMed index not found. Run pipeline first."
                 exit 1
             fi
@@ -515,19 +527,19 @@ validate() {
                 pubmed_validate --cores 1 --use-conda
 
             # Display validation report
-            if [[ -f "data/final/pubmed/validation_report.txt" ]]; then
+            if [[ -f "${base_dir}/data/final/pubmed/validation_report.txt" ]]; then
                 echo ""
-                cat data/final/pubmed/validation_report.txt
+                cat ${base_dir}/data/final/pubmed/validation_report.txt
             fi
             ;;
         qdrant)
-            if [[ ! -f "data/qdrant/connection_info.txt" ]]; then
+            if [[ ! -f "${base_dir}/data/qdrant/connection_info.txt" ]]; then
                 log_error "Qdrant server not running or connection info not found."
                 exit 1
             fi
 
             log_info "Checking Qdrant collections..."
-            source data/qdrant/connection_info.txt
+            source ${base_dir}/data/qdrant/connection_info.txt
 
             # Check collections via API
             log_info "Querying Qdrant at: $QDRANT_URL"
@@ -554,6 +566,12 @@ validate() {
 clean() {
     local module="${1:-all}"
 
+    # Extract base_dir from config
+    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
+
     log_warning "This will remove intermediate files. Continue? (y/N)"
     read -r response
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
@@ -564,27 +582,27 @@ clean() {
     case $module in
         pubmed)
             log_info "Cleaning PubMed processed files..."
-            rm -rf data/processed/pubmed/*
+            rm -rf ${base_dir}/data/processed/pubmed/*
             log_success "PubMed cleaned"
             ;;
         clinical_trials)
             log_info "Cleaning Clinical Trials processed files..."
-            rm -rf data/processed/clinical_trials/*
+            rm -rf ${base_dir}/data/processed/clinical_trials/*
             log_success "Clinical Trials cleaned"
             ;;
         qdrant)
             log_info "Cleaning Qdrant storage and collections..."
-            rm -rf data/qdrant/storage/*
-            rm -f data/qdrant/connection_info.txt
-            rm -f data/qdrant/collections/*.done
+            rm -rf ${base_dir}/data/qdrant/storage/*
+            rm -f ${base_dir}/data/qdrant/connection_info.txt
+            rm -f ${base_dir}/data/qdrant/collections/*.done
             log_success "Qdrant cleaned"
             ;;
         all)
             log_info "Cleaning all processed files..."
-            rm -rf data/processed/*
-            rm -rf data/qdrant/storage/*
-            rm -f data/qdrant/connection_info.txt
-            rm -f data/qdrant/collections/*.done
+            rm -rf ${base_dir}/data/processed/*
+            rm -rf ${base_dir}/data/qdrant/storage/*
+            rm -f ${base_dir}/data/qdrant/connection_info.txt
+            rm -f ${base_dir}/data/qdrant/collections/*.done
             log_success "All modules cleaned"
             ;;
         *)
@@ -641,7 +659,7 @@ unlock() {
 
 kill_process() {
     # Kill process tree using pstree
-    # Args: $1 = main_pid, $2 = is_cluster (true/false)
+    # Args: $1 = main_pid, $2 = is_cluster (true/false), $3 = base_dir, $4 = module
 
     if [[ -z "$1" ]]; then
         log_error "No process ID provided"
@@ -650,6 +668,8 @@ kill_process() {
 
     local main_pid=$1
     local is_cluster=${2:-false}
+    local base_dir=${3:-"out"}
+    local module=${4:-"unknown"}
 
     # Check if pstree is available
     if ! command -v pstree &> /dev/null; then
@@ -674,7 +694,7 @@ kill_process() {
 
     # If cluster mode, cancel SGE jobs
     if [[ "${is_cluster}" == "true" ]]; then
-        local main_log="${log_dir}/bioyoda_${module}_main.log"
+        local main_log="${base_dir}/logs/bioyoda_${module}_main.log"
         if [[ -f "${main_log}" ]]; then
             # Extract job IDs from main log
             local job_ids=$(grep 'Your job' "${main_log}" 2>/dev/null | sed -n "s/.*Your job \([0-9]*\).*/\1/p")
@@ -694,8 +714,14 @@ kill_process() {
 ##############################################################################
 
 stop_qdrant_server() {
-    local qdrant_pid_file="data/qdrant/qdrant.pid"
-    local connection_info="data/qdrant/connection_info.txt"
+    # Extract base_dir from config
+    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
+
+    local qdrant_pid_file="${base_dir}/data/qdrant/qdrant.pid"
+    local connection_info="${base_dir}/data/qdrant/connection_info.txt"
 
     # Check for local PID file
     if [[ -f "${qdrant_pid_file}" ]]; then
@@ -785,7 +811,7 @@ stop() {
 
     if ps -p ${main_pid} > /dev/null 2>&1; then
         log_info "Killing process tree (PID: ${main_pid})..."
-        kill_process ${main_pid} ${is_cluster}
+        kill_process ${main_pid} ${is_cluster} ${base_dir} ${module}
         log_success "Process stopped"
     else
         log_warning "Process ${main_pid} not running (stale PID file)"
