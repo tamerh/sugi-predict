@@ -18,11 +18,16 @@ import sys
 # Load configuration
 configfile: "config/config.yaml"
 
-# Construct paths from base_dir
+# Determine project root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(workflow.snakefile))
+
+# Construct paths
+# BASE_DIR: where outputs go
+# PROJECT_ROOT: where code lives
 BASE_DIR = config["base_dir"]
 
 # Module-specific paths
-QDRANT_MODULE_DIR = os.path.join(BASE_DIR, "modules", "qdrant")
+QDRANT_MODULE_DIR = os.path.join(PROJECT_ROOT, "modules", "qdrant")  # Scripts in project root
 QDRANT_SCRIPTS = os.path.join(QDRANT_MODULE_DIR, "scripts")
 
 # Storage and log paths

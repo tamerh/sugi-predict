@@ -240,11 +240,11 @@ def main():
         description="Download and extract AACT flat files for clinical trials processing"
     )
     parser.add_argument(
-        "--download-dir", default="./data/raw/clinical_trials",
+        "--download-dir", default="./raw_data/clinical_trials",
         help="Directory to store downloaded files"
     )
     parser.add_argument(
-        "--extract-dir", default="./data/raw/clinical_trials/extracted",
+        "--extract-dir", default="./raw_data/clinical_trials/extracted",
         help="Directory to extract files to"
     )
     parser.add_argument(

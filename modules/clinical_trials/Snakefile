@@ -13,13 +13,17 @@ import glob
 # Load module-specific configuration
 ct_config = config["clinical_trials"]
 
-# Construct paths from base_dir (defined in main Snakefile)
+# Construct paths
+# BASE_DIR: where outputs go (from main Snakefile)
+# PROJECT_ROOT: where code lives (from main Snakefile)
 BASE_DIR = config["base_dir"]
-RAW_DIR = os.path.join(BASE_DIR, "data", "raw", "clinical_trials")
+PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.path.dirname(workflow.snakefile))))
+
+RAW_DIR = os.path.join(BASE_DIR, "raw_data", "clinical_trials")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials")
 FINAL_DIR = os.path.join(BASE_DIR, "data", "final", "clinical_trials")
 LOG_DIR = os.path.join(BASE_DIR, "logs", "clinical_trials")
-MODULE_SCRIPTS = os.path.join(BASE_DIR, "modules", "clinical_trials", "scripts")
+MODULE_SCRIPTS = os.path.join(PROJECT_ROOT, "modules", "clinical_trials", "scripts")  # Scripts in project root
 
 # Update config with constructed paths for downstream use
 ct_config["raw_dir"] = RAW_DIR

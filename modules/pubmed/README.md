@@ -41,7 +41,7 @@ tail -f logs/bioyoda_pubmed_main.log
 
 ```bash
 # Output location
-data/raw/pubmed/
+raw_data/pubmed/
 ├── baseline/*.xml.gz
 ├── updatefiles/*.xml.gz
 └── deleted.pmids.sorted.gz
@@ -97,14 +97,14 @@ pubmed:
 ## Output Structure
 
 ```
+raw_data/pubmed/
+├── baseline/
+│   ├── pubmed25n0001.xml.gz
+│   └── pubmed25n0002.xml.gz
+├── updatefiles/
+└── deleted.pmids.sorted.gz
+
 data/
-├── raw/pubmed/
-│   ├── baseline/
-│   │   ├── pubmed25n0001.xml.gz
-│   │   └── pubmed25n0002.xml.gz
-│   ├── updatefiles/
-│   └── deleted.pmids.sorted.gz
-│
 ├── processed/pubmed/
 │   ├── baseline/
 │   │   ├── pubmed25n0001.index      # FAISS vectors
@@ -176,7 +176,7 @@ After processing PubMed data, you can:
 ### Download Issues
 ```bash
 # Check raw directory
-ls -lh data/raw/pubmed/baseline/
+ls -lh raw_data/pubmed/baseline/
 
 # Re-run download only
 snakemake --snakefile modules/pubmed/Snakefile pubmed_download
@@ -189,7 +189,7 @@ tail -f logs/cluster/index_pubmed*.log
 
 # Test with single file locally
 python modules/pubmed/scripts/index.py \
-  --input data/raw/pubmed/baseline/pubmed25n0001.xml.gz \
+  --input raw_data/pubmed/baseline/pubmed25n0001.xml.gz \
   --output data/processed/pubmed/baseline/pubmed25n0001 \
   --limit 100
 ```

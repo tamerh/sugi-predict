@@ -10,7 +10,8 @@ project_name: "bioyoda"
 conda_env: "bioyoda"
 
 # Base Paths - CHANGE THIS FOR DIFFERENT ENVIRONMENTS
-base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2"
+# Test outputs go to test_out/ directory for easy cleanup
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/test_out"
 
 # PubMed Module Configuration - TEST MODE
 pubmed:

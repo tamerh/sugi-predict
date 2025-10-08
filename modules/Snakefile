@@ -15,12 +15,19 @@ import os
 # Load configuration
 configfile: "config/config.yaml"
 
-# Construct paths from base_dir
+# Determine project root (where this Snakefile's parent directory is)
+# This is the directory containing modules/, config/, etc.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(workflow.snakefile))
+
+# Construct paths
+# BASE_DIR: where outputs go (can be ./out or ./test_out)
+# PROJECT_ROOT: where code lives (always the project directory)
 BASE_DIR = config["base_dir"]
 config["data_dir"] = os.path.join(BASE_DIR, "data")
-config["scripts_dir"] = os.path.join(BASE_DIR, "modules")
+config["scripts_dir"] = os.path.join(PROJECT_ROOT, "modules")  # Scripts in project root
 config["logs_dir"] = os.path.join(BASE_DIR, "logs")
 config["final_dir"] = os.path.join(BASE_DIR, "data", "final")
+config["project_root"] = PROJECT_ROOT  # Make available to other Snakefiles
 
 # Local rules (don't submit to cluster)
 localrules: all, pubmed, clinical_trials
@@ -59,6 +66,7 @@ rule all:
         rules.clinical_trials_all.input
 
 # Individual module targets (data processing only)
+# Note: Merge is optional - can be done separately if needed
 rule pubmed:
     input:
         rules.pubmed_all.input

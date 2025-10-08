@@ -266,26 +266,44 @@ Two CUDA versions supported:
 
 ## Directory Structure
 
+All outputs are organized in dedicated directories:
+
 ```
 bioyoda/
 ├── bioyoda.sh              # Main orchestration script
 ├── config/
-│   ├── config.yaml         # Production config
-│   └── test_config.yaml    # Test config
-├── modules/
+│   ├── config.yaml         # Production config (outputs to out/)
+│   └── test_config.yaml    # Test config (outputs to test_out/)
+├── modules/                # Pipeline code (never contains data)
 │   ├── Snakefile           # Main data processing workflow
 │   ├── pubmed/             # PubMed module
 │   ├── clinical_trials/    # Clinical Trials module
 │   └── qdrant/             # Qdrant operations (standalone)
-├── data/
-│   ├── raw/                # Downloaded data
-│   ├── processed/          # FAISS indices
-│   ├── final/              # Merged indices
-│   └── qdrant/             # Qdrant storage & connection info
-└── logs/                   # All logs
-    ├── cluster/            # SGE job logs
-    └── qdrant/             # Qdrant operation logs
+├── out/                    # Production outputs (configurable via base_dir)
+│   ├── raw_data/           # Downloaded raw data
+│   │   ├── pubmed/
+│   │   └── clinical_trials/
+│   ├── data/               # Generated/processed data
+│   │   ├── processed/      # Per-file FAISS indices
+│   │   ├── final/          # Final indices (merged or single)
+│   │   └── qdrant/         # Qdrant storage & connection info
+│   └── logs/               # Pipeline logs
+│       ├── cluster/        # SGE job logs
+│       ├── pubmed/
+│       ├── clinical_trials/
+│       └── qdrant/
+├── test_out/               # Test outputs (same structure as out/)
+│   └── ...                 # Cleaned at start of each test run
+└── tests/                  # Test suite
+    ├── unit/               # Fast unit tests
+    └── integration/        # E2E pipeline tests
 ```
+
+**Key Design:**
+- **out/** - Production pipeline outputs (gitignored)
+- **test_out/** - Test pipeline outputs (gitignored, cleaned per test)
+- **modules/** - Code only, no data (version controlled)
+- **Separation** - Easy to clean generated data without touching code
 
 ## Example Workflows
 

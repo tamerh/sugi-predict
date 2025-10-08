@@ -38,7 +38,7 @@ tail -f logs/bioyoda_clinical_trials_main.log
 
 ```bash
 # Output location
-data/raw/clinical_trials/
+raw_data/clinical_trials/
 ├── aact_snapshot.zip
 └── extracted/
     ├── studies.txt
@@ -112,18 +112,18 @@ clinical_trials:
 ## Output Structure
 
 ```
+raw_data/clinical_trials/
+├── aact_snapshot.zip
+└── extracted/
+    ├── studies.txt (554K trials)
+    ├── brief_summaries.txt
+    ├── detailed_descriptions.txt
+    ├── interventions.txt
+    ├── outcomes.txt
+    ├── eligibility.txt
+    └── ... (43 more tables)
+
 data/
-├── raw/clinical_trials/
-│   ├── aact_snapshot.zip
-│   └── extracted/
-│       ├── studies.txt (554K trials)
-│       ├── brief_summaries.txt
-│       ├── detailed_descriptions.txt
-│       ├── interventions.txt
-│       ├── outcomes.txt
-│       ├── eligibility.txt
-│       └── ... (43 more tables)
-│
 ├── processed/clinical_trials/
 │   └── trials_data.json          # Extracted text per trial
 │
@@ -202,7 +202,7 @@ After processing clinical trials data, you can:
 ### Download Issues
 ```bash
 # Check download
-ls -lh data/raw/clinical_trials/
+ls -lh raw_data/clinical_trials/
 
 # Re-run download
 snakemake --snakefile modules/clinical_trials/Snakefile clinical_trials_download
