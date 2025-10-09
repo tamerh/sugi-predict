@@ -4,12 +4,12 @@ End-to-end test for Clinical Trials pipeline (Chunked Architecture)
 This test actually RUNS the full pipeline in test mode and validates output.
 Uses test_out/ directory for all outputs (easy to inspect and debug).
 
-Tests the NEW chunked architecture where pipeline outputs individual chunk files:
-- trials_chunk_0001.json (input: extracted trials)
-- trials_chunk_0001.index (output: FAISS index)
-- trials_chunk_0001_metadata.json (output: processed metadata)
-- trials_chunk_0002.json, .index, _metadata.json
-- etc.
+Tests the chunked architecture with consistent file naming:
+- RAW_DIR/chunked/trials_chunk_0001.json (raw extracted trials - list format)
+- PROCESSED_DIR/trials_chunk_0001.index (FAISS index)
+- PROCESSED_DIR/trials_chunk_0001.json (processed metadata - dict format)
+
+Consistent with PubMed: file.index + file.json everywhere!
 
 With test config (100 trials, 50 per chunk = 2 chunks): Should take ~5-10 minutes.
 
@@ -208,8 +208,8 @@ class TestClinicalTrialsEndToEnd:
         output_dir = run_pipeline_e2e['output_dir']
         processed_dir = output_dir / 'data' / 'processed' / 'clinical_trials'
 
-        # Find all chunk metadata files (with _metadata.json suffix)
-        chunk_metadata_files = list(processed_dir.glob('trials_chunk_*_metadata.json'))
+        # Find all chunk metadata files (consistent naming: .json, not _metadata.json)
+        chunk_metadata_files = list(processed_dir.glob('trials_chunk_*.json'))
         assert len(chunk_metadata_files) > 0, "No chunk metadata files created"
 
         # Load and validate metadata from each chunk
@@ -253,8 +253,8 @@ class TestClinicalTrialsEndToEnd:
         output_dir = run_pipeline_e2e['output_dir']
         processed_dir = output_dir / 'data' / 'processed' / 'clinical_trials'
 
-        # Find all chunk metadata files (with _metadata.json suffix)
-        chunk_metadata_files = list(processed_dir.glob('trials_chunk_*_metadata.json'))
+        # Find all chunk metadata files (consistent naming: .json, not _metadata.json)
+        chunk_metadata_files = list(processed_dir.glob('trials_chunk_*.json'))
         assert len(chunk_metadata_files) > 0, "No chunk metadata files found"
 
         # Check metadata structure across all chunks

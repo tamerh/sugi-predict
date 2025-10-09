@@ -229,10 +229,10 @@ checkpoint clinical_trials_extract:
 # Rule 3a: Process individual chunk (for chunked mode)
 rule clinical_trials_process_chunk:
     input:
-        chunk_json = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}.json")
+        chunk_json = os.path.join(RAW_DIR, "chunked", "trials_chunk_{chunk_id}.json")
     output:
         index = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}.index"),
-        metadata = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}_metadata.json")  # Different name to avoid cycle
+        metadata = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}.json")  # Consistent naming: .index + .json
     params:
         script = os.path.join(MODULE_SCRIPTS, "process_trials_chunk.py"),
         model = ct_config["model_name"],

@@ -12,7 +12,14 @@ set -e
 # Default paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-STORAGE="${PROJECT_ROOT}/data/qdrant"
+
+# Use environment variable if set, otherwise default to PROJECT_ROOT
+if [ -n "$QDRANT_STORAGE_PATH" ]; then
+    STORAGE="$QDRANT_STORAGE_PATH"
+else
+    STORAGE="${PROJECT_ROOT}/out/data/qdrant"
+fi
+
 PID_FILE="${STORAGE}/qdrant.pid"
 CONNECTION_INFO="${STORAGE}/connection_info.txt"
 JOB_NAME="q_server"

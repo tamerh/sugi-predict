@@ -884,6 +884,8 @@ qdrant_start() {
     local queue="scc"
     local runtime_hours=48
     local memory_mb=32000
+    local use_test_config=false
+    local custom_config=""
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -904,6 +906,14 @@ qdrant_start() {
                 memory_mb="$2"
                 shift 2
                 ;;
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 exit 1
@@ -911,10 +921,19 @@ qdrant_start() {
         esac
     done
 
+    # Determine active config
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+        log_info "Using test configuration: config/test_config.yaml"
+    fi
+
     log_info "Starting Qdrant server (mode=${mode}, queue=${queue})"
 
     # Use base_dir from config for consistent output location
-    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
     if [[ -z "$base_dir" ]]; then
         base_dir="out"  # default fallback
     fi
@@ -949,11 +968,88 @@ qdrant_start() {
 }
 
 qdrant_stop() {
-    log_info "Stopping Qdrant server..."
+    local use_test_config=false
+    local custom_config=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Determine active config
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+    fi
+
+    # Get base_dir from config
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"
+    fi
+
+    log_info "Stopping Qdrant server (base_dir=${base_dir})..."
+
+    # Call stop_server.sh with paths relative to base_dir
+    # Override the STORAGE path by setting environment variable
+    QDRANT_STORAGE_PATH="${base_dir}/data/qdrant" \
     bash modules/qdrant/scripts/stop_server.sh
 }
 
 qdrant_status() {
+    local use_test_config=false
+    local custom_config=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Determine active config
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+    fi
+
+    # Get base_dir from config
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"
+    fi
+
+    # Call check_status.sh with paths relative to base_dir
+    # Override the STORAGE path by setting environment variable
+    QDRANT_STORAGE_PATH="${base_dir}/data/qdrant" \
     bash modules/qdrant/scripts/check_status.sh
 }
 
@@ -977,6 +1073,7 @@ qdrant_insert() {
     local jobs=10
     local cuda_version=""
     local use_test_config=false
+    local custom_config=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -994,6 +1091,10 @@ qdrant_insert() {
                 ;;
             --jobs)
                 jobs="$2"
+                shift 2
+                ;;
+            --config)
+                custom_config="$2"
                 shift 2
                 ;;
             --test)
@@ -1018,7 +1119,9 @@ qdrant_insert() {
 
     # Determine config file
     local active_config="$config_file"
-    if [[ "$use_test_config" == true ]]; then
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
         active_config="config/test_config.yaml"
         log_info "Using test configuration: config/test_config.yaml"
     fi

@@ -18,13 +18,11 @@ import sys
 # Load configuration
 configfile: "config/config.yaml"
 
-# Determine project root
-PROJECT_ROOT = os.path.dirname(os.path.dirname(workflow.snakefile))
-
 # Construct paths
-# BASE_DIR: where outputs go
-# PROJECT_ROOT: where code lives
+# BASE_DIR: where outputs go (from main Snakefile)
+# PROJECT_ROOT: where code lives (from main Snakefile or calculated)
 BASE_DIR = config["base_dir"]
+PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.path.dirname(workflow.snakefile))))
 
 # Module-specific paths
 QDRANT_MODULE_DIR = os.path.join(PROJECT_ROOT, "modules", "qdrant")  # Scripts in project root
@@ -36,12 +34,13 @@ QDRANT_LOG_DIR = os.path.join(BASE_DIR, "logs", "qdrant")
 CONNECTION_INFO = os.path.join(QDRANT_STORAGE, "connection_info.txt")
 
 # Update config with constructed paths
+config["logs_dir"] = os.path.join(BASE_DIR, "logs")  # Required for LOG_cluster_log
 config["qdrant"]["storage_dir"] = QDRANT_STORAGE
 config["qdrant"]["log_dir"] = QDRANT_LOG_DIR
 
 # Collection directories (where processed data lives)
 PUBMED_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "pubmed")
-CLINICAL_TRIALS_FAISS_DIR = os.path.join(BASE_DIR, "data", "final", "clinical_trials")
+CLINICAL_TRIALS_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials")
 
 # Ensure directories exist
 os.makedirs(QDRANT_STORAGE, exist_ok=True)

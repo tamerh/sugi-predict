@@ -74,8 +74,9 @@ case $MODE in
         ;;
 
     "qdrant")
-        echo -e "${BLUE}Running Qdrant tests (unit + integration)...${NC}"
-        pytest -v tests/unit/qdrant/ tests/integration/test_qdrant_integration.py
+        echo -e "${BLUE}Running Qdrant tests (unit + e2e)...${NC}"
+        echo -e "${YELLOW}Note: E2E test requires Qdrant server (~5-10 min)${NC}"
+        pytest -v tests/unit/qdrant/ tests/integration/test_qdrant_e2e.py
         ;;
 
     "merge")

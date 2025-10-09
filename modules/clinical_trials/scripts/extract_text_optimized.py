@@ -365,6 +365,14 @@ def main():
             num_chunks = (total_studies + chunk_size - 1) // chunk_size
             log_with_timestamp(f"Creating {num_chunks} chunks from {total_studies} studies")
 
+            # Create chunked subdirectory in raw_data (parent of processed dir)
+            # output_dir is typically: base_dir/data/processed/clinical_trials
+            # We want raw chunks in: base_dir/raw_data/clinical_trials/chunked
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(output_dir)))  # Go up 3 levels
+            raw_chunked_dir = os.path.join(base_dir, "raw_data", "clinical_trials", "chunked")
+            os.makedirs(raw_chunked_dir, exist_ok=True)
+            log_with_timestamp(f"Saving raw chunks to: {raw_chunked_dir}")
+
             chunk_files = []
             for chunk_idx in range(num_chunks):
                 start_idx = chunk_idx * chunk_size
@@ -373,7 +381,7 @@ def main():
 
                 # Generate chunk filename: trials_chunk_0001.json
                 chunk_filename = f"trials_chunk_{chunk_idx+1:04d}.json"
-                chunk_path = os.path.join(output_dir, chunk_filename)
+                chunk_path = os.path.join(raw_chunked_dir, chunk_filename)
 
                 log_with_timestamp(f"Writing chunk {chunk_idx+1}/{num_chunks}: {chunk_filename} ({len(chunk_data)} trials)")
                 with open(chunk_path, 'w') as f:

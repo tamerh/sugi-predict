@@ -31,7 +31,8 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 from qdrant_client.http import models
 
 # Logging setup
-LOG_DIR = Path("/data/scc/ag-gruber/GROUP/tgur/x/bioyoda/logs/qdrant")
+# Default to current directory, but can be overridden
+LOG_DIR = Path(os.environ.get("BIOYODA_LOG_DIR", "./logs/qdrant"))
 _log_file: Optional[object] = None
 
 def init_logging(log_dir: Path = LOG_DIR) -> None:
@@ -93,10 +94,14 @@ def find_faiss_files(faiss_dir: str) -> list:
     return files
 
 def load_faiss_and_metadata(index_path: str) -> tuple:
-    """Load FAISS index and corresponding metadata."""
+    """Load FAISS index and corresponding metadata.
+
+    Expects consistent naming: file.index + file.json (dict format with string keys)
+    Falls back to file_metadata.pkl for legacy data.
+    """
     index = faiss.read_index(index_path)
 
-    # Try .json first (new format), fall back to .pkl (old format)
+    # Try .json first (standard format for both PubMed and Clinical Trials)
     metadata_path_json = index_path.replace('.index', '.json')
     metadata_path_pkl = index_path.replace('.index', '_metadata.pkl')
 
@@ -119,7 +124,7 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     Insert data from FAISS files to Qdrant
 
     Args:
-        faiss_dir: Directory containing *.index and *_metadata.pkl files
+        faiss_dir: Directory containing *.index and *.json metadata files (or legacy *_metadata.pkl)
         collection_name: Qdrant collection name
         qdrant_url: Qdrant server URL
         batch_size: Batch size for insertion
