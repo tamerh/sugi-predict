@@ -1,0 +1,272 @@
+"""
+Search engine implementation for BioYoda
+
+Handles semantic search across Qdrant vector database collections.
+"""
+from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
+from sentence_transformers import SentenceTransformer
+from typing import List, Dict, Optional, Any
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
+
+class BioYodaSearchEngine:
+    """
+    Semantic search engine for biomedical literature
+
+    This class handles:
+    - Query encoding with biomedical sentence transformers
+    - Single and multi-collection search
+    - Result merging and ranking
+    - Metadata filtering
+    """
+
+    def __init__(self, qdrant_url: str, model_name: str, timeout: int = 30):
+        """
+        Initialize search engine
+
+        Args:
+            qdrant_url: Qdrant server URL
+            model_name: Sentence transformer model name
+            timeout: Qdrant client timeout in seconds
+        """
+        logger.info("Initializing BioYoda Search Engine...")
+        logger.info(f"Qdrant URL: {qdrant_url}")
+        logger.info(f"Model: {model_name}")
+
+        try:
+            # Initialize Qdrant client
+            self.client = QdrantClient(url=qdrant_url, timeout=timeout)
+
+            # Test connection
+            collections = self.client.get_collections()
+            logger.info(f"Connected to Qdrant. Available collections: {len(collections.collections)}")
+
+            # Load embedding model
+            logger.info(f"Loading embedding model: {model_name}")
+            self.model = SentenceTransformer(model_name)
+            logger.info("Model loaded successfully")
+
+            self.qdrant_url = qdrant_url
+            self.model_name = model_name
+
+        except Exception as e:
+            logger.error(f"Failed to initialize search engine: {e}")
+            raise
+
+    def encode_query(self, query: str) -> List[float]:
+        """
+        Encode query text into vector embedding
+
+        Args:
+            query: Query text
+
+        Returns:
+            Vector embedding as list of floats
+        """
+        start_time = time.time()
+        vector = self.model.encode([query])[0].tolist()
+        encode_time = (time.time() - start_time) * 1000
+        logger.debug(f"Query encoded in {encode_time:.2f}ms")
+        return vector
+
+    def search_single_collection(
+        self,
+        query: str,
+        collection: str,
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Search a single collection
+
+        Args:
+            query: Search query
+            collection: Collection name
+            limit: Maximum number of results
+            filters: Optional metadata filters
+
+        Returns:
+            List of search results with scores and payloads
+        """
+        try:
+            # Encode query
+            query_vector = self.encode_query(query)
+
+            # Build filter if provided
+            query_filter = None
+            if filters:
+                query_filter = self._build_filter(filters)
+                logger.debug(f"Applying filters: {filters}")
+
+            # Perform search
+            start_time = time.time()
+            results = self.client.search(
+                collection_name=collection,
+                query_vector=query_vector,
+                limit=limit,
+                query_filter=query_filter,
+                with_payload=True,
+                with_vectors=False  # Don't return vectors (saves bandwidth)
+            )
+            search_time = (time.time() - start_time) * 1000
+
+            logger.info(
+                f"Searched '{collection}': {len(results)} results in {search_time:.2f}ms"
+            )
+
+            # Format results
+            return [
+                {
+                    "id": str(result.id),
+                    "score": result.score,
+                    "collection": collection,
+                    "payload": result.payload
+                }
+                for result in results
+            ]
+
+        except Exception as e:
+            logger.error(f"Error searching collection '{collection}': {e}")
+            # Return empty results rather than failing
+            return []
+
+    def search_multi_collection(
+        self,
+        query: str,
+        collections: List[str],
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Search multiple collections in parallel
+
+        Args:
+            query: Search query
+            collections: List of collection names
+            limit: Maximum results per collection
+            filters: Optional metadata filters
+
+        Returns:
+            Dictionary mapping collection names to their results
+        """
+        logger.info(f"Multi-collection search: query='{query}', collections={collections}")
+
+        results = {}
+        for collection in collections:
+            results[collection] = self.search_single_collection(
+                query=query,
+                collection=collection,
+                limit=limit,
+                filters=filters
+            )
+
+        return results
+
+    def merge_and_rank_results(
+        self,
+        results: Dict[str, List[Dict[str, Any]]],
+        limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Merge results from multiple collections and re-rank by score
+
+        Args:
+            results: Dictionary of results per collection
+            limit: Optional limit on total results (default: no limit)
+
+        Returns:
+            Merged and sorted list of results
+        """
+        # Flatten all results
+        all_results = []
+        for collection, collection_results in results.items():
+            all_results.extend(collection_results)
+
+        # Sort by score (descending)
+        all_results.sort(key=lambda x: x['score'], reverse=True)
+
+        # Apply limit if specified
+        if limit:
+            all_results = all_results[:limit]
+
+        logger.debug(f"Merged {len(all_results)} total results from {len(results)} collections")
+
+        return all_results
+
+    def _build_filter(self, filters: Dict[str, Any]) -> Optional[Filter]:
+        """
+        Build Qdrant filter from dictionary
+
+        Args:
+            filters: Dictionary of field -> value mappings
+
+        Returns:
+            Qdrant Filter object or None
+        """
+        if not filters:
+            return None
+
+        conditions = []
+        for key, value in filters.items():
+            conditions.append(
+                FieldCondition(
+                    key=key,
+                    match=MatchValue(value=value)
+                )
+            )
+
+        return Filter(must=conditions) if conditions else None
+
+    def get_collection_info(self, collection: str) -> Optional[Dict[str, Any]]:
+        """
+        Get information about a collection
+
+        Args:
+            collection: Collection name
+
+        Returns:
+            Dictionary with collection info or None if error
+        """
+        try:
+            info = self.client.get_collection(collection)
+            return {
+                "name": collection,
+                "points_count": info.points_count,
+                "status": info.status,
+                "vector_size": info.config.params.vectors.size
+            }
+        except Exception as e:
+            logger.error(f"Error getting collection info for '{collection}': {e}")
+            return None
+
+    def get_all_collections(self) -> List[str]:
+        """
+        Get list of all available collections
+
+        Returns:
+            List of collection names
+        """
+        try:
+            collections = self.client.get_collections()
+            return [c.name for c in collections.collections]
+        except Exception as e:
+            logger.error(f"Error getting collections: {e}")
+            return []
+
+    def health_check(self) -> bool:
+        """
+        Check if Qdrant is accessible
+
+        Returns:
+            True if Qdrant is accessible, False otherwise
+        """
+        try:
+            self.client.get_collections()
+            return True
+        except Exception as e:
+            logger.error(f"Qdrant health check failed: {e}")
+            return False

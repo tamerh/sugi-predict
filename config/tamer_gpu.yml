@@ -24,6 +24,15 @@ dependencies:
   - postgresql
   - snakemake>=9.0
   - graphviz
+
+  # API dependencies (modules/api/)
+  - fastapi
+  - uvicorn
+  - pydantic  # Let conda resolve compatible version
+  - pydantic-settings
+  - pyyaml
+
   - pip
   - pip:
     - snakemake-executor-plugin-cluster-generic
+    - python-multipart>=0.0.6  # FastAPI file uploads (API)

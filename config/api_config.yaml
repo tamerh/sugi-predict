@@ -1,0 +1,53 @@
+# BioYoda Search API Configuration
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  title: "BioYoda Search API"
+  version: "0.1.0"
+  description: "Semantic search API for biomedical literature and clinical trials"
+
+qdrant:
+  url: "http://localhost:6333"
+  timeout: 30
+  connection_info_path: "out/data/qdrant/connection_info.txt"  # Auto-detect URL from here
+
+search:
+  # Model configuration (must match what was used during processing)
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+  vector_dimension: 768
+
+  # Search limits
+  default_limit: 10
+  max_limit: 100
+
+  # Performance
+  cache_model: true
+  batch_size: 32
+
+collections:
+  pubmed_abstracts:
+    name: "pubmed_abstracts"
+    description: "PubMed abstracts - 30M+ biomedical research papers"
+    primary_fields: ["pmid", "chunk_text"]
+    search_fields: ["chunk_text"]
+    display_name: "PubMed"
+
+  clinical_trials:
+    name: "clinical_trials"
+    description: "ClinicalTrials.gov - 500K+ clinical trial records"
+    primary_fields: ["nct_id", "chunk_text", "chunk_type"]
+    search_fields: ["chunk_text"]
+    display_name: "Clinical Trials"
+
+# Future collections can be added here
+# Example:
+#   patents:
+#     name: "patents"
+#     description: "Patent data"
+#     primary_fields: ["patent_id", "text"]
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  file: "out/logs/api/api.log"

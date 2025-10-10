@@ -17,6 +17,10 @@ qstat -g c
 
 qstat -f
 
+  conda env update -f config/tamer.yml --prune
+
+  conda env remove --name bioyoda
+
 ./bioyoda.sh run clinical_trials --cluster --bg --cuda11.4
 
 ./bioyoda.sh qdrant insert pubmed

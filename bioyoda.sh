@@ -88,6 +88,8 @@ Commands:
     stop <module> [options]   Stop a running pipeline
     status                    Show pipeline status
     qdrant <subcommand>       Manage Qdrant vector database (start/stop/insert/status)
+    api <subcommand>          Manage BioYoda Search API (start/stop/test/search/status)
+    search [query]            Quick search across collections (interactive if no query)
     validate <module>         Validate module outputs
     clean [module]            Clean intermediate files
     dryrun <module>           Show what would be executed (dry run)
@@ -106,6 +108,12 @@ Qdrant Subcommands:
     stop                      Stop Qdrant server
     status                    Check Qdrant server status and collections
     insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, or all)
+
+API Subcommands:
+    start                     Start API server (foreground or background)
+    stop                      Stop API server
+    status                    Check API server status
+    search                    CLI search tool (interactive and non-interactive)
 
 Run Options:
     --cluster                 Submit jobs to SGE cluster
@@ -131,6 +139,14 @@ Qdrant Insert Options:
     --jobs N                  Max parallel jobs (for cluster mode)
     --test                    Use test config (config/test_config.yaml)
     --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066) with bioyoda_gpu_cuda11 env
+
+API Start Options:
+    --port N                  Port number (default: 8000)
+    --host HOST               Host address (default: 0.0.0.0)
+    --bg, -b                  Run in background with logging
+    --reload                  Auto-reload on code changes (development)
+    --config FILE             Use custom config file
+    --test                    Use test config (config/test_config.yaml)
 
 Stop Options:
     --clean, -c               Also clean intermediate files after stopping
@@ -164,6 +180,19 @@ Examples:
 
     # 4. Stop server when done
     $0 qdrant stop
+
+    # API Operations (search and query data)
+    # 1. Start API server (requires Qdrant to be running)
+    $0 api start                           # Start in foreground
+    $0 api start --bg                      # Start in background
+    $0 api start --port 8001 --bg          # Custom port, background
+
+    # 2. Use API for searching
+    $0 search                              # Interactive mode
+    $0 search "CRISPR gene editing"        # Quick search
+    $0 api search "cancer" --limit 5       # Search with options
+    $0 api status                          # Check API status
+    $0 api stop                            # Stop API server
 
     # Monitor progress
     tail -f out/logs/bioyoda_pubmed_main.log
@@ -1220,6 +1249,343 @@ qdrant_insert() {
 }
 
 ##############################################################################
+# API Management Functions
+##############################################################################
+
+api() {
+    if [[ $# -eq 0 ]]; then
+        log_error "No api subcommand specified"
+        echo ""
+        echo "Available subcommands:"
+        echo "  start    - Start API server (local or background)"
+        echo "  stop     - Stop API server"
+        echo "  status   - Check API server status"
+        echo "  search   - CLI search tool (interactive and non-interactive)"
+        echo ""
+        echo "Examples:"
+        echo "  $0 api start                    # Start in foreground"
+        echo "  $0 api start --bg               # Start in background"
+        echo "  $0 api start --test             # Start in test mode (auto-background)"
+        echo "  $0 api start --port 8001        # Use custom port"
+        echo "  $0 api search \"CRISPR\"          # Quick search"
+        echo "  $0 api search --interactive     # Interactive mode"
+        echo "  $0 api stop                     # Stop server"
+        exit 1
+    fi
+
+    local subcommand=$1
+    shift
+
+    case $subcommand in
+        start)
+            api_start "$@"
+            ;;
+        stop)
+            api_stop "$@"
+            ;;
+        status)
+            api_status "$@"
+            ;;
+        search)
+            api_search "$@"
+            ;;
+        *)
+            log_error "Unknown api subcommand: $subcommand"
+            exit 1
+            ;;
+    esac
+}
+
+api_start() {
+    local port=8000
+    local host="0.0.0.0"
+    local reload=false
+    local background=false
+    local use_test_config=false
+    local custom_config=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --port)
+                port="$2"
+                shift 2
+                ;;
+            --host)
+                host="$2"
+                shift 2
+                ;;
+            --reload)
+                reload=true
+                shift
+                ;;
+            --bg|-b)
+                background=true
+                shift
+                ;;
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Determine active config
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+        log_info "Using test configuration: config/test_config.yaml"
+        # Test mode: automatically run in background
+        background=true
+        log_info "Test mode: running in background automatically"
+    fi
+
+    # Get base_dir from config
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"
+    fi
+
+    local pid_dir="${base_dir}/logs/pids"
+    local pid_file="${pid_dir}/api_server.pid"
+
+    # Check if already running
+    if [[ -f "${pid_file}" ]]; then
+        local existing_pid=$(cat "${pid_file}")
+        if ps -p ${existing_pid} > /dev/null 2>&1; then
+            log_error "API server already running with PID ${existing_pid}"
+            log_info "Use './bioyoda.sh api stop' to stop it first"
+            exit 1
+        else
+            # Stale PID file, remove it
+            rm -f "${pid_file}"
+        fi
+    fi
+
+    log_info "Starting BioYoda API server (port=${port}, host=${host})"
+
+    # Check if Qdrant is running
+    if ! curl -s http://localhost:6333/healthz > /dev/null 2>&1; then
+        log_error "Qdrant server is not running!"
+        echo ""
+        log_info "Please start Qdrant first:"
+        echo "  ./bioyoda.sh qdrant start                                    # local mode"
+        echo "  ./bioyoda.sh qdrant start --mode cluster --queue gpu        # cluster mode"
+        echo ""
+        exit 1
+    fi
+    log_success "Qdrant server is running"
+
+    # Create necessary directories
+    mkdir -p ${base_dir}/logs/api
+    mkdir -p ${pid_dir}
+
+    # Build uvicorn command
+    local reload_flag=""
+    if [[ "$reload" == true ]]; then
+        reload_flag="--reload"
+    fi
+
+    local uvicorn_cmd="python -m uvicorn scripts.main:app --host ${host} --port ${port} ${reload_flag} --log-level info"
+
+    # Execute
+    if [[ "$background" == true ]]; then
+        local api_log="${base_dir}/logs/api/server.log"
+        log_info "Starting API server in background..."
+        log_info "Log: ${api_log}"
+        log_info "Monitor with: tail -f ${api_log}"
+
+        # Create wrapper script with cleanup
+        local wrapper_script="${pid_dir}/api_wrapper.sh"
+        cat > "${wrapper_script}" <<WRAPPER
+#!/bin/bash
+# Wrapper script for background API execution with cleanup
+
+# Change to API directory
+cd "${pipeline_dir}/modules/api"
+
+# Run API server
+${uvicorn_cmd}
+EXIT_CODE=\$?
+
+# Remove PID file
+rm -f "${pid_file}"
+
+exit \$EXIT_CODE
+WRAPPER
+        chmod +x "${wrapper_script}"
+
+        nohup bash "${wrapper_script}" > "${api_log}" 2>&1 &
+        local api_pid=$!
+        echo ${api_pid} > "${pid_file}"
+
+        # Wait a moment and check if it's still running
+        sleep 2
+        if ps -p ${api_pid} > /dev/null 2>&1; then
+            log_success "API server started in background (PID: ${api_pid})"
+            log_info "API available at: http://localhost:${port}"
+            log_info "Docs available at: http://localhost:${port}/docs"
+            log_info "To monitor: tail -f ${api_log}"
+            log_info "To stop: ./bioyoda.sh api stop"
+        else
+            log_error "API server failed to start. Check log: ${api_log}"
+            rm -f "${pid_file}"
+            exit 1
+        fi
+    else
+        log_info "Starting API server in foreground..."
+        log_info "API will be available at: http://localhost:${port}"
+        log_info "Docs will be available at: http://localhost:${port}/docs"
+        log_info "Press Ctrl+C to stop"
+        echo ""
+
+        cd "${pipeline_dir}/modules/api"
+        eval ${uvicorn_cmd}
+    fi
+}
+
+api_stop() {
+    local use_test_config=false
+    local custom_config=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Determine active config
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+    fi
+
+    # Get base_dir from config
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"
+    fi
+
+    local pid_dir="${base_dir}/logs/pids"
+    local pid_file="${pid_dir}/api_server.pid"
+
+    log_info "Stopping API server..."
+
+    if [[ ! -f "${pid_file}" ]]; then
+        log_warning "No running API server found (PID file not found)"
+        return 0
+    fi
+
+    local api_pid=$(cat "${pid_file}")
+
+    if ps -p ${api_pid} > /dev/null 2>&1; then
+        log_info "Stopping API server (PID: ${api_pid})..."
+        # Use kill_process to kill entire process tree (wrapper + uvicorn)
+        kill_process ${api_pid} false ${base_dir} "api"
+        log_success "API server stopped"
+    else
+        log_warning "Process ${api_pid} not running (stale PID file)"
+    fi
+
+    rm -f "${pid_file}"
+}
+
+api_status() {
+    local use_test_config=false
+    local custom_config=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Determine active config
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+    fi
+
+    # Get base_dir from config
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"
+    fi
+
+    local pid_file="${base_dir}/logs/pids/api_server.pid"
+
+    log_info "Checking API server status..."
+    echo ""
+
+    # Check PID file
+    if [[ -f "${pid_file}" ]]; then
+        local api_pid=$(cat "${pid_file}")
+        if ps -p ${api_pid} > /dev/null 2>&1; then
+            log_success "API server is running (PID: ${api_pid})"
+        else
+            log_warning "PID file exists but process not running (stale)"
+        fi
+    else
+        log_info "API server is not running (no PID file)"
+    fi
+
+    # Check if API is responding
+    if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+        log_success "API is responding at http://localhost:8000"
+        echo ""
+        echo "API Health Check:"
+        curl -s http://localhost:8000/health | python -m json.tool 2>/dev/null || echo "  (Could not format JSON)"
+    else
+        log_info "API not accessible at http://localhost:8000"
+    fi
+
+    echo ""
+}
+
+api_search() {
+    # Forward all arguments to the search CLI tool
+    python "${pipeline_dir}/modules/api/scripts/bioyoda_search.py" "$@"
+}
+
+##############################################################################
 # Main Entry Point
 ##############################################################################
 
@@ -1261,6 +1627,18 @@ main() {
             ;;
         qdrant)
             qdrant "$@"
+            ;;
+        api)
+            api "$@"
+            ;;
+        search)
+            # Top-level alias for api search (convenient for frequent use)
+            # If no arguments, start interactive mode
+            if [[ $# -eq 0 ]]; then
+                python "${pipeline_dir}/modules/api/scripts/bioyoda_search.py" --interactive
+            else
+                python "${pipeline_dir}/modules/api/scripts/bioyoda_search.py" "$@"
+            fi
             ;;
         help|--help|-h)
             help

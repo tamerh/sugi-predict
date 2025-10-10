@@ -13,6 +13,7 @@ BioYoda is a Snakemake-based pipeline for processing biomedical literature and c
 - **PubMed Processing**: Process 30M+ PubMed abstracts with S-BioBERT embeddings
 - **Clinical Trials**: Integrate ClinicalTrials.gov data (500K+ trials)
 - **Vector Database**: Qdrant server with independent insertion workflow
+- **Search API**: FastAPI-based REST API for semantic search across collections
 - **HPC Ready**: Designed for SGE cluster with GPU support and Singularity containers
 - **Modular Architecture**: Independent data processing and database management
 - **Flexible Deployment**: Run Qdrant on GPU nodes for long-running sessions
@@ -102,10 +103,21 @@ tail -f logs/qdrant/insert_pubmed.log
 │                   Qdrant Vector Database                     │
 │                      (Independent)                            │
 ├─────────────────────────────────────────────────────────────┤
-│  Start Server           Insert Data          Query/Search    │
-│  (Local/Cluster)        (When ready)         (API)           │
+│  Start Server           Insert Data                          │
+│  (Local/Cluster)        (When ready)                         │
 │                                                               │
 │  Storage: data/qdrant/storage/                               │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                      Search API                              │
+│                   (FastAPI REST API)                         │
+├─────────────────────────────────────────────────────────────┤
+│  • Semantic search across collections                        │
+│  • CLI search tool                                           │
+│  • Interactive documentation                                 │
+│                                                               │
+│  Endpoint: http://localhost:8000                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -130,14 +142,20 @@ modules/
 │   ├── Snakefile
 │   ├── README.md
 │   └── scripts/
-└── qdrant/                 # Qdrant operations (separate)
-    ├── Snakefile           # Standalone insertion workflows
+├── qdrant/                 # Qdrant operations (separate)
+│   ├── Snakefile           # Standalone insertion workflows
+│   ├── README.md
+│   └── scripts/
+│       ├── start_server.sh
+│       ├── stop_server.sh
+│       ├── check_status.sh
+│       └── insert_from_faiss.py
+└── api/                    # Search API (FastAPI)
     ├── README.md
     └── scripts/
-        ├── start_server.sh
-        ├── stop_server.sh
-        ├── check_status.sh
-        └── insert_from_faiss.py
+        ├── main.py
+        ├── search.py
+        └── bioyoda_search.py
 ```
 
 ## Commands
@@ -210,6 +228,31 @@ tail -f logs/qdrant/insert_pubmed.log
 # Validate outputs
 ./bioyoda.sh validate pubmed
 ```
+
+### API Operations
+
+```bash
+# Start API server (requires Qdrant running)
+./bioyoda.sh api start
+
+# Start in background
+./bioyoda.sh api start --bg
+
+# Search from CLI
+./bioyoda.sh search "CRISPR gene editing"
+./bioyoda.sh search  # Interactive mode
+
+# Check status
+./bioyoda.sh api status
+
+# Stop server
+./bioyoda.sh api stop
+
+# Run tests
+./run_tests.sh api
+```
+
+Visit http://localhost:8000/docs for interactive API documentation.
 
 ### Management
 
@@ -363,6 +406,22 @@ bioyoda/
 ./bioyoda.sh qdrant status
 ```
 
+### Workflow 4: Search and Query
+
+```bash
+# 1. Ensure Qdrant server is running with data
+./bioyoda.sh qdrant status
+
+# 2. Start API server
+./bioyoda.sh api start --bg
+
+# 3. Search from CLI
+./bioyoda.sh search "Alzheimer disease treatment"
+
+# 4. Or use Python/HTTP
+# Visit http://localhost:8000/docs for API documentation
+```
+
 ## Documentation
 
 - **This File**: Overview and quick start
@@ -370,6 +429,7 @@ bioyoda/
   - `modules/pubmed/README.md` - PubMed processing details
   - `modules/clinical_trials/README.md` - Clinical trials processing
   - `modules/qdrant/README.md` - Qdrant operations and architecture
+  - `modules/api/README.md` - Search API usage and examples
 - **Configuration**: `config/README.md` - Configuration options
 
 ## Troubleshooting
@@ -408,6 +468,23 @@ tail -f logs/qdrant/insert_pubmed.log
 
 # Re-run insertion
 ./bioyoda.sh qdrant insert pubmed
+```
+
+### API Issues
+
+```bash
+# Check API status
+./bioyoda.sh api status
+
+# Check logs
+tail -f out/logs/api/server.log
+
+# Restart API
+./bioyoda.sh api stop
+./bioyoda.sh api start
+
+# Run tests
+./run_tests.sh api
 ```
 
 ## Performance
