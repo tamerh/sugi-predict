@@ -93,7 +93,8 @@ class AACTTextExtractorOptimized:
                                       include_eligibility: bool = True,
                                       include_interventions: bool = True,
                                       min_summary_length: int = 50,
-                                      exclude_withdrawn: bool = True) -> List[Dict[str, Any]]:
+                                      exclude_withdrawn: bool = True,
+                                      nct_ids_file: Optional[str] = None) -> List[Dict[str, Any]]:
         """Extract text using efficient pandas merge operations."""
 
         log_with_timestamp("Starting OPTIMIZED text extraction using pandas merges...")
@@ -106,8 +107,26 @@ class AACTTextExtractorOptimized:
 
         log_with_timestamp(f"Initial studies count: {len(studies):,}")
 
-        # Filter withdrawn studies if requested
-        if exclude_withdrawn and 'overall_status' in studies.columns:
+        # Filter by NCT ID list if provided (takes precedence over other filters)
+        if nct_ids_file and os.path.exists(nct_ids_file):
+            log_with_timestamp(f"Loading NCT ID filter from: {nct_ids_file}")
+            nct_ids = []
+            with open(nct_ids_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    # Skip empty lines and comments
+                    if line and not line.startswith('#'):
+                        nct_ids.append(line)
+
+            log_with_timestamp(f"Loaded {len(nct_ids)} NCT IDs from filter file")
+
+            # Filter studies to only those in the NCT ID list
+            original_count = len(studies)
+            studies = studies[studies['nct_id'].isin(nct_ids)].copy()
+            log_with_timestamp(f"Filtered to {len(studies):,} studies (from {original_count:,} total)")
+
+        # Filter withdrawn studies if requested (only if not using NCT ID filter)
+        elif exclude_withdrawn and 'overall_status' in studies.columns:
             original_count = len(studies)
             studies = studies[studies['overall_status'] != 'Withdrawn'].copy()
             log_with_timestamp(f"Filtered out {original_count - len(studies):,} withdrawn studies")
@@ -135,8 +154,8 @@ class AACTTextExtractorOptimized:
         merged = merged[merged['summary_length'] >= min_summary_length].copy()
         log_with_timestamp(f"Filtered by summary length: {len(merged):,} remain ({original_count - len(merged):,} filtered)")
 
-        # Apply limit if specified (after filtering for accurate test)
-        if limit:
+        # Apply limit if specified (only if no NCT ID filter was used)
+        if limit and not nct_ids_file:
             merged = merged.head(limit)
             log_with_timestamp(f"Limited to {limit} studies")
 
@@ -315,6 +334,10 @@ def main():
         "--chunk-size", type=int, default=0,
         help="Trials per chunk (0 = single file, >0 = chunked output)"
     )
+    parser.add_argument(
+        "--nct-ids-file",
+        help="File containing NCT IDs to extract (one per line, for testing)"
+    )
 
     args = parser.parse_args()
 
@@ -342,7 +365,8 @@ def main():
             include_eligibility=args.include_eligibility,
             include_interventions=args.include_interventions,
             min_summary_length=args.min_summary_length,
-            exclude_withdrawn=args.exclude_withdrawn
+            exclude_withdrawn=args.exclude_withdrawn,
+            nct_ids_file=args.nct_ids_file
         )
 
         extraction_time = (datetime.now() - start_time).total_seconds()

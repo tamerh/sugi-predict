@@ -25,10 +25,11 @@ pubmed:
   batch_size: 1000
 
   # TEST MODE SETTINGS
-  test_mode: true              # Enable test optimizations
-  test_abstracts_limit: 100   # Process only first 100 abstracts per file
-  debug_mode: true             # Download only limited files
-  debug_sample_size: 2         # Number of files to download
+  test_mode: true                    # Enable test optimizations
+  test_abstracts_limit: 100          # Process only first 100 abstracts per file
+  debug_mode: true                   # Download only limited files
+  debug_sample_size: 2               # Number of files to download (fallback if no fixture)
+  test_fixture_file: "test_out/raw_data/pubmed/baseline/test_abstracts.xml.gz"  # Use pre-extracted fixture
 
   # Job resources - OPTIMIZED FOR TEST
   process_memory_mb: 8192      # 8GB (need more for model loading)
@@ -68,8 +69,9 @@ clinical_trials:
   exclude_withdrawn: true
 
   # TEST MODE SETTINGS
-  test_mode: true              # Enable test optimizations
-  test_trials_limit: 100      # Process only first 100 trials
+  test_mode: true                    # Enable test optimizations
+  test_trials_limit: 100             # Process only first 100 trials (fallback)
+  test_nct_ids_file: "tests/fixtures/clinical_trials/test_nct_ids.txt"  # Filter by specific NCT IDs
 
   # Job resources - OPTIMIZED FOR TEST
   download_memory_mb: 8192     # 8GB (vs 16GB production)

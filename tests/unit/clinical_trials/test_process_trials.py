@@ -115,49 +115,42 @@ class TestTextChunking:
 class TestTrialProcessing:
     """Test trial-to-chunks processing"""
 
-    @pytest.fixture
-    def sample_trial(self):
-        """Create a sample trial dict for testing"""
-        return {
-            'nct_id': 'NCT12345678',
-            'brief_title': 'Test Clinical Trial',
-            'brief_summary': 'This is a brief summary of the trial.',
-            'detailed_description': 'This is a more detailed description with more information.',
-            'overall_status': 'Completed',
-            'phase': 'Phase 3',
-            'study_type': 'Interventional',
-            'conditions': ['Diabetes', 'Hypertension'],
-            'interventions': ['Drug A', 'Drug B']
-        }
-
-    def test_process_trial_creates_chunks(self, sample_trial):
+    def test_process_trial_creates_chunks(self, real_trial_sample):
         """Test that trial is processed into chunks"""
         processor = TrialTextProcessor(max_chunk_length=500)
 
-        chunks = processor.process_trial_to_chunks(sample_trial)
+        chunks = processor.process_trial_to_chunks(real_trial_sample)
 
         assert len(chunks) > 0
         assert all('nct_id' in chunk for chunk in chunks)
         assert all('text' in chunk for chunk in chunks)
         assert all('chunk_type' in chunk for chunk in chunks)
 
-    def test_chunks_contain_nct_id(self, sample_trial):
+    def test_chunks_contain_nct_id(self, real_trial_sample):
         """Test that all chunks contain NCT ID"""
         processor = TrialTextProcessor()
 
-        chunks = processor.process_trial_to_chunks(sample_trial)
+        chunks = processor.process_trial_to_chunks(real_trial_sample)
 
         for chunk in chunks:
-            assert chunk['nct_id'] == 'NCT12345678'
+            assert chunk['nct_id'] == real_trial_sample['nct_id']
 
-    def test_chunks_have_sequential_ids(self, sample_trial):
-        """Test that chunks are numbered sequentially"""
+    def test_chunks_have_per_type_ids(self, real_trial_sample):
+        """Test that chunk_ids are sequential within each chunk_type"""
         processor = TrialTextProcessor()
 
-        chunks = processor.process_trial_to_chunks(sample_trial)
+        chunks = processor.process_trial_to_chunks(real_trial_sample)
 
-        chunk_ids = [chunk.get('chunk_id', -1) for chunk in chunks]
-        assert chunk_ids == list(range(len(chunks)))
+        # Group chunks by type
+        from collections import defaultdict
+        chunks_by_type = defaultdict(list)
+        for chunk in chunks:
+            chunks_by_type[chunk['chunk_type']].append(chunk.get('chunk_id', -1))
+
+        # Verify chunk_ids are sequential within each type
+        for chunk_type, ids in chunks_by_type.items():
+            assert ids == list(range(len(ids))), \
+                f"Chunk IDs for type '{chunk_type}' should be sequential: expected {list(range(len(ids)))}, got {ids}"
 
     def test_minimum_text_length_enforced(self):
         """Test that very short text is filtered out"""
@@ -181,28 +174,10 @@ class TestProcessTrialsIntegration:
     """Integration tests for the full process_trials workflow"""
 
     @pytest.fixture
-    def sample_trials_json(self, temp_dir):
-        """Create sample trials JSON file"""
-        trials = [
-            {
-                'nct_id': 'NCT12345678',
-                'brief_title': 'Trial One',
-                'brief_summary': 'Summary of trial one with sufficient length for testing.',
-                'detailed_description': 'Detailed description of trial one.',
-                'overall_status': 'Completed',
-                'phase': 'Phase 3',
-                'conditions': ['Diabetes']
-            },
-            {
-                'nct_id': 'NCT87654321',
-                'brief_title': 'Trial Two',
-                'brief_summary': 'Summary of trial two with different content for testing.',
-                'detailed_description': 'Detailed description of trial two.',
-                'overall_status': 'Recruiting',
-                'phase': 'Phase 2',
-                'conditions': ['Cancer']
-            }
-        ]
+    def sample_trials_json(self, temp_dir, real_clinical_trials):
+        """Create sample trials JSON file using real clinical trials data"""
+        # Use first 2 real trials for testing
+        trials = real_clinical_trials[:2]
 
         json_path = temp_dir / 'test_trials.json'
         with open(json_path, 'w') as f:

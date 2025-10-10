@@ -193,6 +193,7 @@ checkpoint clinical_trials_extract:
             ("--exclude-withdrawn " if ct_config.get("exclude_withdrawn", True) else "")
         ),
         limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
+        nct_ids_flag = f"--nct-ids-file {os.path.join(PROJECT_ROOT, ct_config['test_nct_ids_file'])}" if (ct_config.get("test_mode", False) and ct_config.get("test_nct_ids_file")) else "",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_extract.log")
     log:
         os.path.join(LOG_DIR, "extract.log")
@@ -219,6 +220,7 @@ checkpoint clinical_trials_extract:
             --chunk-size {params.chunk_size} \
             {params.include_flags} \
             {params.limit_flag} \
+            {params.nct_ids_flag} \
             >> {log} 2>&1
 
         echo "Extraction completed successfully" >> {log}

@@ -142,7 +142,8 @@ class AACTTextExtractor:
                            include_eligibility: bool = True,
                            include_interventions: bool = True,
                            min_summary_length: int = 50,
-                           exclude_withdrawn: bool = True) -> List[Dict[str, Any]]:
+                           exclude_withdrawn: bool = True,
+                           nct_ids_file: Optional[str] = None) -> List[Dict[str, Any]]:
         """Extract text content from studies with related information."""
 
         log_with_timestamp("Starting text extraction from flat files...")
@@ -153,14 +154,36 @@ class AACTTextExtractor:
             log_with_timestamp("ERROR: Cannot load studies table")
             return []
 
+        # Filter by NCT ID list if provided (takes precedence over limit)
+        if nct_ids_file and os.path.exists(nct_ids_file):
+            log_with_timestamp(f"Loading NCT ID filter from: {nct_ids_file}")
+            nct_ids = []
+            with open(nct_ids_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    # Skip empty lines and comments
+                    if line and not line.startswith('#'):
+                        nct_ids.append(line)
+
+            log_with_timestamp(f"Loaded {len(nct_ids)} NCT IDs from filter file")
+
+            # Filter studies to only those in the NCT ID list
+            original_count = len(studies)
+            studies = studies[studies['nct_id'].isin(nct_ids)]
+            log_with_timestamp(f"Filtered to {len(studies):,} studies (from {original_count:,} total)")
+
+            # Preserve order from file if possible
+            studies['nct_id_order'] = studies['nct_id'].apply(lambda x: nct_ids.index(x) if x in nct_ids else 999999)
+            studies = studies.sort_values('nct_id_order').drop('nct_id_order', axis=1)
+
         # Filter withdrawn studies if requested
-        if exclude_withdrawn and 'overall_status' in studies.columns:
+        elif exclude_withdrawn and 'overall_status' in studies.columns:
             original_count = len(studies)
             studies = studies[studies['overall_status'] != 'Withdrawn']
             log_with_timestamp(f"Filtered out {original_count - len(studies):,} withdrawn studies")
 
-        # Apply limit if specified
-        if limit:
+        # Apply limit if specified (only if no NCT ID filter)
+        if limit and not nct_ids_file:
             studies = studies.head(limit)
             log_with_timestamp(f"Limited to {limit} studies")
 
@@ -311,6 +334,10 @@ def main():
         "--stats-only", action="store_true",
         help="Only print dataset statistics, don't extract"
     )
+    parser.add_argument(
+        "--nct-ids-file",
+        help="File containing NCT IDs to extract (one per line, for testing)"
+    )
 
     args = parser.parse_args()
 
@@ -344,7 +371,8 @@ def main():
             include_eligibility=args.include_eligibility,
             include_interventions=args.include_interventions,
             min_summary_length=args.min_summary_length,
-            exclude_withdrawn=args.exclude_withdrawn
+            exclude_withdrawn=args.exclude_withdrawn,
+            nct_ids_file=args.nct_ids_file
         )
 
         if not extracted_studies:

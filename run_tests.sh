@@ -25,6 +25,33 @@ if ! command -v pytest &> /dev/null; then
     exit 1
 fi
 
+# Setup test fixtures
+echo -e "${BLUE}Setting up test fixtures...${NC}"
+
+# Create test raw data directories
+mkdir -p test_out/raw_data/pubmed/baseline
+mkdir -p test_out/raw_data/clinical_trials
+
+# Copy PubMed fixture if it exists
+PUBMED_FIXTURE="tests/fixtures/pubmed/test_abstracts.xml.gz"
+if [ -f "$PUBMED_FIXTURE" ]; then
+    echo -e "${GREEN}  ✓ Copying PubMed test fixture to test_out/raw_data/pubmed/baseline/${NC}"
+    cp "$PUBMED_FIXTURE" test_out/raw_data/pubmed/baseline/
+else
+    echo -e "${YELLOW}  ⚠ PubMed fixture not found: $PUBMED_FIXTURE${NC}"
+    echo -e "${YELLOW}    Generate it with: python tests/scripts/generate_pubmed_fixture.py${NC}"
+fi
+
+# Clinical Trials uses NCT ID filtering via config (no file copy needed)
+NCT_IDS_FILE="tests/fixtures/clinical_trials/test_nct_ids.txt"
+if [ -f "$NCT_IDS_FILE" ]; then
+    echo -e "${GREEN}  ✓ Clinical Trials NCT IDs file ready: $NCT_IDS_FILE${NC}"
+else
+    echo -e "${YELLOW}  ⚠ Clinical Trials NCT IDs file not found: $NCT_IDS_FILE${NC}"
+fi
+
+echo ""
+
 # Parse command line arguments
 MODE="${1:-all}"
 

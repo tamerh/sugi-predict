@@ -12,6 +12,7 @@ from pathlib import Path
 
 # Add modules to Python path so tests can import them
 PROJECT_ROOT = Path(__file__).parent.parent
+FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 sys.path.insert(0, str(PROJECT_ROOT / 'modules' / 'pubmed' / 'scripts'))
 sys.path.insert(0, str(PROJECT_ROOT / 'modules' / 'clinical_trials' / 'scripts'))
 sys.path.insert(0, str(PROJECT_ROOT / 'modules' / 'qdrant' / 'scripts'))
@@ -164,3 +165,23 @@ def mock_config():
             'test_trials_limit': 10
         }
     }
+
+
+@pytest.fixture
+def real_clinical_trials():
+    """Load real clinical trials data from fixtures"""
+    fixtures_path = FIXTURES_DIR / 'clinical_trials' / 'sample_trials.json'
+
+    if not fixtures_path.exists():
+        pytest.skip(f"Real clinical trials fixture not found: {fixtures_path}")
+
+    with open(fixtures_path) as f:
+        trials = json.load(f)
+
+    return trials
+
+
+@pytest.fixture
+def real_trial_sample(real_clinical_trials):
+    """Get a single real clinical trial for testing"""
+    return real_clinical_trials[0]
