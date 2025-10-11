@@ -108,6 +108,7 @@ Qdrant Subcommands:
     stop                      Stop Qdrant server
     status                    Check Qdrant server status and collections
     insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, or all)
+    stop-insert <dataset>     Stop a running insertion job
 
 API Subcommands:
     start                     Start API server (foreground or background)
@@ -179,7 +180,10 @@ Examples:
     # Use CUDA 11.4 nodes for insertion
     $0 qdrant insert pubmed --cluster --jobs 10 --cuda11.4 --bg
 
-    # 4. Stop server when done
+    # 4. Stop insertion if needed
+    $0 qdrant stop-insert pubmed
+
+    # 5. Stop server when done
     $0 qdrant stop
 
     # API Operations (search and query data)
@@ -873,14 +877,16 @@ qdrant() {
         log_error "No qdrant subcommand specified"
         echo ""
         echo "Available subcommands:"
-        echo "  start    - Start Qdrant server (local or cluster)"
-        echo "  stop     - Stop Qdrant server"
-        echo "  status   - Check Qdrant server status"
-        echo "  insert   - Insert data to Qdrant (pubmed, clinical_trials, or all)"
+        echo "  start       - Start Qdrant server (local or cluster)"
+        echo "  stop        - Stop Qdrant server"
+        echo "  status      - Check Qdrant server status"
+        echo "  insert      - Insert data to Qdrant (pubmed, clinical_trials, or all)"
+        echo "  stop-insert - Stop a running insertion job"
         echo ""
         echo "Examples:"
         echo "  $0 qdrant start --mode cluster --queue gpu"
-        echo "  $0 qdrant insert pubmed"
+        echo "  $0 qdrant insert pubmed --bg"
+        echo "  $0 qdrant stop-insert pubmed"
         echo "  $0 qdrant status"
         echo "  $0 qdrant stop"
         exit 1
@@ -901,6 +907,9 @@ qdrant() {
             ;;
         insert)
             qdrant_insert "$@"
+            ;;
+        stop-insert)
+            qdrant_stop_insert "$@"
             ;;
         *)
             log_error "Unknown qdrant subcommand: $subcommand"
@@ -1267,7 +1276,7 @@ qdrant_insert() {
         local existing_pid=$(cat "${pid_file}")
         if ps -p ${existing_pid} > /dev/null 2>&1; then
             log_error "Qdrant insertion already running for ${dataset} with PID ${existing_pid}"
-            log_info "Wait for it to complete or stop it first"
+            log_info "Use './bioyoda.sh qdrant stop-insert ${dataset}' to stop it first"
             exit 1
         else
             # Stale PID file, remove it
@@ -1307,7 +1316,8 @@ WRAPPER
 
         log_success "Qdrant insertion started in background (PID: ${main_pid})"
         log_info "To monitor: tail -f ${main_log}"
-        log_info "Individual rule logs: ${base_dir}/logs/qdrant/insert_*.log"
+        log_info "To stop: ./bioyoda.sh qdrant stop-insert ${dataset}"
+        log_info "Rule logs directory: ${base_dir}/logs/qdrant/"
     else
         log_info "Executing: ${snakemake_cmd}"
         eval ${snakemake_cmd}
@@ -1318,10 +1328,100 @@ WRAPPER
         else
             log_error "Insertion failed! Check logs for details."
             log_info "Main log: ${main_log}"
-            log_info "Rule logs: ${base_dir}/logs/qdrant/insert_*.log"
+            log_info "Rule logs directory: ${base_dir}/logs/qdrant/"
             exit 1
         fi
     fi
+}
+
+qdrant_stop_insert() {
+    if [[ $# -eq 0 ]]; then
+        log_error "No dataset specified"
+        echo ""
+        echo "Available datasets:"
+        echo "  pubmed           - Stop PubMed insertion"
+        echo "  clinical_trials  - Stop Clinical Trials insertion"
+        echo "  all              - Stop all insertions"
+        exit 1
+    fi
+
+    local dataset=$1
+    shift
+
+    # Parse additional options
+    local use_test_config=false
+    local custom_config=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    log_info "Stopping Qdrant insertion for ${dataset}..."
+
+    # Determine config file
+    local active_config="$config_file"
+    if [[ -n "$custom_config" ]]; then
+        active_config="$custom_config"
+    elif [[ "$use_test_config" == true ]]; then
+        active_config="config/test_config.yaml"
+    fi
+
+    # Get base_dir
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"
+    fi
+    local pid_dir="${base_dir}/logs/pids"
+
+    # Check for PID files (cluster or local)
+    local pid_file=""
+    local is_cluster=false
+
+    if [[ -f "${pid_dir}/qdrant_insert_${dataset}.cluster.pid" ]]; then
+        pid_file="${pid_dir}/qdrant_insert_${dataset}.cluster.pid"
+        is_cluster=true
+    elif [[ -f "${pid_dir}/qdrant_insert_${dataset}.local.pid" ]]; then
+        pid_file="${pid_dir}/qdrant_insert_${dataset}.local.pid"
+        is_cluster=false
+    else
+        log_warning "No running insertion found for dataset: ${dataset}"
+        log_info "Cleaning up Snakemake locks anyway..."
+        rm -rf modules/qdrant/.snakemake/locks/ 2>/dev/null || true
+        return 0
+    fi
+
+    # Read PID and check if process is running
+    local main_pid=$(cat "${pid_file}")
+
+    if ps -p ${main_pid} > /dev/null 2>&1; then
+        log_info "Killing process tree (PID: ${main_pid})..."
+        kill_process ${main_pid} ${is_cluster} ${base_dir} "qdrant_insert_${dataset}"
+        log_success "Insertion stopped"
+    else
+        log_warning "Process ${main_pid} not running (stale PID file)"
+    fi
+
+    # Remove PID file
+    rm -f "${pid_file}"
+
+    # Clean up Snakemake locks for Qdrant workflow
+    log_info "Cleaning up Snakemake locks..."
+    rm -rf modules/qdrant/.snakemake/locks/ 2>/dev/null || true
+
+    log_success "Stop completed"
 }
 
 ##############################################################################
