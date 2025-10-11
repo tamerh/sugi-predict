@@ -75,7 +75,10 @@ snakemake --version
 ./bioyoda.sh qdrant status
 tail -f logs/qdrant/insert_pubmed.log
 
-# Step 5: Stop when done
+# Step 5: Stop insertion if needed
+./bioyoda.sh qdrant stop-insert pubmed
+
+# Step 6: Stop server when done
 ./bioyoda.sh qdrant stop
 ```
 
@@ -208,6 +211,11 @@ tail -f logs/bioyoda_pubmed_main.log
 # Insert with CUDA 11.4 nodes
 ./bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --config config/config_gpu.yaml --cuda11.4
 
+# Stop a running insertion
+./bioyoda.sh qdrant stop-insert pubmed
+./bioyoda.sh qdrant stop-insert clinical_trials
+./bioyoda.sh qdrant stop-insert all
+
 # Stop server
 ./bioyoda.sh qdrant stop
 ```
@@ -259,6 +267,9 @@ Visit http://localhost:8000/docs for interactive API documentation.
 ```bash
 # Stop running pipeline
 ./bioyoda.sh stop pubmed --clean
+
+# Stop running Qdrant insertion
+./bioyoda.sh qdrant stop-insert pubmed
 
 # Clean specific module
 ./bioyoda.sh clean pubmed
@@ -387,7 +398,10 @@ bioyoda/
 # 5. Server keeps running for queries
 ./bioyoda.sh qdrant status
 
-# 6. Stop when done (after days/weeks)
+# 6. Stop insertion if needed
+./bioyoda.sh qdrant stop-insert all
+
+# 7. Stop server when done (after days/weeks)
 ./bioyoda.sh qdrant stop
 ```
 
@@ -402,7 +416,13 @@ bioyoda/
 # 2. Insert new data (server keeps running)
 ./bioyoda.sh qdrant insert pubmed --cluster --jobs 10
 
-# 3. Verify
+# 3. Monitor insertion progress
+tail -f out/logs/qdrant/insert_pubmed_main.log
+
+# 4. Stop insertion if needed
+./bioyoda.sh qdrant stop-insert pubmed
+
+# 5. Verify
 ./bioyoda.sh qdrant status
 ```
 
@@ -461,6 +481,9 @@ cat data/qdrant/connection_info.txt
 # Check logs
 tail -f logs/qdrant/server.log
 tail -f logs/qdrant/insert_pubmed.log
+
+# Stop a running insertion
+./bioyoda.sh qdrant stop-insert pubmed
 
 # Restart server
 ./bioyoda.sh qdrant stop
