@@ -135,6 +135,7 @@ Qdrant Start Options:
 Qdrant Insert Options:
     --cluster                 Submit insertion jobs to cluster
     --local                   Run insertion locally (default)
+    --bg, -b                  Run in background with nohup
     --cores N                 Number of cores (for local mode)
     --jobs N                  Max parallel jobs (for cluster mode)
     --test                    Use test config (config/test_config.yaml)
@@ -171,12 +172,12 @@ Examples:
     $0 qdrant status
 
     # 3. Insert data when ready (can be done days later)
-    $0 qdrant insert pubmed --cluster --jobs 10
-    $0 qdrant insert clinical_trials --cluster --jobs 10
-    $0 qdrant insert all --cluster --jobs 20
+    $0 qdrant insert pubmed --cluster --jobs 10 --bg
+    $0 qdrant insert clinical_trials --cluster --jobs 10 --bg
+    $0 qdrant insert all --cluster --jobs 20 --bg
 
     # Use CUDA 11.4 nodes for insertion
-    $0 qdrant insert pubmed --cluster --jobs 10 --cuda11.4
+    $0 qdrant insert pubmed --cluster --jobs 10 --cuda11.4 --bg
 
     # 4. Stop server when done
     $0 qdrant stop
@@ -1103,6 +1104,7 @@ qdrant_insert() {
     local cuda_version=""
     local use_test_config=false
     local custom_config=""
+    local background=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1112,6 +1114,10 @@ qdrant_insert() {
                 ;;
             --local)
                 execution_mode="local"
+                shift
+                ;;
+            --bg|-b)
+                background=true
                 shift
                 ;;
             --cores)
@@ -1237,14 +1243,84 @@ qdrant_insert() {
             ;;
     esac
 
-    log_info "Executing: ${snakemake_cmd}"
-    eval ${snakemake_cmd}
+    # Get base_dir for logging and PID management
+    local base_dir=$(grep "^base_dir:" ${active_config} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+    if [[ -z "$base_dir" ]]; then
+        base_dir="out"  # default fallback
+    fi
 
-    if [[ $? -eq 0 ]]; then
-        log_success "Insertion completed successfully!"
+    # Create necessary directories
+    local pid_dir="${base_dir}/logs/pids"
+    mkdir -p ${base_dir}/logs/qdrant
+    mkdir -p ${pid_dir}
+
+    # Determine PID file name
+    local pid_file="${pid_dir}/qdrant_insert_${dataset}"
+    if [[ "$execution_mode" == "cluster" ]]; then
+        pid_file="${pid_file}.cluster.pid"
     else
-        log_error "Insertion failed! Check logs for details."
-        exit 1
+        pid_file="${pid_file}.local.pid"
+    fi
+
+    # Check if already running
+    if [[ -f "${pid_file}" ]]; then
+        local existing_pid=$(cat "${pid_file}")
+        if ps -p ${existing_pid} > /dev/null 2>&1; then
+            log_error "Qdrant insertion already running for ${dataset} with PID ${existing_pid}"
+            log_info "Wait for it to complete or stop it first"
+            exit 1
+        else
+            # Stale PID file, remove it
+            rm -f "${pid_file}"
+        fi
+    fi
+
+    # Execute
+    local main_log="${base_dir}/logs/qdrant/insert_${dataset}_main.log"
+
+    if [[ "$background" == true ]]; then
+        log_info "Starting Qdrant insertion in background..."
+        log_info "Executing: ${snakemake_cmd}"
+        log_info "Main log: ${main_log}"
+        log_info "Monitor with: tail -f ${main_log}"
+
+        # Create wrapper script with cleanup
+        local wrapper_script="${pid_dir}/qdrant_insert_${dataset}_wrapper.sh"
+        cat > "${wrapper_script}" <<WRAPPER
+#!/bin/bash
+# Wrapper script for background execution with cleanup
+
+# Run Qdrant insertion
+${snakemake_cmd}
+EXIT_CODE=\$?
+
+# Remove PID file
+rm -f "${pid_file}"
+
+exit \$EXIT_CODE
+WRAPPER
+        chmod +x "${wrapper_script}"
+
+        nohup bash "${wrapper_script}" > "${main_log}" 2>&1 &
+        local main_pid=$!
+        echo ${main_pid} > "${pid_file}"
+
+        log_success "Qdrant insertion started in background (PID: ${main_pid})"
+        log_info "To monitor: tail -f ${main_log}"
+        log_info "Individual rule logs: ${base_dir}/logs/qdrant/insert_*.log"
+    else
+        log_info "Executing: ${snakemake_cmd}"
+        eval ${snakemake_cmd}
+        local exit_code=$?
+
+        if [[ ${exit_code} -eq 0 ]]; then
+            log_success "Insertion completed successfully!"
+        else
+            log_error "Insertion failed! Check logs for details."
+            log_info "Main log: ${main_log}"
+            log_info "Rule logs: ${base_dir}/logs/qdrant/insert_*.log"
+            exit 1
+        fi
     fi
 }
 

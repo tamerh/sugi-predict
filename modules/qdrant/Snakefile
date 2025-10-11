@@ -117,10 +117,10 @@ rule insert_pubmed_to_qdrant:
         # Source connection info
         source {input.connection_info}
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting PubMed to Qdrant..." | tee -a {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" | tee -a {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" | tee -a {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting PubMed to Qdrant..." >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
 
         # Check if FAISS data exists (search recursively in subdirectories)
         if [ ! -d {params.faiss_dir} ] || [ -z "$(find {params.faiss_dir} -name '*.index' -type f 2>/dev/null | head -1)" ]; then
@@ -129,12 +129,14 @@ rule insert_pubmed_to_qdrant:
             exit 1
         fi
 
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting insertion (detailed logs: {log})"
+
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
             --collection {params.collection} \
             --qdrant-url $QDRANT_URL \
             --batch-size {params.batch_size} \
-            2>&1 | tee -a {log}
+            >> {log} 2>&1
 
         # Mark as done
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] PubMed insertion complete" > {output.done}
@@ -187,10 +189,10 @@ rule insert_clinical_trials_to_qdrant:
         # Source connection info
         source {input.connection_info}
 
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Clinical Trials to Qdrant..." | tee -a {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" | tee -a {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" | tee -a {log}
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" | tee -a {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Clinical Trials to Qdrant..." >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
 
         # Check if FAISS data exists (search recursively in subdirectories)
         if [ ! -d {params.faiss_dir} ] || [ -z "$(find {params.faiss_dir} -name '*.index' -type f 2>/dev/null | head -1)" ]; then
@@ -199,12 +201,14 @@ rule insert_clinical_trials_to_qdrant:
             exit 1
         fi
 
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting insertion (detailed logs: {log})"
+
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
             --collection {params.collection} \
             --qdrant-url $QDRANT_URL \
             --batch-size {params.batch_size} \
-            2>&1 | tee -a {log}
+            >> {log} 2>&1
 
         # Mark as done
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Clinical Trials insertion complete" > {output.done}

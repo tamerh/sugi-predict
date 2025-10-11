@@ -20,7 +20,6 @@ import gc
 from glob import glob
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import faiss
 import numpy as np
@@ -30,31 +29,12 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 from qdrant_client.http import models
 
-# Logging setup
-# Default to current directory, but can be overridden
-LOG_DIR = Path(os.environ.get("BIOYODA_LOG_DIR", "./logs/qdrant"))
-_log_file: Optional[object] = None
-
-def init_logging(log_dir: Path = LOG_DIR) -> None:
-    """Initialize logging to file."""
-    global _log_file
-    log_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = log_dir / f"insert_{timestamp}.log"
-    _log_file = open(log_path, 'w', buffering=1)  # Line buffered
-    log_with_timestamp(f"Logging to: {log_path}")
-
 def log_with_timestamp(message: str) -> None:
     """Prints a message with timestamp and memory usage."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
     log_line = f"[{timestamp}] [MEM: {memory_mb:.1f}MB] {message}"
-
-    print(log_line)
-
-    if _log_file is not None:
-        _log_file.write(log_line + '\n')
-        _log_file.flush()
+    print(log_line, flush=True)
 
 def create_collection_if_needed(client: QdrantClient, collection_name: str,
                                  vector_size: int = 768) -> None:
@@ -296,9 +276,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Initialize logging
-    init_logging()
-
     # Validate inputs
     if not os.path.exists(args.faiss_dir):
         log_with_timestamp(f"ERROR: FAISS directory not found: {args.faiss_dir}")
@@ -322,9 +299,6 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
-    finally:
-        if _log_file:
-            _log_file.close()
 
 if __name__ == "__main__":
     main()
