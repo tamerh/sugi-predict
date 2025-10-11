@@ -51,3 +51,31 @@ logging:
   level: "INFO"
   format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
   file: "out/logs/api/api.log"
+
+# RAG (Retrieval-Augmented Generation) Configuration - TEST MODE
+rag:
+  # LLM Provider Configuration
+  provider: "gemini"  # anthropic | openai | gemini | local
+  model: "gemini-2.0-flash-lite"
+  #api_key: "${GOOGLE_API_KEY}"  # Set via environment variable
+  api_key: "AIzaSyDwpxZ9xw511Btlrdcr2rInc8Ck2WOgh0A"  # Set via environment variable
+
+  # RAG Parameters - TEST MODE
+  default_top_k: 3              # Fewer results for testing
+  max_top_k: 10                 # Lower max for testing
+  default_temperature: 0.1      # Low temperature for factual answers
+  default_max_tokens: 500       # Shorter answers for testing
+  max_context_length: 50000     # Smaller context for testing
+
+  # Default collections to search
+  default_collections:
+    - "pubmed_abstracts"
+    - "clinical_trials"
+
+  # Safety and validation
+  enable_validation: true       # Enable citation validation
+  require_citations: true       # Require citations in responses
+
+  # Performance settings
+  search_timeout: 10            # Shorter timeout for testing
+  llm_timeout: 60               # Shorter timeout for testing

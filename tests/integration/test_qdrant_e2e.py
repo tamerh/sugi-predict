@@ -47,19 +47,56 @@ def test_setup():
     pubmed_processed.mkdir(parents=True, exist_ok=True)
     clinical_trials_processed.mkdir(parents=True, exist_ok=True)
 
-    # Create minimal test FAISS indices if they don't exist
-    if not list(pubmed_processed.glob("*.index")):
+    # Create minimal test FAISS indices ONLY if absolutely no data exists
+    # Prefer real data from e2e tests (trials_chunk_*.index from Clinical Trials e2e)
+
+    pubmed_test_created = False
+    ct_test_created = False
+
+    pubmed_index_files = list(pubmed_processed.glob("*.index"))
+    if not pubmed_index_files:
+        print("No PubMed index files found, creating minimal test data")
         create_test_faiss_index(pubmed_processed / "test_pubmed.index", n_vectors=10)
+        pubmed_test_created = True
+    else:
+        print(f"Using existing PubMed index files: {len(pubmed_index_files)} files")
 
-    if not list(clinical_trials_processed.glob("*.index")):
+    ct_index_files = list(clinical_trials_processed.glob("*.index"))
+    if not ct_index_files:
+        print("No Clinical Trials index files found, creating minimal test data")
         create_test_faiss_index(clinical_trials_processed / "test_trials.index", n_vectors=5)
+        ct_test_created = True
+    else:
+        print(f"Using existing Clinical Trials index files: {len(ct_index_files)} files")
 
-    return {
+    yield {
         'project_root': project_root,
         'config_path': test_config_path,
         'base_dir': base_dir,
         'config': config
     }
+
+    # Cleanup: Remove dummy test files if we created them
+    # This prevents dummy data from persisting and being used by other tests
+    if pubmed_test_created:
+        test_pubmed_index = pubmed_processed / "test_pubmed.index"
+        test_pubmed_json = pubmed_processed / "test_pubmed.json"
+        if test_pubmed_index.exists():
+            test_pubmed_index.unlink()
+            print(f"Cleaned up: {test_pubmed_index}")
+        if test_pubmed_json.exists():
+            test_pubmed_json.unlink()
+            print(f"Cleaned up: {test_pubmed_json}")
+
+    if ct_test_created:
+        test_trials_index = clinical_trials_processed / "test_trials.index"
+        test_trials_json = clinical_trials_processed / "test_trials.json"
+        if test_trials_index.exists():
+            test_trials_index.unlink()
+            print(f"Cleaned up: {test_trials_index}")
+        if test_trials_json.exists():
+            test_trials_json.unlink()
+            print(f"Cleaned up: {test_trials_json}")
 
 
 def create_test_faiss_index(index_path: Path, n_vectors: int = 10, dim: int = 768):

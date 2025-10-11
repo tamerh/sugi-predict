@@ -14,12 +14,15 @@ from contextlib import asynccontextmanager
 
 from .models import (
     SearchRequest, SearchResponse, SearchResultItem,
-    HealthResponse, CollectionInfo, ErrorResponse
+    HealthResponse, CollectionInfo, ErrorResponse,
+    AskRequest, AskResponse  # RAG models
 )
 from .search import BioYodaSearchEngine
+from .rag import RAGEngine  # RAG engine
 from .config import get_config
 from . import __version__
 
+import pprint
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -27,8 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global search engine instance
+# Global instances
 search_engine: BioYodaSearchEngine = None
+rag_engine: RAGEngine = None
 
 
 @asynccontextmanager
@@ -37,7 +41,7 @@ async def lifespan(app: FastAPI):
     Lifespan context manager for startup and shutdown events
     """
     # Startup
-    global search_engine
+    global search_engine, rag_engine
     try:
         logger.info("="*80)
         logger.info("Starting BioYoda Search API v%s", __version__)
@@ -57,6 +61,24 @@ async def lifespan(app: FastAPI):
             timeout=30
         )
 
+        # Initialize RAG engine (if configured)
+        if hasattr(config, 'rag') and config.rag:
+            logger.info("Initializing RAG engine...")
+            logger.info(pprint.pformat(config.rag))
+            rag_config = config.rag
+            rag_engine = RAGEngine(
+                search_engine=search_engine,
+                llm_config=rag_config,
+                default_collections=rag_config.get('default_collections', ['pubmed_abstracts', 'clinical_trials']),
+                default_top_k=rag_config.get('default_top_k', 5),
+                max_context_length=rag_config.get('max_context_length', 100000),
+                enable_validation=rag_config.get('enable_validation', True)
+            )
+            logger.info(f"✅ RAG engine initialized with {rag_config.get('provider')} ({rag_config.get('model')})")
+        else:
+            logger.warning("RAG configuration not found - /ask endpoint will be unavailable")
+            rag_engine = None
+
         logger.info("="*80)
         logger.info("BioYoda Search API ready to serve requests")
         logger.info(f"API available at: http://localhost:8000")
@@ -75,14 +97,20 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="BioYoda Search API",
+    title="BioYoda Search & RAG API",
     version=__version__,
     description=(
-        "Semantic search API for biomedical literature and clinical trials.\n\n"
-        "Search across:\n"
+        "Semantic search and AI-powered Q&A for biomedical literature and clinical trials.\n\n"
+        "**Features:**\n"
+        "- **Semantic Search** (`/search`) - Vector-based search across 30M+ documents\n"
+        "- **AI Q&A** (`/ask`) - RAG-powered question answering with citations\n\n"
+        "**Data Sources:**\n"
         "- **PubMed abstracts** (30M+ biomedical research papers)\n"
         "- **ClinicalTrials.gov** (500K+ clinical trial records)\n\n"
-        "Powered by S-BioBERT embeddings and Qdrant vector database."
+        "**Technology Stack:**\n"
+        "- S-BioBERT embeddings for semantic understanding\n"
+        "- Qdrant vector database for efficient retrieval\n"
+        "- Claude AI / GPT-4 for answer generation with citations"
     ),
     lifespan=lifespan,
     docs_url="/docs",
@@ -152,18 +180,20 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def root():
     """API root endpoint - provides overview of available endpoints"""
     return {
-        "name": "BioYoda Search API",
+        "name": "BioYoda Search & RAG API",
         "version": __version__,
         "status": "running",
-        "description": "Semantic search for biomedical literature",
+        "description": "Semantic search and AI-powered Q&A for biomedical literature",
         "endpoints": {
             "health": "/health - Health check",
             "search": "/search (POST) - Semantic search",
+            "ask": "/ask (POST) - RAG-powered Q&A with citations",
             "collections": "/collections - List collections",
             "docs": "/docs - Interactive API documentation",
             "redoc": "/redoc - Alternative API documentation"
         },
-        "documentation": "https://github.com/your-org/bioyoda"
+        "documentation": "https://github.com/your-org/bioyoda",
+        "rag_enabled": rag_engine is not None
     }
 
 
@@ -372,6 +402,109 @@ async def search(request: SearchRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Search failed: {str(e)}"
+        )
+
+
+@app.post(
+    "/ask",
+    summary="AI-Powered Q&A",
+    description="Ask questions and get AI-generated answers with citations from biomedical literature",
+    response_model=AskResponse
+)
+async def ask_question(request: AskRequest):
+    """
+    RAG-powered question answering endpoint
+
+    Ask natural language questions and receive comprehensive answers with proper
+    citations from PubMed abstracts and clinical trials.
+
+    ### Features:
+    - **Semantic Retrieval**: Uses S-BioBERT to find relevant sources
+    - **AI Answer Generation**: Claude/GPT-4 generates comprehensive answers
+    - **Citation Validation**: Ensures all claims are properly cited
+    - **Quality Metrics**: Returns performance and validation metrics
+
+    ### How it works:
+    1. Your question is embedded using S-BioBERT
+    2. Top-k most relevant papers/trials are retrieved
+    3. Context is sent to LLM to generate answer
+    4. Citations are validated and metrics calculated
+    5. Answer with sources is returned
+
+    ### Examples:
+
+    Basic question:
+    ```json
+    {
+        "question": "What is CRISPR gene editing?",
+        "top_k": 5
+    }
+    ```
+
+    Specific collection:
+    ```json
+    {
+        "question": "Latest Alzheimer's treatments?",
+        "collections": ["clinical_trials"],
+        "top_k": 10
+    }
+    ```
+
+    Adjust creativity:
+    ```json
+    {
+        "question": "Explain immunotherapy for cancer",
+        "temperature": 0.3,
+        "max_tokens": 1500
+    }
+    ```
+
+    ### Response:
+    Returns:
+    - **answer**: AI-generated answer with inline citations (e.g., "PMID:12345...")
+    - **sources**: List of source documents with URLs
+    - **metrics**: Performance timing and cost estimates
+    - **validation**: Citation coverage and quality metrics
+    """
+
+    # Check if RAG is enabled
+    if rag_engine is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG engine not initialized. Please configure LLM provider in config."
+        )
+
+    try:
+        logger.info(
+            f"RAG request: question='{request.question[:100]}...', "
+            f"collections={request.collections}, top_k={request.top_k}"
+        )
+
+        # Call RAG engine
+        result = await rag_engine.ask(
+            question=request.question,
+            collections=request.collections,
+            top_k=request.top_k,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            filters=request.filters
+        )
+
+        logger.info(
+            f"RAG completed: {result['metrics']['total_time_ms']:.0f}ms, "
+            f"cost: ${result['metrics']['estimated_cost_usd']:.4f}"
+        )
+
+        # Convert to response model
+        return AskResponse(**result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"RAG failed: {str(e)}"
         )
 
 

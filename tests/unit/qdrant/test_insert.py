@@ -219,8 +219,7 @@ class TestIntegrationHelpers:
 
     def test_logging_functions_dont_crash(self):
         """Test that logging functions can be called without errors"""
-        from insert_from_faiss import log_with_timestamp, init_logging
+        from insert_from_faiss import log_with_timestamp
 
         # These should not raise errors
         log_with_timestamp("Test message")
-        # Note: init_logging requires actual file system, tested in integration tests

@@ -11,7 +11,7 @@ conda_env: "bioyoda"
 
 # Base Paths - CHANGE THIS FOR DIFFERENT ENVIRONMENTS
 # All outputs (raw_data/, data/, logs/) will be created under: base_dir/out/
-base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev/out"
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/out"
 
 # PubMed Module Configuration
 pubmed:
@@ -106,3 +106,47 @@ cluster:
   # Resource defaults
   default_memory_mb: 8192
   default_threads: 1
+
+# RAG (Retrieval-Augmented Generation) Configuration
+rag:
+  # LLM Provider Configuration (easily switchable)
+  #provider: "anthropic"  # anthropic | openai | gemini | local
+  #model: "claude-3-5-sonnet-20241022"
+  #api_key: "${ANTHROPIC_API_KEY}"  # Set via environment variable
+
+  # Alternative provider configurations (comment/uncomment as needed):
+
+  # OpenAI GPT-4:
+  # provider: "openai"
+  # model: "gpt-4-turbo-preview"
+  # api_key: "${OPENAI_API_KEY}"
+
+  # Google Gemini (from AI Studio):
+  provider: "gemini"
+  model: "gemini-1.5-flash"  # or "gemini-1.5-pro"
+  api_key: "${GOOGLE_API_KEY}"
+
+  # Local model via Ollama:
+  # provider: "local"
+  # model: "llama3.1:70b"
+  # base_url: "http://localhost:11434"
+
+  # RAG Parameters
+  default_top_k: 5          # Number of documents to retrieve
+  max_top_k: 20             # Maximum allowed top_k
+  default_temperature: 0.1  # Low temperature for factual answers
+  default_max_tokens: 1000  # Default max tokens in response
+  max_context_length: 100000  # Maximum context length (chars)
+
+  # Default collections to search
+  default_collections:
+    - "pubmed_abstracts"
+    - "clinical_trials"
+
+  # Safety and validation
+  enable_validation: true   # Enable citation validation
+  require_citations: true   # Require citations in responses
+
+  # Performance settings
+  search_timeout: 30        # Search timeout in seconds
+  llm_timeout: 120          # LLM timeout in seconds

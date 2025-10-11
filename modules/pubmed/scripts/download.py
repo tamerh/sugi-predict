@@ -184,6 +184,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Download PubMed data from NCBI FTP')
     parser.add_argument('--raw-dir', required=True, help='Base directory for raw data')
     parser.add_argument('--debug', type=int, default=0, help='Debug mode: limit number of files to download (0 = disabled)')
+    parser.add_argument('--test-fixture', default=None, help='Path to test fixture file (skips downloads if present)')
 
     args = parser.parse_args()
 
@@ -196,6 +197,49 @@ if __name__ == "__main__":
     os.makedirs(BASE_DATA_DIR, exist_ok=True)
     os.makedirs(BASELINE_DIR, exist_ok=True)
     os.makedirs(UPDATE_DIR, exist_ok=True)
+
+    # Check for test fixture file
+    test_fixture_exists = False
+    if args.test_fixture:
+        test_fixture_exists = os.path.exists(args.test_fixture)
+    else:
+        # Auto-detect common test fixture names in baseline directory
+        common_fixture_names = ['test_abstracts.xml.gz', 'test_pubmed.xml.gz', 'fixture.xml.gz']
+        for fixture_name in common_fixture_names:
+            fixture_path = os.path.join(BASELINE_DIR, fixture_name)
+            if os.path.exists(fixture_path):
+                test_fixture_exists = True
+                log(f"Auto-detected test fixture: {fixture_path}")
+                break
+
+    # If test fixture exists, skip all downloads
+    if test_fixture_exists:
+        fixture_display = args.test_fixture if args.test_fixture else "auto-detected fixture"
+        log("=" * 70)
+        log(f"TEST FIXTURE MODE: Using existing fixture file")
+        log(f"Fixture: {fixture_display}")
+        log("Skipping FTP downloads entirely")
+        log("=" * 70)
+
+        # Still download deleted PMIDs if not present
+        try:
+            deleted_pmids_path = os.path.join(BASE_DATA_DIR, DELETED_PMIDS_GZ)
+            if not os.path.exists(deleted_pmids_path):
+                log("\nDownloading deleted PMIDs file (required for filtering)...")
+                with FTP(PUBMED_FTP_SERVER) as ftp:
+                    ftp.login()
+                    download_single_file(ftp, PUBMED_ROOT_PATH, DELETED_PMIDS_GZ, BASE_DATA_DIR)
+            else:
+                log(f"\nDeleted PMIDs file already exists: {deleted_pmids_path}")
+        except Exception as e:
+            log(f"Warning: Could not download deleted PMIDs file: {e}")
+            log("Continuing without deleted PMIDs filtering...")
+
+        # Sort deleted PMIDs if needed
+        sort_deleted_pmids(BASE_DATA_DIR)
+
+        log("\nTest fixture mode complete - ready for processing")
+        sys.exit(0)
 
     # Check for debug mode
     debug_mode = args.debug > 0

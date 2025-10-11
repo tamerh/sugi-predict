@@ -30,6 +30,7 @@ class APIConfig:
         self.default_limit = self._config['search']['default_limit']
         self.max_limit = self._config['search']['max_limit']
         self.collections = self._config['collections']
+        self.rag = self._config.get('rag', None)
 
         logger.info(f"Configuration loaded from: {config_path}")
         logger.info(f"Qdrant URL: {self.qdrant_url}")
