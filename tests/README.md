@@ -1,491 +1,417 @@
-# BioYoda Test Suite
+# BioYoda Test Suite (v2)
 
-Comprehensive test suite for BioYoda biomedical search pipeline.
+Simple, result-oriented testing system for BioYoda with fixture-based data and query validation.
+
+## Philosophy
+
+This testing system focuses on **practical, result-oriented testing** rather than complex unit tests:
+
+- ✅ **Real queries** against real (fixture) data
+- ✅ **End-to-end validation** of search and RAG functionality
+- ✅ **Fast feedback** with fixture mode (2-3 minutes)
+- ✅ **Full E2E testing** with pipeline mode (15-20 minutes)
+- ✅ **Simple maintenance** - no complex pytest fixtures or mocking
+- ✅ **Iterative improvement** - add queries, run tests, fix issues
 
 ## Quick Start
 
 ```bash
-# Install test dependencies
-pip install pytest pytest-cov pyyaml requests
+# Run tests with fixtures (fast - recommended for development)
+./bioyoda.sh test
 
-# Run unit tests only (fast - seconds)
-./run_tests.sh unit
-
-# Run PubMed tests (unit + e2e pipeline test - ~10-15 min)
-./run_tests.sh pubmed
+# Run full pipeline test (slower - for comprehensive validation)
+./bioyoda.sh test --pipeline
 ```
 
 ## Directory Structure
 
-After reorganization, all outputs are organized under dedicated directories:
-
-```
-bioyoda_dev2/
-├── out/                    # Production pipeline outputs
-│   ├── raw_data/          # Downloaded data
-│   ├── data/              # Processed data
-│   └── logs/              # Pipeline logs
-├── test_out/              # Test pipeline outputs (cleaned on each test run)
-│   ├── raw_data/
-│   ├── data/
-│   └── logs/
-├── tests/
-│   ├── unit/              # Fast unit tests
-│   └── integration/       # E2E pipeline tests
-└── config/
-    ├── config.yaml        # Production (outputs to out/)
-    └── test_config.yaml   # Testing (outputs to test_out/)
-```
-
-## Test Types
-
-### 1. Unit Tests (Fast - seconds)
-Test individual functions in isolation with mock data.
-
-```bash
-# Run all unit tests
-./run_tests.sh unit
-
-# Run specific module
-pytest tests/unit/pubmed/ -v
-pytest tests/unit/clinical_trials/ -v
-pytest tests/unit/qdrant/ -v
-```
-
-**What they test**: Individual functions like `merge_all_parts()`, `prepare_points()`, etc.
-
-### 2. End-to-End (E2E) Tests (~15-25 minutes)
-Actually run the full Snakemake pipeline with test config and validate output.
-
-```bash
-# Run PubMed E2E test (~10-15 min)
-./run_tests.sh pubmed
-
-# Run Clinical Trials E2E test (~5-10 min)
-./run_tests.sh clinical_trials
-
-# Run all E2E tests (~15-25 min)
-./run_tests.sh e2e
-
-# Or directly
-pytest tests/integration/test_pubmed_e2e.py -m e2e -v
-pytest tests/integration/test_clinical_trials_e2e.py -m e2e -v
-```
-
-**What happens (PubMed)**:
-1. Cleans `test_out/` directory (fresh start)
-2. Runs full pipeline: `./bioyoda.sh run pubmed --config test_config.yaml --local`
-3. Downloads 2 PubMed files (debug mode)
-4. Processes 100 abstracts per file (test mode)
-5. Creates FAISS indices
-6. Validates all outputs (merge is optional)
-7. Leaves results in `test_out/` for inspection
-
-**What happens (Clinical Trials)**:
-1. Cleans `test_out/` directory (fresh start)
-2. Runs full pipeline: `./bioyoda.sh run clinical_trials --config test_config.yaml --local`
-3. Downloads clinical trials data
-4. Processes 100 trials (test mode)
-5. Creates FAISS indices with chunks
-6. Validates all outputs
-7. Leaves results in `test_out/` for inspection
-
-**Test config settings**:
-- PubMed: `debug_mode: true` (2 files), `test_abstracts_limit: 100`
-- Clinical Trials: `test_mode: true`, `test_trials_limit: 100`
-- `base_dir: ./test_out` → All outputs go here
-
-## Test Structure
-
 ```
 tests/
-├── unit/                           # Fast unit tests (~1-5 min)
-│   ├── pubmed/                     # PubMed module tests
-│   │   ├── test_index.py          # Index creation tests
-│   │   └── test_merge.py          # Merge function tests
-│   ├── clinical_trials/            # Clinical trials module tests
-│   │   └── test_process_trials.py # Processing & chunking tests
-│   ├── qdrant/                     # Qdrant module tests
-│   │   └── test_insert.py         # Insertion logic tests
-│   └── common/                     # Shared/common tests
-│       └── test_config.py         # Configuration validation
-│
-├── integration/                    # End-to-end pipeline tests (~10-30 min)
-│   ├── test_pubmed_pipeline.py           # Full PubMed workflow
-│   ├── test_clinical_trials_pipeline.py  # Full CT workflow
-│   └── test_qdrant_integration.py        # Qdrant server & insertion
-│
-├── fixtures/                       # Test data and fixtures
-├── conftest.py                     # Shared fixtures
-├── pytest.ini                      # Pytest configuration
-└── README.md                       # This file
+├── README.md                              # This file
+├── validate_queries.py                     # Query validation script (executable)
+├── queries.txt                             # Clinical trials test queries (10 queries)
+├── queries_pubmed.txt                      # PubMed test queries (10 queries)
+└── fixtures/                               # Test data fixtures
+    ├── README.md                           # Fixture documentation
+    ├── pubmed/
+    │   ├── test_abstracts.xml.gz           # 50 real PubMed abstracts (68KB)
+    │   └── test_abstracts_pmids.txt        # List of PMIDs in fixture
+    └── clinical_trials/
+        ├── test_nct_ids.txt                # 50 NCT IDs for filtering (743B)
+        └── sample_trials.json              # 50 extracted trials (275KB)
 ```
 
-## Test Categories
+## Test Modes
 
-### Unit Tests (`tests/unit/`)
+### Fixture Mode (Default - Fast)
 
-**Fast, isolated tests for individual functions:**
-
-#### PubMed Tests
-- `test_merge.py` - Merge function validation (CRITICAL for data integrity)
-  - Verifies all vectors are preserved
-  - Checks metadata-vector alignment
-  - Tests dimension consistency
-  - Validates metadata re-indexing
-
-- `test_index.py` - Index creation validation
-  - Tests deleted PMID filtering (CRITICAL)
-  - Validates FAISS index creation
-  - Checks vector dimensions
-  - Tests metadata structure
-
-#### Clinical Trials Tests
-- `test_process_trials.py` - Text processing validation
-  - Tests text cleaning (whitespace, HTML, URLs)
-  - Validates chunking logic
-  - Checks trial-to-chunks conversion
-  - Tests minimum length enforcement
-
-#### Qdrant Tests
-- `test_insert.py` - Insertion logic validation
-  - Tests batch creation
-  - Validates point preparation
-  - Checks vector-payload alignment
-  - Tests checkpoint tracking
-
-#### Common Tests
-- `test_config.py` - Configuration validation
-  - Validates YAML structure
-  - Checks required fields
-  - Tests model configuration
-  - Validates resource settings
-
-### E2E Tests (`tests/integration/`)
-
-**Slow, end-to-end workflow tests that actually run the full pipeline:**
-
-#### PubMed E2E Test (`test_pubmed_e2e.py`)
-Tests complete workflow: download → process → index
-- Downloads 2 PubMed files (debug mode)
-- Processes 100 abstracts per file (test mode)
-- Creates FAISS indices
-- Validates all outputs in test_out/
-- **Runtime**: ~10-15 minutes
-
-#### Clinical Trials E2E Test (`test_clinical_trials_e2e.py`)
-Tests complete workflow: download → process → index
-- Downloads clinical trials data
-- Processes 100 trials (test mode)
-- Creates FAISS indices with chunks
-- Validates metadata structure
-- **Runtime**: ~5-10 minutes
-
-## Running Tests
-
-### Quick Commands
+Uses pre-existing fixture data and runs minimal processing:
 
 ```bash
-# All tests (unit + integration)
-pytest -v
-
-# Unit tests only (fast)
-pytest tests/unit/ -v
-
-# Integration tests only (slow)
-pytest tests/integration/ -v -m integration
-
-# Specific module
-pytest tests/unit/pubmed/ -v           # PubMed unit tests
-pytest tests/integration/test_pubmed_pipeline.py  # PubMed integration
-
-# Skip slow tests
-pytest -m "not slow"
-
-# With coverage
-pytest --cov=modules --cov-report=html
+./bioyoda.sh test
 ```
 
-### Test Markers
+**Steps:**
+1. Setup test environment (copy fixtures to test_out/)
+2. Run minimal data processing (~1-2 min)
+3. Start Qdrant server
+4. Insert data to Qdrant
+5. Start API server
+6. Validate all queries from queries.txt
+7. Cleanup
+
+**Duration:** ~2-3 minutes
+**Use when:** Developing features, testing query performance, rapid iteration
+
+### Pipeline Mode (Full E2E)
+
+Runs the complete data processing pipeline from scratch:
 
 ```bash
-# By marker
-pytest -m unit           # Unit tests
-pytest -m integration    # Integration tests
-pytest -m slow           # Slow tests only
-pytest -m qdrant         # Qdrant-specific tests
-pytest -m "not slow"     # Skip slow tests
-
-# Combined markers
-pytest -m "integration and not slow"  # Fast integration tests
+./bioyoda.sh test --pipeline
 ```
 
-### Using run_tests.sh
+**Steps:**
+1. Clean test_out/ directory
+2. Run full PubMed and Clinical Trials pipeline (~15-20 min)
+3. Start Qdrant server
+4. Insert data to Qdrant
+5. Start API server
+6. Validate all queries from queries.txt
+7. Cleanup
 
-```bash
-./run_tests.sh              # All tests
-./run_tests.sh unit         # Unit tests only
-./run_tests.sh integration  # Integration tests only
-./run_tests.sh pubmed       # PubMed tests (unit + integration)
-./run_tests.sh ct           # Clinical trials tests
-./run_tests.sh qdrant       # Qdrant tests
-./run_tests.sh coverage     # With coverage report
+**Duration:** ~15-20 minutes
+**Use when:** Testing pipeline changes, validating full E2E workflow, pre-release testing
+
+## Query Validation
+
+The test suite validates two types of queries:
+
+### 1. Search Queries
+
+Tests the `/search` endpoint with queries from both files:
+- **Clinical Trials**: `queries.txt` (10 queries testing clinical_trials collection)
+- **PubMed**: `queries_pubmed.txt` (10 queries testing pubmed_abstracts collection)
+- Verifies API returns results
+- Checks result count > 0
+- Shows top matching documents with scores
+- Reports PMID/NCT IDs of top matches
+
+### 2. RAG Queries (Optional)
+
+Tests the `/ask` endpoint by generating questions from search queries:
+- Verifies answer generation works
+- Checks source citations are included
+- Validates answer quality warnings
+- Skips gracefully if RAG not configured
+
+## Test Output
+
+The validation script provides color-coded output:
+
+```
+================================================================================
+SEARCH QUERY VALIDATION
+================================================================================
+
+Clinical Trials Queries (10 queries)
+----------------------------------------
+
+1. Query: What are the eligibility criteria for studies using vagal nerve stimulation?
+   Collections: clinical_trials
+   ✓ PASS: 15 results
+     Top: NCT:NCT04484285 (score: 0.876)
+
+...
+
+----------------------------------------
+Clinical Trials: 10/10 passed ✓
+----------------------------------------
+
+PubMed Queries (10 queries)
+----------------------------------------
+
+1. Query: How does pregnancy affect bone density and osteoporosis recovery?
+   Collections: pubmed_abstracts
+   ✓ PASS: 8 results
+     Top: PMID:12345678 (score: 0.734)
+
+...
+
+----------------------------------------
+PubMed: 10/10 passed ✓
+----------------------------------------
+
+================================================================================
+Overall Search Results: 20/20 passed ✓
+================================================================================
+
+================================================================================
+RAG QUERY VALIDATION
+================================================================================
+
+1. Question: What are the eligibility criteria for studies on vagal nerve stimulation?
+   ✓ Generated answer (1234 chars)
+     Sources: 3
+     Citations: NCT04484285, NCT05417490, NCT03990558
+
+...
+
+--------------------------------------------------------------------------------
+RAG Results: 5/5 passed ✓
+--------------------------------------------------------------------------------
+
+================================================================================
+FINAL RESULTS
+================================================================================
+Clinical Trials Search: 10/10 passed
+PubMed Search:          10/10 passed
+Total Search:           20/20 passed
+RAG:                    5/5 passed
+
+================================================================================
+TOTAL: 25/25 passed
+
+✓ All tests passed!
+================================================================================
 ```
 
-## What Tests Catch
+## Adding New Queries
 
-### 🔴 CRITICAL Issues (Data Loss Prevention)
-1. **Vector-Metadata Misalignment** - Prevents data corruption
-2. **Deleted PMID Filtering** - Ensures exclusions work
-3. **Merge Data Loss** - Verifies all vectors preserved
-4. **Dimension Mismatches** - Catches incompatible configs
+To add new test queries:
 
-### 🟡 Important Issues (Quality & Correctness)
-1. **Config Validation** - Catches errors before jobs start
-2. **Text Processing** - Ensures chunking works correctly
-3. **Insertion Logic** - Validates batch processing
-4. **Collection Structure** - Ensures Qdrant schema correct
+### For Clinical Trials
 
-### 🟢 Integration Issues (End-to-End)
-1. **Pipeline Completion** - Verifies workflows finish
-2. **File Creation** - Checks all outputs exist
-3. **Idempotency** - Ensures re-runs are safe
-4. **Search Functionality** - Validates Qdrant works
+1. **Edit queries.txt:**
+   ```bash
+   vim tests/queries.txt
+   ```
 
-## E2E Test Workflow
+2. **Add your query** (one per line, with or without quotes):
+   ```
+   "Find studies on CRISPR gene editing in cancer"
+   ```
 
-E2E tests use test_config.yaml which outputs to test_out/ directory:
+### For PubMed
 
-### 1. PubMed E2E Test
-```bash
-pytest tests/integration/test_pubmed_e2e.py -m e2e -v
-```
+1. **Edit queries_pubmed.txt:**
+   ```bash
+   vim tests/queries_pubmed.txt
+   ```
 
-**What it does:**
-- Cleans test_out/ directory (fresh start)
-- Runs: `./bioyoda.sh run pubmed --config test_config.yaml --local`
-- Downloads 2 PubMed XML files (debug mode)
-- Processes 100 abstracts per file (test mode)
-- Creates FAISS indices
-- Validates all outputs
-- Leaves results in test_out/ for inspection
+2. **Add your query** (one per line, with or without quotes):
+   ```
+   "What is the mechanism of action of mRNA vaccines?"
+   ```
 
-### 2. Clinical Trials E2E Test
-```bash
-pytest tests/integration/test_clinical_trials_e2e.py -m e2e -v
-```
+### Run Tests
 
-**What it does:**
-- Cleans test_out/ directory (fresh start)
-- Runs: `./bioyoda.sh run clinical_trials --config test_config.yaml --local`
-- Downloads clinical trials data
-- Processes 100 trials (test mode)
-- Creates chunked FAISS indices
-- Validates chunk structure
-- Leaves results in test_out/ for inspection
+3. **Run tests:**
+   ```bash
+   ./bioyoda.sh test
+   ```
 
-**Run all E2E tests in sequence:**
-```bash
-pytest tests/integration/ -v -m e2e
-# Or use the helper script
-./run_tests.sh e2e
-```
+4. **Review results** - queries should match fixture data
 
-## Test Data & Fixtures
+**Tips:**
+- Queries are designed to match fixture data (50 clinical trials, 50 PubMed abstracts)
+- **Clinical trials queries**: Focus on trial-specific concepts (eligibility, interventions, outcomes)
+- **PubMed queries**: Focus on research topics, mechanisms, treatments covered in literature
+- Avoid overly specific queries that won't match any fixture data
+- Test both broad and specific query types
 
-### Shared Fixtures (`conftest.py`)
+## Configuration
 
-- `temp_dir` - Temporary directory for test outputs
-- `sample_faiss_index` - Pre-built FAISS index (100 vectors, 768d)
-- `sample_metadata` - Matching metadata
-- `sample_index_files` - Multiple index files for merge testing
-- `sample_pubmed_xml` - Minimal PubMed XML
-- `sample_deleted_pmids` - Deleted PMID list
-- `mock_config` - Mock configuration
+Tests use `config/test_config.yaml` which specifies:
 
-### Creating Test Data
+```yaml
+base_dir: test_out/  # All test outputs go here
 
-```python
-def test_my_function(temp_dir, sample_faiss_index):
-    index, vectors = sample_faiss_index
-    # Your test code here
-```
+pubmed:
+  test_mode: true
+  test_fixture_file: "test_out/raw_data/pubmed/baseline/test_abstracts.xml.gz"
 
-## Coverage Reports
+clinical_trials:
+  test_mode: true
+  test_nct_ids_file: "tests2/fixtures/clinical_trials/test_nct_ids.txt"
 
-```bash
-# Generate coverage report
-pytest --cov=modules --cov-report=term-missing
-
-# HTML coverage report
-pytest --cov=modules --cov-report=html
-# Open: htmlcov/index.html
-
-# Focus on specific module
-pytest --cov=modules/pubmed --cov-report=term
-```
-
-## Continuous Testing
-
-```bash
-# Watch for changes and re-run
-pytest-watch
-
-# Parallel execution
-pip install pytest-xdist
-pytest -n auto  # Use all cores
-
-# Run only failed tests
-pytest --lf -v
-```
-
-## Writing New Tests
-
-### Test Naming Convention
-
-```python
-class TestFeatureName:
-    """Test suite for feature"""
-
-    def test_feature_does_something(self):
-        """Test that feature does X"""
-        # Arrange
-        data = setup_test_data()
-
-        # Act
-        result = function_to_test(data)
-
-        # Assert
-        assert result.is_valid()
-```
-
-### Adding Markers
-
-```python
-@pytest.mark.slow
-@pytest.mark.integration
-def test_full_workflow():
-    """Test complete workflow (slow)"""
-    # ...
-
-@pytest.mark.unit
-def test_individual_function():
-    """Test single function (fast)"""
-    # ...
+embeddings:
+  model: "NeuML/pubmedbert-base-embeddings"  # Must match for consistent results
 ```
 
 ## Troubleshooting
 
-### Import Errors
-```bash
-# Ensure you're in project root
-cd /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2
+### Tests fail with "No results found"
 
-# Install dependencies
-pip install pytest pytest-cov pyyaml requests
+**Possible causes:**
+- Model mismatch (indexing with one model, querying with another)
+- Fixture data not properly loaded
+- Qdrant collections empty
+
+**Solution:**
+```bash
+# Check Qdrant status
+./bioyoda.sh qdrant status --test
+
+# Verify collections exist
+curl http://localhost:6333/collections
+
+# Re-run with clean state
+rm -rf test_out/
+./bioyoda.sh test
 ```
 
-### Model Download Issues
-First run downloads models (~90MB):
+### API server not starting
+
+**Possible causes:**
+- Qdrant server not running
+- Port 8000 already in use
+- Missing dependencies
+
+**Solution:**
 ```bash
-python -c "from sentence_transformers import SentenceTransformer; \
-           SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+# Check Qdrant is running
+curl http://localhost:6333/healthz
+
+# Check if port is in use
+lsof -i :8000
+
+# Check API logs
+tail -f test_out/logs/api/server.log
 ```
 
-### Integration Test Failures
+### "Model mismatch" warning
 
-**Pipeline not completing:**
-- Check logs in test output directory
-- Increase timeout values
-- Run manually: `./bioyoda.sh run pubmed --config config/test_config.yaml --local`
+**Cause:** Embedding model used during indexing doesn't match the model specified in config.
 
-**Qdrant not starting:**
-- Ensure no other Qdrant instance running
-- Check port 6333 is available
-- Review Qdrant logs
-
-**Data not found:**
-- Run pipeline tests before Qdrant test
-- Check `/tmp/bioyoda_integration_test_*` directories
-- Uncomment cleanup to inspect outputs
-
-## Test Execution Order
-
-Recommended order for testing:
-
-1. **Unit tests** (fast, no dependencies)
+**Solution:**
+1. Verify `config/test_config.yaml` has correct model
+2. Clean and rebuild indices:
    ```bash
-   ./run_tests.sh unit
+   rm -rf test_out/
+   ./bioyoda.sh test
    ```
 
-2. **PubMed E2E** (independent, creates test data in test_out/)
-   ```bash
-   ./run_tests.sh pubmed
-   ```
+### RAG queries fail but search works
 
-3. **Clinical Trials E2E** (independent, creates test data in test_out/)
-   ```bash
-   ./run_tests.sh clinical_trials
-   ```
+**Possible causes:**
+- RAG model not configured (this is OK - RAG tests will skip)
+- RAG endpoint error (check API logs)
 
-Or run all at once:
+**Solution:**
 ```bash
-./run_tests.sh all  # Unit + E2E tests
-pytest tests/ -v    # Same via pytest
+# Check API health endpoint
+curl http://localhost:8000/health | jq
+
+# Test RAG endpoint directly
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "test question", "collections": ["clinical_trials"]}'
 ```
 
-## CI/CD Integration
+## Advanced Usage
 
-Example GitHub Actions workflow:
+### Run validation script directly
 
-```yaml
-name: BioYoda Tests
+```bash
+# Basic run
+python tests2/validate_queries.py
 
-on: [push, pull_request]
+# Verbose output (show full results)
+python tests2/validate_queries.py --verbose
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
-        with:
-          python-version: '3.10'
-      - run: pip install -r requirements.txt
-      - run: pip install pytest pytest-cov
-      - run: pytest tests/unit/ -v
-      - run: pytest tests/integration/ -v -m "not slow"
+# Only test search (skip RAG)
+python tests2/validate_queries.py --search-only
+
+# Only test RAG (skip search)
+python tests2/validate_queries.py --rag-only
+
+# Custom API URL
+python tests2/validate_queries.py --api-url http://localhost:8001
 ```
 
-## Performance Benchmarks
+### Manual test workflow
 
-**Unit Tests:**
-- `tests/unit/`: ~1-5 minutes total
-- Individual test files: ~10-60 seconds
+```bash
+# 1. Start servers manually
+./bioyoda.sh run all --test --local --cores 2
+./bioyoda.sh qdrant start --mode local --test
+./bioyoda.sh qdrant insert all --test --local --cores 2
+./bioyoda.sh api start --test
 
-**E2E Tests:**
-- `test_pubmed_e2e.py`: ~10-15 minutes
-- `test_clinical_trials_e2e.py`: ~5-10 minutes
-- **Total**: ~15-25 minutes
+# 2. Run validation
+python tests2/validate_queries.py --verbose
 
-**Coverage:**
-- Target: >80% for core modules
-- Current: Run `pytest --cov` to check
+# 3. Cleanup
+./bioyoda.sh api stop --test
+./bioyoda.sh qdrant stop --test
+```
 
----
+### Inspect fixture data
 
-## Testing Philosophy
+```bash
+# View PubMed fixture
+zcat tests2/fixtures/pubmed/test_abstracts.xml.gz | less
 
-**These tests are designed to:**
-1. 🔴 **Prevent data loss** (critical assertions)
-2. 🟡 **Catch errors early** (config validation)
-3. 🟢 **Ensure correctness** (output validation)
-4. 🔵 **Enable confidence** (integration workflows)
+# View Clinical Trials NCT IDs
+cat tests2/fixtures/clinical_trials/test_nct_ids.txt
 
-**Run tests before:**
-- Committing code changes
-- Deploying to production
-- Processing large datasets
-- Making configuration changes
+# View Clinical Trials sample data
+jq '.[0]' tests2/fixtures/clinical_trials/sample_trials.json | less
+```
 
-**Happy testing! 🧪**
+## Continuous Integration
+
+The test suite is designed for CI/CD integration:
+
+```bash
+# Run tests and capture exit code
+./bioyoda.sh test
+EXIT_CODE=$?
+
+# Exit code 0 = all tests passed
+# Exit code 1 = some tests failed
+
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "Tests passed - ready to deploy"
+else
+  echo "Tests failed - check logs"
+  exit 1
+fi
+```
+
+## Differences from Old Test System (tests/)
+
+| Aspect | Old System (tests/) | New System (tests2/) |
+|--------|---------------------|----------------------|
+| **Framework** | pytest with complex fixtures | Simple Python script |
+| **Focus** | Unit tests + E2E tests | Result validation only |
+| **Queries** | Not validated | Validated every run |
+| **Maintenance** | High (mocking, fixtures) | Low (just add queries) |
+| **Speed** | Varies | Fast (fixture mode) |
+| **CI/CD** | Complex setup | Simple exit codes |
+| **Documentation** | Detailed but complex | Simple and practical |
+
+## Future Enhancements
+
+Potential improvements to consider:
+
+- [ ] Add query performance benchmarks (latency, throughput)
+- [ ] Compare results across different embedding models
+- [ ] Add visual diff for result changes between runs
+- [ ] Create category-based query lists (easy, medium, hard)
+- [ ] Add regression test mode (compare to baseline results)
+- [ ] Generate test reports in HTML/JSON format
+- [ ] Add query-level debugging mode
+
+## Getting Help
+
+- **Test failures:** Check logs in `test_out/logs/`
+- **API issues:** Review `test_out/logs/api/server.log`
+- **Qdrant issues:** Review `test_out/logs/qdrant/`
+- **General help:** `./bioyoda.sh help`
+- **Report bugs:** Create issue with test output and logs
+
+## Credits
+
+Designed for solo developer workflow with focus on simplicity and fast iteration.

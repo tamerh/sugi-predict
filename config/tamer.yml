@@ -35,3 +35,8 @@ dependencies:
   - pip:
     - snakemake-executor-plugin-cluster-generic  # For SGE/cluster execution
     - python-multipart>=0.0.6  # FastAPI file uploads (API)
+    # RAG dependencies (modules/api/ - RAG Q&A)
+    - anthropic>=0.25.0  # Claude API for answer generation
+    - openai>=1.12.0     # OpenAI GPT-4 API (alternative)
+    - google-generativeai>=0.3.0  # Google Gemini API (alternative)
+    - tiktoken>=0.5.0    # Token counting for cost estimation

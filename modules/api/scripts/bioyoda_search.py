@@ -2,23 +2,26 @@
 """
 BioYoda Search CLI
 
-Simple command-line tool to search biomedical literature using BioYoda API.
+Command-line tool for biomedical literature search and AI-powered Q&A.
 
 Usage:
-    # Simple search
+    # Vector search (semantic similarity)
     ./bioyoda_search.py "CRISPR gene editing"
+
+    # RAG Q&A with citations (AI-powered)
+    ./bioyoda_search.py "What is CRISPR gene editing?" --ask
 
     # Search specific collection
     ./bioyoda_search.py "cancer treatment" --collection pubmed_abstracts
 
-    # Limit results
-    ./bioyoda_search.py "Alzheimer disease" --limit 5
+    # RAG with custom parameters
+    ./bioyoda_search.py "Explain immunotherapy" --ask --top-k 10 --temperature 0.3
 
-    # Multi-collection search
-    ./bioyoda_search.py "COVID-19 vaccine" --collection pubmed_abstracts clinical_trials
-
-    # Interactive mode
+    # Interactive mode (supports both search and ask)
     ./bioyoda_search.py --interactive
+
+    # List collections
+    ./bioyoda_search.py --list-collections
 """
 import argparse
 import requests
@@ -109,6 +112,66 @@ class BioYodaSearchCLI:
             print(f"❌ Search error: {e}")
             return None
 
+    def ask(
+        self,
+        question: str,
+        collections: Optional[List[str]] = None,
+        top_k: int = 5,
+        temperature: float = 0.1,
+        max_tokens: int = 1000,
+        verbose: bool = False
+    ) -> dict:
+        """
+        Ask a question using RAG (Retrieval-Augmented Generation)
+
+        Args:
+            question: Question to answer
+            collections: List of collections to search (default: all)
+            top_k: Number of sources to retrieve
+            temperature: LLM temperature (0.0-1.0)
+            max_tokens: Maximum tokens in response
+            verbose: Show detailed information
+
+        Returns:
+            RAG results dictionary with answer and sources
+        """
+        if collections is None:
+            collections = ["pubmed_abstracts", "clinical_trials"]
+
+        payload = {
+            "question": question,
+            "collections": collections,
+            "top_k": top_k,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        try:
+            response = requests.post(
+                f"{self.api_url}/ask",
+                json=payload,
+                timeout=120  # Longer timeout for LLM generation
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 503:
+                print(f"❌ RAG engine not available")
+                print(f"   Make sure LLM provider is configured with API key")
+                return None
+            else:
+                error = response.json() if response.headers.get('content-type') == 'application/json' else response.text
+                print(f"❌ RAG query failed (HTTP {response.status_code})")
+                print(f"   {error}")
+                return None
+
+        except requests.exceptions.Timeout:
+            print("❌ RAG query timed out (>120s)")
+            return None
+        except Exception as e:
+            print(f"❌ RAG error: {e}")
+            return None
+
     def display_results(self, results: dict, verbose: bool = False):
         """
         Display search results in a readable format
@@ -169,6 +232,57 @@ class BioYodaSearchCLI:
 
             print()
 
+    def display_rag_results(self, results: dict, verbose: bool = False):
+        """
+        Display RAG (Q&A) results in a readable format
+
+        Args:
+            results: RAG results dictionary
+            verbose: Show detailed information
+        """
+        if not results:
+            return
+
+        print("\n" + "="*80)
+        print(f"Question: '{results['question']}'")
+        print("="*80 + "\n")
+
+        # Display answer
+        print("Answer:")
+        print("-" * 80)
+        print(results['answer'])
+        print("-" * 80 + "\n")
+
+        # Display sources
+        print(f"Sources ({len(results['sources'])}):")
+        for idx, source in enumerate(results['sources'], 1):
+            print(f"\n{idx}. [{source['collection']}] {source['id']} (score: {source['score']:.3f})")
+            print(f"   {source['title']}")
+            if 'url' in source:
+                print(f"   {source['url']}")
+            if verbose:
+                print(f"   Preview: {source['text_preview'][:200]}...")
+
+        # Display metrics
+        metrics = results['metrics']
+        print(f"\nMetrics:")
+        print(f"  Search time: {metrics['search_time_ms']:.0f}ms")
+        print(f"  LLM time: {metrics['llm_time_ms']:.0f}ms")
+        print(f"  Total time: {metrics['total_time_ms']:.0f}ms")
+        print(f"  Model: {metrics['model_used']}")
+        print(f"  Estimated cost: ${metrics['estimated_cost_usd']:.4f}")
+
+        # Display validation if available
+        if 'validation' in results and results['validation']:
+            validation = results['validation']
+            print(f"\nCitation Validation:")
+            print(f"  Coverage: {validation['citation_coverage']:.1%}")
+            print(f"  Cited sources: {validation['cited_count']}/{len(results['sources'])}")
+            if validation.get('warning'):
+                print(f"  ⚠️  {validation['warning']}")
+
+        print("\n" + "="*80 + "\n")
+
     def list_collections(self):
         """List available collections"""
         try:
@@ -200,7 +314,8 @@ class BioYodaSearchCLI:
         print("BioYoda Search - Interactive Mode")
         print("="*80)
         print("\nCommands:")
-        print("  search <query>     - Search all collections")
+        print("  search <query>     - Vector search all collections")
+        print("  ask <question>     - RAG Q&A with citations (AI-powered)")
         print("  pubmed <query>     - Search PubMed only")
         print("  trials <query>     - Search Clinical Trials only")
         print("  collections        - List available collections")
@@ -222,7 +337,8 @@ class BioYodaSearchCLI:
 
                 if user_input.lower() == 'help':
                     print("\nCommands:")
-                    print("  search <query>     - Search all collections")
+                    print("  search <query>     - Vector search (semantic similarity)")
+                    print("  ask <question>     - RAG Q&A with AI-generated answer")
                     print("  pubmed <query>     - Search PubMed only")
                     print("  trials <query>     - Search Clinical Trials only")
                     print("  collections        - List available collections")
@@ -245,6 +361,13 @@ class BioYodaSearchCLI:
                     else:
                         print("Usage: search <query>")
 
+                elif command == 'ask':
+                    if query:
+                        results = self.ask(query, top_k=5)
+                        self.display_rag_results(results)
+                    else:
+                        print("Usage: ask <question>")
+
                 elif command == 'pubmed':
                     if query:
                         results = self.search(query, collections=["pubmed_abstracts"])
@@ -260,7 +383,7 @@ class BioYodaSearchCLI:
                         print("Usage: trials <query>")
 
                 else:
-                    # Treat entire input as search query
+                    # Treat entire input as search query (not RAG by default)
                     results = self.search(user_input)
                     self.display_results(results)
 
@@ -278,16 +401,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Simple search
+  # Vector search (semantic similarity)
   %(prog)s "CRISPR gene editing"
+
+  # RAG Q&A with AI-generated answer and citations
+  %(prog)s "What is CRISPR gene editing?" --ask
+
+  # RAG with custom parameters
+  %(prog)s "Explain cancer immunotherapy" --ask --top-k 10 --temperature 0.2
 
   # Search specific collection
   %(prog)s "cancer treatment" --collection pubmed_abstracts
 
-  # Limit results
-  %(prog)s "Alzheimer disease" --limit 5
+  # RAG for specific collection
+  %(prog)s "Latest Alzheimer treatments?" --ask --collection clinical_trials
 
-  # Interactive mode
+  # Interactive mode (supports both search and ask commands)
   %(prog)s --interactive
 
   # List collections
@@ -348,6 +477,37 @@ Examples:
         help='Output raw JSON results'
     )
 
+    parser.add_argument(
+        '--ask',
+        '-a',
+        action='store_true',
+        help='Use RAG (Q&A mode) instead of vector search'
+    )
+
+    parser.add_argument(
+        '--top-k',
+        '-k',
+        type=int,
+        default=5,
+        help='Number of sources for RAG (default: 5)'
+    )
+
+    parser.add_argument(
+        '--temperature',
+        '-t',
+        type=float,
+        default=0.1,
+        help='LLM temperature for RAG (default: 0.1)'
+    )
+
+    parser.add_argument(
+        '--max-tokens',
+        '-m',
+        type=int,
+        default=1000,
+        help='Max tokens in RAG answer (default: 1000)'
+    )
+
     args = parser.parse_args()
 
     # Initialize CLI
@@ -368,21 +528,39 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    # Perform search
-    results = cli.search(
-        query=args.query,
-        collections=args.collection,
-        limit=args.limit,
-        verbose=args.verbose
-    )
+    # RAG mode (--ask flag)
+    if args.ask:
+        results = cli.ask(
+            question=args.query,
+            collections=args.collection,
+            top_k=args.top_k,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            verbose=args.verbose
+        )
 
-    if results:
-        if args.json:
-            # Output raw JSON
-            print(json.dumps(results, indent=2))
-        else:
-            # Display formatted results
-            cli.display_results(results, verbose=args.verbose)
+        if results:
+            if args.json:
+                print(json.dumps(results, indent=2))
+            else:
+                cli.display_rag_results(results, verbose=args.verbose)
+
+    # Search mode (default)
+    else:
+        results = cli.search(
+            query=args.query,
+            collections=args.collection,
+            limit=args.limit,
+            verbose=args.verbose
+        )
+
+        if results:
+            if args.json:
+                # Output raw JSON
+                print(json.dumps(results, indent=2))
+            else:
+                # Display formatted results
+                cli.display_results(results, verbose=args.verbose)
 
 
 if __name__ == "__main__":
