@@ -9,9 +9,15 @@ storage:
   # Storage path for the Qdrant data
   storage_path: /qdrant/storage
 
-  # Performance settings for HPC environment
-  wal_capacity_mb: 32
-  wal_segments_ahead: 0
+  # Performance settings for HPC environment with NFS
+  # Increased WAL capacity and segments for better NFS tolerance
+  wal_capacity_mb: 128
+  wal_segments_ahead: 2
+
+  # Performance tuning for NFS
+  performance:
+    max_search_threads: 0  # Use all available cores
+    max_optimization_threads: 1
 
 # Global optimizer configuration
 optimizer:
