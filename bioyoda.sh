@@ -1936,7 +1936,7 @@ test() {
     echo ""
 
     # Run the validation script
-    python tests/validate_queries.py --api-url http://localhost:8000
+    python tests/validate_queries.py --verbose --api-url http://localhost:8000
     local test_result=$?
 
     echo ""

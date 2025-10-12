@@ -18,24 +18,28 @@ class BioYodaSearchEngine:
     Semantic search engine for biomedical literature
 
     This class handles:
-    - Query encoding with biomedical sentence transformers
+    - Query encoding with biomedical sentence transformers (supports multiple models)
     - Single and multi-collection search
     - Result merging and ranking
     - Metadata filtering
+
+    Each collection can use a different embedding model. The search engine will
+    automatically use the correct model when encoding queries for each collection.
     """
 
-    def __init__(self, qdrant_url: str, model_name: str, timeout: int = 30):
+    def __init__(self, qdrant_url: str, collection_models: Optional[Dict[str, str]] = None,
+                 model_name: Optional[str] = None, timeout: int = 30):
         """
         Initialize search engine
 
         Args:
             qdrant_url: Qdrant server URL
-            model_name: Sentence transformer model name
+            collection_models: Dict mapping collection names to model names (preferred)
+            model_name: Single model name for backward compatibility (deprecated)
             timeout: Qdrant client timeout in seconds
         """
         logger.info("Initializing BioYoda Search Engine...")
         logger.info(f"Qdrant URL: {qdrant_url}")
-        logger.info(f"Model: {model_name}")
 
         try:
             # Initialize Qdrant client
@@ -45,32 +49,88 @@ class BioYodaSearchEngine:
             collections = self.client.get_collections()
             logger.info(f"Connected to Qdrant. Available collections: {len(collections.collections)}")
 
-            # Load embedding model
-            logger.info(f"Loading embedding model: {model_name}")
-            self.model = SentenceTransformer(model_name)
-            logger.info("Model loaded successfully")
+            # Handle collection-specific models or fallback to single model
+            if collection_models:
+                self.collection_models = collection_models
+                logger.info("Collection-model mappings:")
+                for collection, model in collection_models.items():
+                    logger.info(f"  - {collection}: {model}")
+            elif model_name:
+                # Backward compatibility: use single model for all collections
+                logger.warning(f"Using single model for all collections: {model_name}")
+                self.collection_models = {c.name: model_name for c in collections.collections}
+            else:
+                raise ValueError("Either collection_models or model_name must be provided")
+
+            # Load all unique models
+            unique_models = set(self.collection_models.values())
+            self.models = {}  # model_name -> SentenceTransformer instance
+
+            for model_name in unique_models:
+                logger.info(f"Loading embedding model: {model_name}")
+                self.models[model_name] = SentenceTransformer(model_name)
+                logger.info(f"  ✓ {model_name} loaded successfully")
+
+            # Legacy single model reference (for backward compatibility)
+            self.model = list(self.models.values())[0] if self.models else None
+            self.model_name = list(self.models.keys())[0] if self.models else None
 
             self.qdrant_url = qdrant_url
-            self.model_name = model_name
 
         except Exception as e:
             logger.error(f"Failed to initialize search engine: {e}")
             raise
 
-    def encode_query(self, query: str) -> List[float]:
+    def get_model_for_collection(self, collection: str) -> SentenceTransformer:
         """
-        Encode query text into vector embedding
+        Get the correct embedding model for a collection
+
+        Args:
+            collection: Collection name
+
+        Returns:
+            SentenceTransformer model instance
+
+        Raises:
+            ValueError: If collection has no associated model
+        """
+        model_name = self.collection_models.get(collection)
+        if not model_name:
+            # Fallback to first available model
+            logger.warning(f"No model found for collection '{collection}', using default")
+            model_name = list(self.models.keys())[0]
+
+        model = self.models.get(model_name)
+        if not model:
+            raise ValueError(f"Model '{model_name}' not loaded for collection '{collection}'")
+
+        return model
+
+    def encode_query(self, query: str, collection: Optional[str] = None) -> List[float]:
+        """
+        Encode query text into vector embedding using the correct model
 
         Args:
             query: Query text
+            collection: Collection name (to select correct model). If None, uses default model.
 
         Returns:
             Vector embedding as list of floats
         """
         start_time = time.time()
-        vector = self.model.encode([query])[0].tolist()
+
+        # Select the correct model for this collection
+        if collection:
+            model = self.get_model_for_collection(collection)
+            model_name = self.collection_models.get(collection, "unknown")
+        else:
+            # Fallback to default model for backward compatibility
+            model = self.model
+            model_name = self.model_name
+
+        vector = model.encode([query])[0].tolist()
         encode_time = (time.time() - start_time) * 1000
-        logger.debug(f"Query encoded in {encode_time:.2f}ms")
+        logger.debug(f"Query encoded in {encode_time:.2f}ms (model: {model_name})")
         return vector
 
     def search_single_collection(
@@ -81,7 +141,7 @@ class BioYodaSearchEngine:
         filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Search a single collection
+        Search a single collection using the correct embedding model
 
         Args:
             query: Search query
@@ -93,8 +153,8 @@ class BioYodaSearchEngine:
             List of search results with scores and payloads
         """
         try:
-            # Encode query
-            query_vector = self.encode_query(query)
+            # Encode query with the correct model for this collection
+            query_vector = self.encode_query(query, collection=collection)
 
             # Build filter if provided
             query_filter = None
@@ -114,8 +174,10 @@ class BioYodaSearchEngine:
             )
             search_time = (time.time() - start_time) * 1000
 
+            model_name = self.collection_models.get(collection, "unknown")
             logger.info(
-                f"Searched '{collection}': {len(results)} results in {search_time:.2f}ms"
+                f"Searched '{collection}' (model: {model_name}): "
+                f"{len(results)} results in {search_time:.2f}ms"
             )
 
             # Format results

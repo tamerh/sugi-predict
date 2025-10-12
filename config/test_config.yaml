@@ -18,7 +18,7 @@ pubmed:
   # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Model settings (same as production)
-  model_name: "NeuML/pubmedbert-base-embeddings"
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
   vector_dimension: 768
 
   # Processing settings

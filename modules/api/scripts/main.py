@@ -51,13 +51,12 @@ async def lifespan(app: FastAPI):
         config = get_config()
         logger.info(f"Configuration loaded")
         logger.info(f"Qdrant URL: {config.qdrant_url}")
-        logger.info(f"Model: {config.model_name}")
         logger.info(f"Collections configured: {len(config.collections)}")
 
-        # Initialize search engine
+        # Initialize search engine with collection-specific models
         search_engine = BioYodaSearchEngine(
             qdrant_url=config.qdrant_url,
-            model_name=config.model_name,
+            collection_models=config.collection_models,
             timeout=30
         )
 

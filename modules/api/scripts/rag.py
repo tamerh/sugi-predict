@@ -411,9 +411,14 @@ if __name__ == "__main__":
         config = load_config()
 
         # Initialize search engine
+        # Build collection models mapping
+        collection_models = {
+            'pubmed_abstracts': config['pubmed']['model_name'],
+            'clinical_trials': config.get('clinical_trials', {}).get('model_name', config['pubmed']['model_name'])
+        }
         search_engine = BioYodaSearchEngine(
             qdrant_url=config.get('qdrant_url', 'http://localhost:6333'),
-            model_name=config['pubmed']['model_name']
+            collection_models=collection_models
         )
 
         # Initialize RAG engine

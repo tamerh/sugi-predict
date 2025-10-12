@@ -42,8 +42,11 @@ class APIConfig:
         # Extract commonly used values
         self.qdrant_url = self._get_qdrant_url()
 
-        # Get model_name from pubmed config (all collections should use same model)
-        # This ensures API uses the same model that was used during indexing
+        # Build collection -> model mapping
+        # Each collection may use a different embedding model during indexing
+        self.collection_models = self._build_collection_model_mapping()
+
+        # Legacy single model (for backward compatibility, use pubmed model)
         self.model_name = self._config['pubmed']['model_name']
         self.vector_dimension = self._config['pubmed']['vector_dimension']
 
@@ -54,7 +57,9 @@ class APIConfig:
 
         logger.info(f"Configuration loaded from: {config_path}")
         logger.info(f"Qdrant URL: {self.qdrant_url}")
-        logger.info(f"Model: {self.model_name} (from pubmed config)")
+        logger.info(f"Collection-Model mappings:")
+        for collection, model in self.collection_models.items():
+            logger.info(f"  - {collection}: {model}")
         logger.info(f"Vector dimension: {self.vector_dimension}")
 
     def _load_config(self) -> Dict[str, Any]:
@@ -68,6 +73,46 @@ class APIConfig:
             config = yaml.safe_load(f)
 
         return config
+
+    def _build_collection_model_mapping(self) -> Dict[str, str]:
+        """
+        Build mapping of collection names to their embedding models.
+
+        Each collection (e.g., pubmed_abstracts, clinical_trials) may have been
+        indexed with a different embedding model. This mapping ensures we use
+        the correct model when encoding queries for each collection.
+
+        Returns:
+            Dict mapping collection name -> model name
+        """
+        mapping = {}
+
+        # Map collection names to their source config sections
+        # Collection "pubmed_abstracts" -> config section "pubmed"
+        # Collection "clinical_trials" -> config section "clinical_trials"
+        collection_to_config = {
+            "pubmed_abstracts": "pubmed",
+            "clinical_trials": "clinical_trials"
+        }
+
+        for collection_name, config_key in collection_to_config.items():
+            if config_key in self._config:
+                model_name = self._config[config_key].get('model_name')
+                if model_name:
+                    mapping[collection_name] = model_name
+                else:
+                    logger.warning(f"No model_name found for {config_key}, using pubmed model as fallback")
+                    mapping[collection_name] = self._config['pubmed']['model_name']
+
+        if not mapping:
+            # Fallback: use pubmed model for all collections
+            logger.warning("Could not build collection-model mapping, using pubmed model for all")
+            mapping = {
+                "pubmed_abstracts": self._config['pubmed']['model_name'],
+                "clinical_trials": self._config['pubmed']['model_name']
+            }
+
+        return mapping
 
     def _get_qdrant_url(self) -> str:
         """
