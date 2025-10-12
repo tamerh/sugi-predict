@@ -127,6 +127,7 @@ Run Options:
     --jobs N                  Max parallel jobs on cluster (default: 100)
     --config FILE             Use custom config file (default: config/config.yaml)
     --test                    Use test config (config/test_config.yaml)
+    --mode <full|update>      Processing mode: full (default) or update (incremental)
     --dryrun                  Show what would be executed without running
     --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066) with bioyoda_gpu_cuda11 env
 
@@ -170,6 +171,10 @@ Examples:
 
     # Test with small dataset
     $0 run pubmed --test --local
+
+    # Incremental update mode (after initial full load)
+    $0 run pubmed --mode update --cluster --bg --jobs 20
+    $0 run clinical_trials --mode update --cluster --bg --jobs 10
 
     # Use CUDA 11.4 nodes instead
     $0 run pubmed --cluster --bg --jobs 50 --cuda11.4
@@ -256,6 +261,7 @@ run() {
     local background=false
     local cuda_version=""
     local use_test_config=false
+    local update_mode="full"
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -296,6 +302,10 @@ run() {
                 cuda_version="11.4"
                 shift
                 ;;
+            --mode)
+                update_mode="$2"
+                shift 2
+                ;;
             *)
                 module="$1"
                 shift
@@ -324,7 +334,7 @@ run() {
         fi
     fi
 
-    log_info "Running BioYoda pipeline: module=${module}, mode=${execution_mode}, config=${active_config}"
+    log_info "Running BioYoda pipeline: module=${module}, mode=${execution_mode}, update_mode=${update_mode}, config=${active_config}"
 
     # Check prerequisites
     check_conda_env
@@ -398,7 +408,7 @@ run() {
     snakemake_cmd="${snakemake_cmd} --use-conda --keep-going --rerun-incomplete --retries ${retries} --printshellcmds ${dryrun}"
 
     # Build config overrides (all in one --config)
-    local config_overrides="execution_mode=${execution_mode}"
+    local config_overrides="execution_mode=${execution_mode} update_mode=${update_mode}"
     if [[ -n "$conda_env_override" ]]; then
         config_overrides="${config_overrides} ${conda_env_override}"
     fi

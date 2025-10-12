@@ -21,7 +21,12 @@ RAW_DIR = os.path.join(BASE_DIR, "raw_data", "pubmed")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "pubmed")
 MERGED_DIR = os.path.join(BASE_DIR, "data", "merged", "pubmed")
 LOG_DIR = os.path.join(BASE_DIR, "logs", "pubmed")
+STATE_DIR = os.path.join(BASE_DIR, "state", "pubmed")
 MODULE_SCRIPTS = os.path.join(PROJECT_ROOT, "modules", "pubmed", "scripts")  # Scripts in project root
+
+# Update mode configuration
+UPDATE_MODE = config.get("update_mode", "full") == "update"
+TRACKING_FILE = os.path.join(STATE_DIR, "processed_files.json")
 
 # Update config with constructed paths for downstream use
 pubmed_config["raw_dir"] = RAW_DIR
@@ -41,6 +46,7 @@ os.makedirs(os.path.join(PROCESSED_DIR, "baseline"), exist_ok=True)
 os.makedirs(os.path.join(PROCESSED_DIR, "updatefiles"), exist_ok=True)
 os.makedirs(MERGED_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(STATE_DIR, exist_ok=True)
 
 # Helper function to get XML file path from wildcards
 def get_xml_file_from_wildcards(wildcards):
@@ -165,14 +171,28 @@ checkpoint pubmed_download:
         echo "Starting PubMed download..." >> {log}
         echo "DEBUG: raw_dir param = {params.raw_dir}" >> {log}
         echo "DEBUG: script = {params.script}" >> {log}
+        echo "UPDATE_MODE: """ + str(UPDATE_MODE) + """" >> {log}
+
+        # Build download command
+        DOWNLOAD_CMD="python {params.script} --raw-dir {params.raw_dir}"
 
         # Add debug flag if debug mode is enabled
         if [ "{params.debug_mode}" = "True" ]; then
             echo "DEBUG MODE: Downloading only {params.debug_limit} files" >> {log}
-            python {params.script} --raw-dir "{params.raw_dir}" --debug {params.debug_limit} >> {log} 2>&1
+            DOWNLOAD_CMD="$DOWNLOAD_CMD --debug {params.debug_limit}"
         else
-            python {params.script} --raw-dir "{params.raw_dir}" --debug 0 >> {log} 2>&1
+            DOWNLOAD_CMD="$DOWNLOAD_CMD --debug 0"
         fi
+
+        # Add update mode flags
+        if [ \"""" + str(UPDATE_MODE) + """\" = "True" ]; then
+            echo "UPDATE MODE: Downloading only new updatefiles" >> {log}
+            DOWNLOAD_CMD="$DOWNLOAD_CMD --update-mode --tracking-file """ + TRACKING_FILE + """\"
+        fi
+
+        # Execute download
+        echo "Executing: $DOWNLOAD_CMD" >> {log}
+        eval $DOWNLOAD_CMD >> {log} 2>&1
 
         # Create completion flags
         touch {output.baseline_flag}
@@ -211,11 +231,24 @@ rule pubmed_process_file:
         echo "==================== RUN STARTED: $(date) ====================" >> {log}
         echo "Processing {wildcards.filename}..." >> {log}
 
-        python {params.script} {input.xml_file} {params.output_dir} \
+        # Build relative path for tracking
+        RELATIVE_PATH="{wildcards.subdir}/{wildcards.filename}.xml.gz"
+        echo "Relative path: $RELATIVE_PATH" >> {log}
+
+        # Build processing command
+        PROCESS_CMD="python {params.script} {input.xml_file} {params.output_dir} \
             --deleted-pmids {input.deleted_pmids} \
             --model-name {params.model} \
             --vector-dim {params.vector_dim} \
-            {params.limit_flag} >> {log} 2>&1
+            {params.limit_flag}"
+
+        # Add tracking parameters
+        PROCESS_CMD="$PROCESS_CMD --tracking-file """ + TRACKING_FILE + """\"
+        PROCESS_CMD="$PROCESS_CMD --relative-path $RELATIVE_PATH"
+
+        # Execute processing
+        echo "Executing: $PROCESS_CMD" >> {log}
+        eval $PROCESS_CMD >> {log} 2>&1
 
         echo "Processing completed at: $(date)" >> {log}
         """

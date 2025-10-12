@@ -5,6 +5,9 @@ Insert data from FAISS indices to Qdrant
 Sequential insertion from unmerged FAISS files to Qdrant collection.
 Designed for HPC cluster environment with Singularity-based Qdrant server.
 
+Uses document unique IDs (PMID for PubMed, NCT ID for Clinical Trials) as Qdrant point IDs
+to enable proper upsert behavior for incremental updates.
+
 Usage:
     python insert_from_faiss.py --faiss-dir /path/to/processed \
                                  --collection collection_name \
@@ -18,6 +21,7 @@ import argparse
 import pickle
 import gc
 import time
+import hashlib
 from glob import glob
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +41,43 @@ def log_with_timestamp(message: str) -> None:
     memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
     log_line = f"[{timestamp}] [MEM: {memory_mb:.1f}MB] {message}"
     print(log_line, flush=True)
+
+def get_point_id_from_metadata(meta: dict, fallback_id: int) -> int:
+    """
+    Extract point ID from metadata using document unique identifiers.
+
+    Priority order:
+    1. pmid (PubMed) - use directly as integer
+    2. nct_id (Clinical Trials) - hash to integer (NCT IDs are alphanumeric)
+    3. fallback_id - sequential ID for backward compatibility
+
+    Args:
+        meta: Metadata dictionary
+        fallback_id: Fallback sequential ID
+
+    Returns:
+        Integer point ID for Qdrant
+    """
+    # Try PMID first (PubMed)
+    if 'pmid' in meta:
+        try:
+            return int(meta['pmid'])
+        except (ValueError, TypeError):
+            log_with_timestamp(f"  └─ WARNING: Invalid PMID '{meta.get('pmid')}', using fallback ID")
+            return fallback_id
+
+    # Try NCT ID (Clinical Trials)
+    if 'nct_id' in meta:
+        nct_id = str(meta['nct_id'])
+        # Hash NCT ID to get consistent integer
+        # Use first 8 bytes of SHA256 hash for 64-bit integer
+        hash_bytes = hashlib.sha256(nct_id.encode()).digest()[:8]
+        point_id = int.from_bytes(hash_bytes, byteorder='big', signed=False)
+        # Ensure positive and within reasonable range (Qdrant uses unsigned 64-bit)
+        return point_id & 0x7FFFFFFFFFFFFFFF  # Ensure positive 63-bit number
+
+    # No unique ID found, use fallback
+    return fallback_id
 
 def upsert_with_retry(client: QdrantClient, collection_name: str, points: list,
                       max_retries: int = 5, initial_delay: float = 2.0) -> bool:
@@ -134,6 +175,36 @@ def find_faiss_files(faiss_dir: str) -> list:
     files = sorted(glob(pattern, recursive=True))
     return files
 
+def map_faiss_to_source_file(index_path: str, faiss_dir: str) -> str:
+    """
+    Map a FAISS index file path to its source XML filename for tracking.
+
+    Args:
+        index_path: Full path to FAISS index (e.g., /path/to/processed/pubmed/baseline/pubmed25n0001.index)
+        faiss_dir: Base FAISS directory (e.g., /path/to/processed/pubmed)
+
+    Returns:
+        Relative source filename (e.g., "baseline/pubmed25n0001.xml.gz")
+    """
+    # Get relative path from faiss_dir
+    rel_path = os.path.relpath(index_path, faiss_dir)
+
+    # Extract subdirectory and basename
+    # e.g., "baseline/pubmed25n0001.index" -> ("baseline", "pubmed25n0001.index")
+    parts = rel_path.split(os.sep)
+    subdir = parts[0] if len(parts) > 1 else ""
+    basename = os.path.basename(index_path)
+
+    # Convert .index to .xml.gz
+    # e.g., "pubmed25n0001.index" -> "pubmed25n0001.xml.gz"
+    source_basename = basename.replace('.index', '.xml.gz')
+
+    # Combine subdir and basename
+    if subdir:
+        return f"{subdir}/{source_basename}"
+    else:
+        return source_basename
+
 def load_faiss_and_metadata(index_path: str) -> tuple:
     """Load FAISS index and corresponding metadata.
 
@@ -160,7 +231,7 @@ def load_faiss_and_metadata(index_path: str) -> tuple:
 
 def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                       batch_size: int = 1000, start_id: int = 0,
-                      vector_size: int = 768) -> int:
+                      vector_size: int = 768, tracking_file: str = None) -> int:
     """
     Insert data from FAISS files to Qdrant
 
@@ -171,6 +242,7 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
         batch_size: Batch size for insertion
         start_id: Starting point ID (for resuming)
         vector_size: Vector dimension
+        tracking_file: Optional path to tracking JSON file (for incremental updates)
 
     Returns:
         Total number of vectors inserted
@@ -183,7 +255,43 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     log_with_timestamp(f"Qdrant URL: {qdrant_url}")
     log_with_timestamp(f"Batch size: {batch_size}")
     log_with_timestamp(f"Starting point ID: {start_id}")
+    if tracking_file:
+        log_with_timestamp(f"Tracking file: {tracking_file}")
     log_with_timestamp("")
+
+    # Load tracking data if provided
+    tracker = None
+    already_inserted = set()
+    if tracking_file:
+        try:
+            # Import tracking module (assume it's in pubmed/scripts)
+            import importlib.util
+            tracking_module_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(faiss_dir))),
+                "modules", "pubmed", "scripts", "tracking.py"
+            )
+            if not os.path.exists(tracking_module_path):
+                # Try alternative path
+                tracking_module_path = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "pubmed", "scripts", "tracking.py"
+                )
+
+            if os.path.exists(tracking_module_path):
+                spec = importlib.util.spec_from_file_location("tracking", tracking_module_path)
+                tracking_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(tracking_module)
+                PubMedTracker = tracking_module.PubMedTracker
+
+                tracker = PubMedTracker(tracking_file)
+                already_inserted = set(f for f in tracker.tracking_data["files"].keys()
+                                      if tracker.tracking_data["files"][f].get("qdrant_inserted", False))
+                log_with_timestamp(f"Loaded tracking: {len(already_inserted)} files already inserted to Qdrant")
+            else:
+                log_with_timestamp(f"WARNING: Could not find tracking.py, proceeding without tracking")
+        except Exception as e:
+            log_with_timestamp(f"WARNING: Could not load tracking: {e}")
+            log_with_timestamp(f"Proceeding without tracking...")
 
     # Initialize Qdrant client
     log_with_timestamp("Connecting to Qdrant...")
@@ -210,6 +318,51 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
         return 0
 
     log_with_timestamp(f"Found {len(index_files)} FAISS files to process")
+
+    # Filter out already-inserted files if tracking is enabled
+    if tracker and already_inserted:
+        original_count = len(index_files)
+        filtered_files = []
+        for index_path in index_files:
+            source_file = map_faiss_to_source_file(index_path, faiss_dir)
+            if source_file not in already_inserted:
+                filtered_files.append(index_path)
+            else:
+                log_with_timestamp(f"  Skipping {os.path.basename(index_path)} (already inserted)")
+
+        index_files = filtered_files
+        skipped_count = original_count - len(index_files)
+        if skipped_count > 0:
+            log_with_timestamp(f"Filtered out {skipped_count} already-inserted files")
+        log_with_timestamp(f"Processing {len(index_files)} new files")
+
+    if not index_files:
+        log_with_timestamp(f"No new files to insert")
+        return 0
+
+    log_with_timestamp("")
+
+    # Detect ID strategy from first file's metadata
+    id_strategy = "sequential"  # Default
+    if index_files:
+        try:
+            _, sample_metadata = load_faiss_and_metadata(index_files[0])
+            if sample_metadata:
+                first_meta = sample_metadata.get('0', {})
+                if 'pmid' in first_meta:
+                    id_strategy = "pmid"
+                elif 'nct_id' in first_meta:
+                    id_strategy = "nct_id"
+        except Exception:
+            pass  # Ignore errors, will use sequential as fallback
+
+    log_with_timestamp(f"Point ID strategy: {id_strategy}")
+    if id_strategy == "pmid":
+        log_with_timestamp("  Using PMID as point ID (enables upsert for incremental updates)")
+    elif id_strategy == "nct_id":
+        log_with_timestamp("  Using hashed NCT ID as point ID (enables upsert for incremental updates)")
+    else:
+        log_with_timestamp("  Using sequential IDs (fallback mode)")
     log_with_timestamp("")
 
     global_point_id = start_id
@@ -245,9 +398,13 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
 
                 meta = metadata[meta_key]
 
+                # Get point ID from document unique identifier (PMID or NCT ID)
+                # Falls back to sequential ID for backward compatibility
+                point_id = get_point_id_from_metadata(meta, global_point_id)
+
                 # Create point with flexible payload
                 point = PointStruct(
-                    id=global_point_id,
+                    id=point_id,
                     vector=vectors[i].tolist(),
                     payload={
                         **meta,  # Include all metadata fields
@@ -256,7 +413,7 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                     }
                 )
                 batch.append(point)
-                global_point_id += 1
+                global_point_id += 1  # Still increment for fallback case
                 total_inserted += 1
 
                 # Batch insert
@@ -268,6 +425,15 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                     else:
                         log_with_timestamp(f"  └─ Batch insert failed, stopping file processing")
                         break
+
+            # Mark as inserted in tracking if enabled
+            if tracker:
+                try:
+                    source_file = map_faiss_to_source_file(index_path, faiss_dir)
+                    tracker.mark_inserted_to_qdrant(source_file)
+                    log_with_timestamp(f"  └─ Marked {source_file} as inserted in tracking")
+                except Exception as e:
+                    log_with_timestamp(f"  └─ WARNING: Could not update tracking: {e}")
 
             # Clear memory
             del index, vectors, metadata
@@ -341,6 +507,12 @@ def main():
         default=768,
         help='Vector dimension (default: 768)'
     )
+    parser.add_argument(
+        '--tracking-file',
+        type=str,
+        default=None,
+        help='Path to tracking JSON file (for incremental updates, avoids reprocessing)'
+    )
 
     args = parser.parse_args()
 
@@ -357,7 +529,8 @@ def main():
             qdrant_url=args.qdrant_url,
             batch_size=args.batch_size,
             start_id=args.start_id,
-            vector_size=args.vector_size
+            vector_size=args.vector_size,
+            tracking_file=args.tracking_file
         )
     except KeyboardInterrupt:
         log_with_timestamp("\nInterrupted by user")

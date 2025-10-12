@@ -67,7 +67,7 @@ def download_ftp_file_with_progress(ftp, remote_path, local_path):
         raise RuntimeError(f"Download failed for {remote_path}: {error_msg}") from e
 
 
-def download_pubmed_directory(ftp_path, local_dir, limit=None, reconnect_every=50, delay_seconds=1):
+def download_pubmed_directory(ftp_path, local_dir, limit=None, reconnect_every=50, delay_seconds=1, skip_files=None):
     """Downloads all .xml.gz files from a directory with connection management.
 
     Args:
@@ -76,6 +76,7 @@ def download_pubmed_directory(ftp_path, local_dir, limit=None, reconnect_every=5
         limit: Optional limit on number of files to download (for debug mode)
         reconnect_every: Reconnect FTP after N files to prevent timeout (default: 50)
         delay_seconds: Seconds to wait between downloads to avoid rate limiting (default: 1)
+        skip_files: Optional set of relative filenames to skip (for update mode)
     """
     os.makedirs(local_dir, exist_ok=True)
     log(f"\n--- Checking directory: {ftp_path} ---")
@@ -88,6 +89,16 @@ def download_pubmed_directory(ftp_path, local_dir, limit=None, reconnect_every=5
 
     target_files = [f for f in filenames if f.endswith('.xml.gz')]
     target_files = sorted(target_files)  # Sort for consistent ordering
+
+    # Filter out already-processed files if skip_files is provided
+    if skip_files:
+        # Determine subdirectory name (baseline or updatefiles)
+        subdir = os.path.basename(ftp_path.rstrip('/'))
+        original_count = len(target_files)
+        target_files = [f for f in target_files if f"{subdir}/{f}" not in skip_files]
+        skipped_count = original_count - len(target_files)
+        if skipped_count > 0:
+            log(f"Skipping {skipped_count} already-processed files")
 
     if limit is not None:
         log(f"DEBUG MODE: Limiting download to first {limit} files")
@@ -185,6 +196,8 @@ if __name__ == "__main__":
     parser.add_argument('--raw-dir', required=True, help='Base directory for raw data')
     parser.add_argument('--debug', type=int, default=0, help='Debug mode: limit number of files to download (0 = disabled)')
     parser.add_argument('--test-fixture', default=None, help='Path to test fixture file (skips downloads if present)')
+    parser.add_argument('--update-mode', action='store_true', help='Update mode: download only new updatefiles, skip baseline')
+    parser.add_argument('--tracking-file', default=None, help='Path to tracking JSON file (for update mode)')
 
     args = parser.parse_args()
 
@@ -241,6 +254,34 @@ if __name__ == "__main__":
         log("\nTest fixture mode complete - ready for processing")
         sys.exit(0)
 
+    # Handle update mode
+    update_mode = args.update_mode
+    tracking_data = None
+    processed_files = set()
+
+    if update_mode:
+        if not args.tracking_file:
+            log("ERROR: --tracking-file required when using --update-mode")
+            sys.exit(1)
+
+        log("=" * 70)
+        log("UPDATE MODE: Downloading only new updatefiles")
+        log("=" * 70)
+
+        # Load tracking data
+        try:
+            import sys
+            sys.path.insert(0, os.path.dirname(__file__))
+            from tracking import PubMedTracker
+
+            tracker = PubMedTracker(args.tracking_file)
+            processed_files = tracker.get_processed_files()
+            log(f"Loaded tracking data: {len(processed_files)} files already processed")
+
+        except Exception as e:
+            log(f"ERROR: Could not load tracking file: {e}")
+            sys.exit(1)
+
     # Check for debug mode
     debug_mode = args.debug > 0
     debug_limit = args.debug if debug_mode else 3
@@ -249,7 +290,7 @@ if __name__ == "__main__":
         log("=" * 70)
         log(f"DEBUG MODE: Limited download ({debug_limit} files)")
         log("=" * 70)
-    else:
+    elif not update_mode:
         log("Starting comprehensive PubMed data acquisition...")
 
     try:
@@ -258,7 +299,13 @@ if __name__ == "__main__":
             ftp.login()
             download_single_file(ftp, PUBMED_ROOT_PATH, DELETED_PMIDS_GZ, BASE_DATA_DIR)
 
-        if debug_mode:
+        if update_mode:
+            # Update mode: skip baseline, only download new updatefiles
+            log(f"\nUPDATE MODE: Skipping baseline directory")
+            # Apply debug limit if in debug mode
+            limit_to_apply = debug_limit if debug_mode else None
+            download_pubmed_directory(UPDATE_FTP_PATH, UPDATE_DIR, limit=limit_to_apply, skip_files=processed_files)
+        elif debug_mode:
             # Download only limited baseline files, skip updatefiles
             download_pubmed_directory(BASELINE_FTP_PATH, BASELINE_DIR, limit=debug_limit)
             log(f"\nDEBUG MODE: Skipping updatefiles directory")
@@ -278,6 +325,11 @@ if __name__ == "__main__":
         log("\n" + "=" * 70)
         log("DEBUG download complete!")
         log(f"Downloaded {debug_limit} files to: {BASELINE_DIR}")
+        log("=" * 70)
+    elif update_mode:
+        log("\n" + "=" * 70)
+        log("UPDATE MODE: Download complete!")
+        log(f"New updatefiles downloaded to: {UPDATE_DIR}")
         log("=" * 70)
     else:
         log("\nAll PubMed data acquisition tasks complete.")

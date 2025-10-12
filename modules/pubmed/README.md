@@ -23,6 +23,23 @@ This module downloads and processes PubMed abstracts to create semantic search i
 tail -f logs/bioyoda_pubmed_main.log
 ```
 
+### Incremental Update (Daily Updates)
+```bash
+# Download and process only new PubMed updatefiles
+./bioyoda.sh run pubmed --mode update --cluster --bg --jobs 50
+
+# Check tracking status
+python modules/pubmed/scripts/tracking.py \
+    --tracking-file out/state/pubmed/processed_files.json \
+    stats
+```
+
+**How It Works:**
+- Smart tracking system remembers processed files
+- Downloads only new updatefiles from NCBI (not baseline)
+- Skips already-processed files
+- Efficient for daily/weekly updates
+
 ### Test Run
 ```bash
 # Process small sample (2 files, 1000 abstracts each)
@@ -94,6 +111,71 @@ pubmed:
   memory_mb: 4000                     # 4GB per job
 ```
 
+## Incremental Updates
+
+### Tracking System
+
+The module uses a JSON-based tracking system to enable efficient incremental updates:
+
+```json
+{
+  "last_update": "2025-10-12T17:44:01",
+  "files": {
+    "baseline/pubmed25n0001.xml.gz": {
+      "processed_date": "2025-10-12T16:40:16",
+      "vectors_count": 30000,
+      "status": "completed",
+      "qdrant_inserted": true,
+      "qdrant_inserted_date": "2025-10-12T17:44:01"
+    }
+  }
+}
+```
+
+**Tracking Features:**
+- **Download tracking**: Remembers which files have been downloaded
+- **Processing tracking**: Tracks which files have been processed to FAISS
+- **Qdrant tracking**: Marks which files have been inserted to Qdrant
+- **Parallel safe**: File locking prevents race conditions
+
+**Tracking Utility:**
+```bash
+# View statistics
+python modules/pubmed/scripts/tracking.py \
+    --tracking-file out/state/pubmed/processed_files.json \
+    stats
+
+# Check if specific file is processed
+python modules/pubmed/scripts/tracking.py \
+    --tracking-file out/state/pubmed/processed_files.json \
+    check baseline/pubmed25n0001.xml.gz
+
+# List all processed files
+python modules/pubmed/scripts/tracking.py \
+    --tracking-file out/state/pubmed/processed_files.json \
+    list
+```
+
+### Update Workflow
+
+**Day 1 - Initial Load:**
+1. Download baseline files (1200+ files)
+2. Process all to FAISS indices
+3. Insert all to Qdrant
+4. Tracking marks all as `processed` and `qdrant_inserted: true`
+
+**Day 2 - Incremental Update:**
+1. Run `--mode update` → Downloads only new updatefiles
+2. Process only new files to FAISS
+3. Insert to Qdrant → Automatically skips baseline files
+4. PMID-based upsert replaces any updated articles
+
+**Benefits:**
+- ⚡ **Fast**: Only processes new data
+- 💾 **Efficient**: No redundant downloads or processing
+- 🔄 **Safe**: Upsert prevents duplicates
+- 📊 **Trackable**: Full visibility into what's been processed
+
 ## Output Structure
 
 ```
@@ -116,6 +198,9 @@ data/
 └── merged/pubmed/                    # Optional merged index
     ├── master_pubmed.index
     └── master_pubmed.json
+
+state/pubmed/
+└── processed_files.json              # Tracking data
 ```
 
 ## Metadata Format

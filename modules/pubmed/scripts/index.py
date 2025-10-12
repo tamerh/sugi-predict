@@ -124,11 +124,42 @@ if __name__ == "__main__":
     parser.add_argument("--vector-dim", type=int, required=True, help="Dimension of the vectors.")
     parser.add_argument("--limit", type=int, default=None,
                         help="Process only first N abstracts (for testing). Default: process all.")
+    parser.add_argument("--tracking-file", type=str, default=None,
+                        help="Path to tracking JSON file (for update mode)")
+    parser.add_argument("--relative-path", type=str, default=None,
+                        help="Relative path of file (e.g., 'baseline/pubmed25n0001.xml.gz') for tracking")
 
     args = parser.parse_args()
 
     # Load the deleted PMIDs set once at the start of the script
     deleted_pmids = load_deleted_pmids(args.deleted_pmids)
 
+    # Process the file
     process_file(args.input_file, args.output_dir, deleted_pmids, args.model_name, args.vector_dim, limit=args.limit)
+
+    # Mark as processed in tracking system if tracking file provided
+    if args.tracking_file and args.relative_path:
+        try:
+            import sys
+            sys.path.insert(0, os.path.dirname(__file__))
+            from tracking import PubMedTracker
+
+            tracker = PubMedTracker(args.tracking_file)
+
+            # Get vector count from generated files
+            base_name = os.path.basename(args.input_file).replace('.xml.gz', '')
+            faiss_output_path = os.path.join(args.output_dir, f"{base_name}.index")
+
+            # Read the index to get vector count
+            vector_count = None
+            if os.path.exists(faiss_output_path):
+                index = faiss.read_index(faiss_output_path)
+                vector_count = index.ntotal
+
+            # Mark as processed
+            tracker.mark_processed(args.relative_path, vectors_count=vector_count)
+            log_with_timestamp(f"Marked {args.relative_path} as processed in tracking system")
+
+        except Exception as e:
+            log_with_timestamp(f"Warning: Could not update tracking system: {e}")
 

@@ -119,6 +119,12 @@ Shows:
 - `--cores N`: Number of cores for local mode
 - `--jobs N`: Max parallel jobs for cluster mode
 
+**Incremental Updates:**
+- Insertion automatically integrates with PubMed tracking system
+- Skips already-inserted files (tracked in `state/pubmed/processed_files.json`)
+- Uses PMID-based upsert: Same document = same point ID → replaces old version
+- No duplicates, no redundant work
+
 ## Architecture
 
 ### Standalone Design
@@ -183,6 +189,75 @@ config/
 - **Vectors**: ~3M chunks (production), ~500 (test)
 - **Metadata**: NCT ID, chunk type, title, status, conditions
 - **Insertion Time**: 30-60 minutes (production)
+
+## Incremental Updates & Upsert Strategy
+
+### Smart Point IDs
+
+The insertion script uses **document-based point IDs** instead of sequential IDs:
+
+**PubMed:**
+- Point ID = PMID (e.g., `12345678`)
+- Same article → same point ID → automatic replacement via upsert
+
+**Clinical Trials:**
+- Point ID = Deterministic hash of NCT ID
+- Same trial → same point ID → automatic replacement
+
+### Tracking Integration
+
+**PubMed tracking** (`state/pubmed/processed_files.json`):
+```json
+{
+  "files": {
+    "baseline/pubmed25n0001.xml.gz": {
+      "status": "completed",
+      "qdrant_inserted": true,
+      "qdrant_inserted_date": "2025-10-12T17:44:01"
+    }
+  }
+}
+```
+
+**Workflow:**
+1. Insertion script checks tracking file
+2. Skips files with `qdrant_inserted: true`
+3. Processes only new files
+4. Marks them as inserted after success
+
+### Update Scenario
+
+**Day 1 - Initial Load:**
+```bash
+# Insert 1200 baseline files
+./bioyoda.sh qdrant insert pubmed
+# Result: 30M vectors, all marked as qdrant_inserted: true
+```
+
+**Day 2 - Daily Update:**
+```bash
+# Process new updatefiles (e.g., 2 new files)
+./bioyoda.sh run pubmed --mode update --cluster --bg
+
+# Insert new data
+./bioyoda.sh qdrant insert pubmed
+# Result:
+# - Skips 1200 baseline files (already inserted)
+# - Inserts 2 new updatefiles
+# - If PMID exists → replaces old vector (upsert)
+# - If PMID new → adds new vector
+```
+
+**Benefits:**
+- ⚡ **Efficient**: Only processes new files
+- 🔄 **Upsert**: Updated articles automatically replace old versions
+- 📊 **Trackable**: Know exactly what's been inserted
+- 💾 **No Duplicates**: PMID-based IDs ensure uniqueness
+
+**Technical Details:**
+- See `modules/qdrant/UPSERT_STRATEGY.md` for full implementation details
+- Tracking uses file locking for parallel safety
+- Works seamlessly with Snakemake dependency system
 
 ## Configuration
 

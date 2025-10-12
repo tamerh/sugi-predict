@@ -1,4 +1,39 @@
+todos
 
+1- biobtre integration
+2- data update integration
+3- grant data integration
+4- patent data integration
+5- RAG improvement query expansion...ID mappings....
+6- pubmed non-commercial full-text
+7- clinical trials extra fields and data
+
+8- subsciption plan and system..
+9- different model comparisons 
+10- 
+
+Business launch plan...
+--strategically maybe small feature of the system first...clinical trials and so on...
+-- 
+
+
+update plan
+ok to get your memory update for the project please simply read the README file in root and in modules/*/
+  diretories.....now i would like to implement new feature which is update the datasets.....at the moment we have 2
+  datasets but this can be more so we need a good design but for now we will focus on existing datasets which are pubmed
+  abstrascts and clinical_trials data.....for pubmed our usecase is relatively easy since pubmed everyday publishing new
+  update xml.gz file so we need to get today file or all the one since last update and run the datapipeline somehow
+  differently than full run....for the clinical trials it is more complicated since as you will see by checking the code
+  when we process clinical_trials we get full datasets and process it but as we talked before we need to make simple
+  tracking system(by id with maybe sqlite database) to understand which trials are updated or added newly and we proccess
+  and update the qdrant db accordingly....so lets first discuss and make compherensive plan
+
+ok i am generally fine with your proposed solution...but only few thing remember i am solo developer and implementation
+  while it will achive the goal solution should be as simple as possible....in regarding this why we need 2 tables for
+  tracking isnt it 1 table is enough? lets just understand the update and and insert again although it is nice to have
+  history or what is changed...becasue at the end i will give this as service maybe users subscribe to trials and get
+  update what changed that's good...so for this we need 2 tables right? just for discussion to make sure we are not
+  overengineering... 
 
 ok now first check markdown files and documents under the vibe directory to rememmber the project. so far 
 we have implement the pubmed and clinical trials data(very first version) and also qdrant db that 

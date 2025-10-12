@@ -42,10 +42,17 @@ config["qdrant"]["log_dir"] = QDRANT_LOG_DIR
 PUBMED_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "pubmed")
 CLINICAL_TRIALS_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials")
 
+# Tracking files
+STATE_DIR = os.path.join(BASE_DIR, "state")
+PUBMED_TRACKING_FILE = os.path.join(STATE_DIR, "pubmed", "processed_files.json")
+CLINICAL_TRIALS_TRACKING_FILE = os.path.join(STATE_DIR, "clinical_trials", "processed_files.json")
+
 # Ensure directories exist
 os.makedirs(QDRANT_STORAGE, exist_ok=True)
 os.makedirs(f"{QDRANT_STORAGE}/collections", exist_ok=True)
 os.makedirs(QDRANT_LOG_DIR, exist_ok=True)
+os.makedirs(os.path.join(STATE_DIR, "pubmed"), exist_ok=True)
+os.makedirs(os.path.join(STATE_DIR, "clinical_trials"), exist_ok=True)
 
 # Local rules
 localrules: insert_all
@@ -80,15 +87,20 @@ rule insert_pubmed_to_qdrant:
     Insert PubMed FAISS files to Qdrant collection.
     Assumes Qdrant server is already running and connection_info.txt exists.
     Assumes PubMed data processing is complete.
+
+    Note: Tracking file is an input dependency so rule re-runs when new files
+    are processed (e.g., in update mode).
     """
     input:
-        connection_info = CONNECTION_INFO
+        connection_info = CONNECTION_INFO,
+        tracking_file = PUBMED_TRACKING_FILE if os.path.exists(PUBMED_TRACKING_FILE) else []
     output:
         done = f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done"
     params:
         collection = config["pubmed"]["qdrant"]["collection_name"],
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = PUBMED_FAISS_DIR,
+        tracking_file = PUBMED_TRACKING_FILE,
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_pubmed_to_qdrant_cluster.log")
     resources:
@@ -121,6 +133,7 @@ rule insert_pubmed_to_qdrant:
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Tracking file: {params.tracking_file}" >> {log}
 
         # Check if FAISS data exists (search recursively in subdirectories)
         if [ ! -d {params.faiss_dir} ] || [ -z "$(find {params.faiss_dir} -name '*.index' -type f 2>/dev/null | head -1)" ]; then
@@ -131,11 +144,19 @@ rule insert_pubmed_to_qdrant:
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting insertion (detailed logs: {log})"
 
+        # Build insertion command with tracking file if it exists
+        TRACKING_FLAG=""
+        if [ -f {params.tracking_file} ]; then
+            TRACKING_FLAG="--tracking-file {params.tracking_file}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using tracking file for incremental updates" >> {log}
+        fi
+
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
             --collection {params.collection} \
             --qdrant-url $QDRANT_URL \
             --batch-size {params.batch_size} \
+            $TRACKING_FLAG \
             >> {log} 2>&1
 
         # Mark as done
@@ -152,15 +173,20 @@ rule insert_clinical_trials_to_qdrant:
     Insert Clinical Trials to Qdrant collection.
     Assumes Qdrant server is already running and connection_info.txt exists.
     Assumes Clinical Trials data processing is complete.
+
+    Note: Tracking file is an input dependency so rule re-runs when new files
+    are processed (e.g., in update mode).
     """
     input:
-        connection_info = CONNECTION_INFO
+        connection_info = CONNECTION_INFO,
+        tracking_file = CLINICAL_TRIALS_TRACKING_FILE if os.path.exists(CLINICAL_TRIALS_TRACKING_FILE) else []
     output:
         done = f"{QDRANT_STORAGE}/collections/clinical_trials.done"
     params:
         collection = config["clinical_trials"]["qdrant"]["collection_name"],
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = CLINICAL_TRIALS_FAISS_DIR,
+        tracking_file = CLINICAL_TRIALS_TRACKING_FILE,
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_qdrant_cluster.log")
     resources:
@@ -193,6 +219,7 @@ rule insert_clinical_trials_to_qdrant:
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Tracking file: {params.tracking_file}" >> {log}
 
         # Check if FAISS data exists (search recursively in subdirectories)
         if [ ! -d {params.faiss_dir} ] || [ -z "$(find {params.faiss_dir} -name '*.index' -type f 2>/dev/null | head -1)" ]; then
@@ -203,11 +230,19 @@ rule insert_clinical_trials_to_qdrant:
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting insertion (detailed logs: {log})"
 
+        # Build insertion command with tracking file if it exists
+        TRACKING_FLAG=""
+        if [ -f {params.tracking_file} ]; then
+            TRACKING_FLAG="--tracking-file {params.tracking_file}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using tracking file for incremental updates" >> {log}
+        fi
+
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
             --collection {params.collection} \
             --qdrant-url $QDRANT_URL \
             --batch-size {params.batch_size} \
+            $TRACKING_FLAG \
             >> {log} 2>&1
 
         # Mark as done

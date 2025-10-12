@@ -12,7 +12,8 @@ BioYoda is a Snakemake-based pipeline for processing biomedical literature and c
 
 - **PubMed Processing**: Process 30M+ PubMed abstracts with S-BioBERT embeddings
 - **Clinical Trials**: Integrate ClinicalTrials.gov data (500K+ trials)
-- **Vector Database**: Qdrant server with independent insertion workflow
+- **Incremental Updates**: Smart tracking system for efficient daily updates (PubMed supported)
+- **Vector Database**: Qdrant server with independent insertion workflow and upsert support
 - **Search API**: FastAPI-based REST API for semantic search across collections
 - **HPC Ready**: Designed for SGE cluster with GPU support and Singularity containers
 - **Modular Architecture**: Independent data processing and database management
@@ -171,6 +172,9 @@ modules/
 
 # Process with GPU acceleration
 ./bioyoda.sh run pubmed --cluster --bg --jobs 50 --config config/config_gpu.yaml
+
+# Incremental update mode (PubMed only - downloads only new updatefiles)
+./bioyoda.sh run pubmed --mode update --cluster --bg --jobs 50
 
 # Process Clinical Trials with GPU (CUDA 12.4 nodes)
 ./bioyoda.sh run clinical_trials --cluster --bg --jobs 20 --config config/config_gpu.yaml
@@ -405,26 +409,33 @@ bioyoda/
 ./bioyoda.sh qdrant stop
 ```
 
-### Workflow 3: Incremental Updates
+### Workflow 3: Incremental Updates (PubMed Daily Updates)
 
 ```bash
 # Qdrant server already running from previous session
 
-# 1. Process new PubMed data
-./bioyoda.sh run pubmed --cluster --bg --jobs 50
+# 1. Process new PubMed updatefiles (skips baseline, downloads only new files)
+./bioyoda.sh run pubmed --mode update --cluster --bg --jobs 50
 
-# 2. Insert new data (server keeps running)
+# 2. Insert new data (automatically skips already-inserted files)
 ./bioyoda.sh qdrant insert pubmed --cluster --jobs 10
 
 # 3. Monitor insertion progress
 tail -f out/logs/qdrant/insert_pubmed_main.log
 
-# 4. Stop insertion if needed
-./bioyoda.sh qdrant stop-insert pubmed
+# 4. Check tracking status
+python modules/pubmed/scripts/tracking.py --tracking-file out/state/pubmed/processed_files.json stats
 
-# 5. Verify
+# 5. Verify collection
 ./bioyoda.sh qdrant status
 ```
+
+**How It Works:**
+- Tracking system remembers which files have been downloaded, processed, and inserted
+- `--mode update` downloads only new PubMed updatefiles (not baseline)
+- Qdrant insertion skips already-inserted files, processes only new ones
+- PMID-based upsert ensures updated articles replace old versions
+- No redundant work, no duplicates
 
 ### Workflow 4: Search and Query
 
