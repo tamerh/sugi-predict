@@ -18,6 +18,7 @@ pubmed:
   # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Model settings
+  # models: "pritamdeka/S-BioBERT-snli-multinli-stsb", "NeuML/pubmedbert-base-embeddings" "NCBI/MedCPT-PubMedBERT-base"
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
   vector_dimension: 768
 
@@ -123,7 +124,7 @@ rag:
 
   # Google Gemini (from AI Studio):
   provider: "gemini"
-  model: "gemini-1.5-flash"  # or "gemini-1.5-pro"
+  model: "gemini-2.0-flash-lite"  # or "gemini-1.5-pro"
   api_key: "${GOOGLE_API_KEY}"
 
   # Local model via Ollama:

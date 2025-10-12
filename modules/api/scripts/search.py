@@ -197,6 +197,126 @@ class BioYodaSearchEngine:
 
         return all_results
 
+    def aggregate_chunks_by_document(
+        self,
+        results: List[Dict[str, Any]],
+        limit: Optional[int] = None,
+        scoring_strategy: str = "max"
+    ) -> List[Dict[str, Any]]:
+        """
+        Aggregate chunks from the same document and deduplicate
+
+        When a document is chunked (e.g., trial split into summary, eligibility, outcomes),
+        this method groups all chunks by document ID and aggregates them.
+
+        Args:
+            results: List of search results (chunks)
+            limit: Maximum number of documents to return
+            scoring_strategy: How to score documents ("max", "avg", "sum")
+                - "max": Use highest chunk score (best match wins)
+                - "avg": Average of all chunk scores (balanced)
+                - "sum": Sum of chunk scores (rewards multiple relevant chunks)
+
+        Returns:
+            List of aggregated document results (deduplicated)
+        """
+        if not results:
+            return []
+
+        # Group chunks by document ID
+        documents = {}
+
+        for result in results:
+            payload = result.get('payload', {})
+
+            # Extract document identifier
+            doc_id = payload.get('nct_id') or payload.get('pmid') or result.get('id')
+
+            if not doc_id:
+                # No document ID found, treat as standalone result
+                doc_id = f"unknown_{result.get('id')}"
+
+            # Initialize document group if first time seeing this ID
+            if doc_id not in documents:
+                documents[doc_id] = {
+                    'doc_id': doc_id,
+                    'chunks': [],
+                    'scores': [],
+                    'collection': result.get('collection'),
+                    'payload': payload.copy()  # Use first chunk's payload as base
+                }
+
+            # Add chunk to document
+            documents[doc_id]['chunks'].append(result)
+            documents[doc_id]['scores'].append(result.get('score', 0.0))
+
+            # Merge important fields from additional chunks
+            # Keep accumulating text/chunk_text
+            if 'text' in payload or 'chunk_text' in payload:
+                chunk_text = payload.get('chunk_text', payload.get('text', ''))
+                if chunk_text:
+                    # Accumulate text from multiple chunks
+                    if 'aggregated_text' not in documents[doc_id]:
+                        documents[doc_id]['aggregated_text'] = []
+                    documents[doc_id]['aggregated_text'].append(chunk_text)
+
+        # Aggregate and score each document
+        aggregated_results = []
+
+        for doc_id, doc_data in documents.items():
+            chunks = doc_data['chunks']
+            scores = doc_data['scores']
+
+            # Calculate aggregate score based on strategy
+            if scoring_strategy == "max":
+                agg_score = max(scores)
+            elif scoring_strategy == "avg":
+                agg_score = sum(scores) / len(scores)
+            elif scoring_strategy == "sum":
+                agg_score = sum(scores)
+            else:
+                logger.warning(f"Unknown scoring strategy '{scoring_strategy}', using 'max'")
+                agg_score = max(scores)
+
+            # Build aggregated payload
+            agg_payload = doc_data['payload'].copy()
+
+            # Combine text from all chunks (for context)
+            if 'aggregated_text' in doc_data:
+                # Join all chunk texts with separator
+                combined_text = ' | '.join(doc_data['aggregated_text'])
+                agg_payload['chunk_text'] = combined_text[:2000]  # Limit length
+                agg_payload['text'] = combined_text[:2000]
+                agg_payload['num_chunks'] = len(chunks)
+
+            # Add metadata about aggregation
+            agg_payload['aggregated_from_chunks'] = len(chunks)
+            agg_payload['chunk_scores'] = scores
+            agg_payload['max_chunk_score'] = max(scores)
+            agg_payload['avg_chunk_score'] = round(sum(scores) / len(scores), 4)
+
+            aggregated_results.append({
+                'id': doc_id,
+                'score': agg_score,
+                'collection': doc_data['collection'],
+                'payload': agg_payload,
+                'num_chunks': len(chunks)
+            })
+
+        # Sort by aggregated score
+        aggregated_results.sort(key=lambda x: x['score'], reverse=True)
+
+        # Apply limit
+        if limit:
+            aggregated_results = aggregated_results[:limit]
+
+        logger.info(
+            f"Aggregated {len(results)} chunks into {len(aggregated_results)} documents "
+            f"(strategy={scoring_strategy})"
+        )
+
+        return aggregated_results
+
     def _build_filter(self, filters: Dict[str, Any]) -> Optional[Filter]:
         """
         Build Qdrant filter from dictionary

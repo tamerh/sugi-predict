@@ -182,6 +182,15 @@ class TrialTextProcessor:
         if eligibility and eligibility.get('criteria'):
             criteria_text = self.clean_text(eligibility['criteria'])
             if len(criteria_text) >= self.min_text_length:
+                # Add intervention context for better semantic matching
+                intervention_context = ""
+                interventions = trial.get('interventions', [])
+                if interventions:
+                    # Extract intervention names for context
+                    intervention_names = [inv.get('name', '') for inv in interventions if inv.get('name')]
+                    if intervention_names:
+                        intervention_context = f"Study intervention: {', '.join(intervention_names)}. "
+
                 # Add demographic info if available
                 demo_parts = []
                 if eligibility.get('gender'):
@@ -195,15 +204,17 @@ class TrialTextProcessor:
                 if demo_parts:
                     full_criteria = f"{criteria_text} Demographics: {', '.join(demo_parts)}"
 
-                # Split eligibility if too long
+                # Split eligibility if too long (accounting for intervention context)
                 eligibility_chunks = self.chunk_long_text(full_criteria, self.max_chunk_length)
                 for i, chunk_text in enumerate(eligibility_chunks):
                     if len(chunk_text) >= self.min_text_length:
+                        # Prepend intervention context to eligibility text for embedding
+                        full_text = f"{intervention_context}Eligibility: {chunk_text}"
                         chunks.append({
                             'nct_id': nct_id,
                             'chunk_type': 'eligibility',
                             'chunk_id': i,
-                            'text': f"Eligibility: {chunk_text}",
+                            'text': full_text,
                             'brief_title': brief_title,
                             'overall_status': trial.get('overall_status', ''),
                             'phase': trial.get('phase', ''),

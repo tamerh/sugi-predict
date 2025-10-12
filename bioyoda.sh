@@ -84,9 +84,12 @@ BioYoda v${bioyoda_version} - AI-powered biomedical search system
 Usage: $0 <command> [options]
 
 Commands:
+    start [--test]            Start both Qdrant and API servers (shortcut)
+    stop [--test]             Stop both Qdrant and API servers (shortcut)
     run <module> [options]    Run data processing pipeline (PubMed/Clinical Trials)
-    stop <module> [options]   Stop a running pipeline
+    stop <module> [options]   Stop a running data processing pipeline
     status                    Show pipeline status
+    test [--pipeline]         Run test suite (default: fixture mode, --pipeline: full E2E)
     qdrant <subcommand>       Manage Qdrant vector database (start/stop/insert/status)
     api <subcommand>          Manage BioYoda Search API (start/stop/test/search/status)
     search [query]            Quick search across collections (interactive if no query)
@@ -154,6 +157,12 @@ Stop Options:
     --clean, -c               Also clean intermediate files after stopping
 
 Examples:
+    # Quick Start/Stop (both Qdrant and API)
+    $0 start                                   # Start both servers
+    $0 start --test                            # Start both with test config
+    $0 stop                                    # Stop both servers
+    $0 stop --test                             # Stop both with test config
+
     # Data Processing Pipeline (no Qdrant)
     $0 run pubmed --cluster --bg --jobs 50
     $0 run clinical_trials --cluster --bg --jobs 20
@@ -198,6 +207,13 @@ Examples:
     $0 api search "cancer" --limit 5       # Search with options
     $0 api status                          # Check API status
     $0 api stop                            # Stop API server
+
+    # Testing
+    # Run tests with fixtures (fast - 2-3 minutes)
+    $0 test
+
+    # Run full pipeline test (slow - 15-20 minutes)
+    $0 test --pipeline
 
     # Monitor progress
     tail -f out/logs/bioyoda_pubmed_main.log
@@ -1762,6 +1778,342 @@ api_search() {
 }
 
 ##############################################################################
+# Test Functions
+##############################################################################
+
+test() {
+    local pipeline_mode=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --pipeline)
+                pipeline_mode=true
+                shift
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                echo ""
+                echo "Usage: $0 test [--pipeline]"
+                echo ""
+                echo "  Default: Run tests with fixtures (fast - 2-3 minutes)"
+                echo "  --pipeline: Run full pipeline test (slow - 15-20 minutes)"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Use test config
+    local test_config="config/test_config.yaml"
+    local base_dir="test_out"  # test_config.yaml uses base_dir: test_out/
+
+    echo ""
+    log_info "============================================================"
+    if [[ "$pipeline_mode" == true ]]; then
+        log_info "BioYoda Test Suite - PIPELINE MODE"
+        log_info "This will run the full E2E pipeline with test data"
+    else
+        log_info "BioYoda Test Suite - FIXTURE MODE"
+        log_info "This will use pre-processed test fixtures (fast)"
+    fi
+    log_info "============================================================"
+    echo ""
+
+    # Trap cleanup on exit
+    trap "test_cleanup ${base_dir}" EXIT
+
+    # Step 1: Setup
+    log_info "Step 1/6: Setting up test environment"
+
+    # Clean test_out directory if pipeline mode
+    if [[ "$pipeline_mode" == true ]]; then
+        log_info "  Cleaning test_out directory..."
+        rm -rf ${base_dir}/* 2>/dev/null || true
+    fi
+
+    # Create necessary directories
+    mkdir -p ${base_dir}/raw_data/pubmed/baseline
+    mkdir -p ${base_dir}/raw_data/clinical_trials
+    mkdir -p ${base_dir}/logs
+
+    # Copy fixtures to test_out for processing
+    log_info "  Copying test fixtures..."
+    cp tests/fixtures/pubmed/test_abstracts.xml.gz ${base_dir}/raw_data/pubmed/baseline/ || {
+        log_error "Failed to copy PubMed fixture"
+        exit 1
+    }
+
+    log_success "Test environment ready"
+    echo ""
+
+    # Step 2: Process data or use fixtures
+    if [[ "$pipeline_mode" == true ]]; then
+        log_info "Step 2/6: Running data processing pipeline"
+        log_info "  This may take 15-20 minutes..."
+
+        # Run both pipelines
+        ./bioyoda.sh run all --test --local --cores 4 || {
+            log_error "Pipeline processing failed"
+            exit 1
+        }
+
+        log_success "Pipeline processing complete"
+    else
+        log_info "Step 2/6: Using pre-processed fixtures (skipping pipeline)"
+
+        # In fixture mode, copy pre-processed data if needed
+        # For now, we'll just run minimal processing
+        ./bioyoda.sh run all --test --local --cores 2 || {
+            log_error "Fixture processing failed"
+            exit 1
+        }
+
+        log_success "Fixture data ready"
+    fi
+    echo ""
+
+    # Step 3: Start Qdrant server
+    log_info "Step 3/6: Starting Qdrant server"
+    ./bioyoda.sh qdrant start --mode local --test || {
+        log_error "Failed to start Qdrant server"
+        exit 1
+    }
+
+    # Wait for Qdrant to be ready
+    sleep 3
+    if ! curl -s http://localhost:6333/healthz > /dev/null 2>&1; then
+        log_error "Qdrant server not responding"
+        exit 1
+    fi
+
+    log_success "Qdrant server running"
+    echo ""
+
+    # Step 4: Insert data to Qdrant
+    log_info "Step 4/6: Inserting data to Qdrant"
+    ./bioyoda.sh qdrant insert all --test --local --cores 2 || {
+        log_error "Data insertion failed"
+        exit 1
+    }
+
+    log_success "Data insertion complete"
+    echo ""
+
+    # Step 5: Start API server
+    log_info "Step 5/6: Starting API server"
+    ./bioyoda.sh api start --test || {
+        log_error "Failed to start API server"
+        exit 1
+    }
+
+    # Wait for API to be ready (model loading can take time)
+    log_info "  Waiting for API to be ready (loading model)..."
+    sleep 5
+    local api_ready=false
+    for i in {1..30}; do
+        if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+            api_ready=true
+            break
+        fi
+        # Show progress every 5 seconds
+        if (( i % 5 == 0 )); then
+            log_info "    Still waiting... (${i}s elapsed)"
+        fi
+        sleep 1
+    done
+
+    if [[ "$api_ready" != true ]]; then
+        log_error "API server not responding after 35 seconds"
+        log_info "Check API log: ${base_dir}/logs/api/server.log"
+        exit 1
+    fi
+
+    log_success "API server running"
+    echo ""
+
+    # Step 6: Run query validation
+    log_info "Step 6/6: Running query validation"
+    echo ""
+
+    # Run the validation script
+    python tests/validate_queries.py --api-url http://localhost:8000
+    local test_result=$?
+
+    echo ""
+
+    # Cleanup
+    log_info "Cleaning up test environment..."
+    ./bioyoda.sh api stop --test 2>/dev/null || true
+    sleep 1
+    ./bioyoda.sh qdrant stop --test 2>/dev/null || true
+    sleep 1
+
+    echo ""
+    log_info "============================================================"
+    if [[ ${test_result} -eq 0 ]]; then
+        log_success "ALL TESTS PASSED"
+        log_info "============================================================"
+        echo ""
+        return 0
+    else
+        log_error "TESTS FAILED"
+        log_info "============================================================"
+        echo ""
+        log_info "Check logs:"
+        echo "  - API log: ${base_dir}/logs/api/server.log"
+        echo "  - Qdrant log: ${base_dir}/logs/qdrant/server.log"
+        echo "  - Pipeline logs: ${base_dir}/logs/"
+        echo ""
+        return 1
+    fi
+}
+
+test_cleanup() {
+    local base_dir=$1
+
+    # Cleanup servers if still running
+    ./bioyoda.sh api stop --test 2>/dev/null || true
+    ./bioyoda.sh qdrant stop --test 2>/dev/null || true
+}
+
+##############################################################################
+# Quick Start/Stop Functions
+##############################################################################
+
+start_all() {
+    local use_test_config=false
+    local custom_config=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                echo ""
+                echo "Usage: $0 start [--test] [--config FILE]"
+                exit 1
+                ;;
+        esac
+    done
+
+    log_info "============================================================"
+    log_info "Starting BioYoda servers (Qdrant + API)"
+    log_info "============================================================"
+    echo ""
+
+    # Build arguments for subcommands
+    local config_args=""
+    if [[ "$use_test_config" == true ]]; then
+        config_args="--test"
+        log_info "Using test configuration"
+    elif [[ -n "$custom_config" ]]; then
+        config_args="--config $custom_config"
+    fi
+
+    # Step 1: Start Qdrant
+    log_info "Step 1/2: Starting Qdrant server"
+    qdrant_start --mode local $config_args || {
+        log_error "Failed to start Qdrant server"
+        exit 1
+    }
+
+    # Wait for Qdrant to be ready
+    log_info "  Waiting for Qdrant to be ready..."
+    sleep 3
+    if ! curl -s http://localhost:6333/healthz > /dev/null 2>&1; then
+        log_error "Qdrant server not responding"
+        exit 1
+    fi
+    log_success "Qdrant server ready"
+    echo ""
+
+    # Step 2: Start API
+    log_info "Step 2/2: Starting API server"
+    api_start --bg $config_args || {
+        log_error "Failed to start API server"
+        log_warning "Cleaning up: stopping Qdrant..."
+        qdrant_stop $config_args 2>/dev/null || true
+        exit 1
+    }
+
+    echo ""
+    log_info "============================================================"
+    log_success "BioYoda servers started successfully!"
+    log_info "============================================================"
+    echo ""
+    log_info "Services:"
+    log_info "  - Qdrant: http://localhost:6333"
+    log_info "  - API: http://localhost:8000"
+    log_info "  - API Docs: http://localhost:8000/docs"
+    echo ""
+    log_info "To stop: $0 stop $config_args"
+    echo ""
+}
+
+stop_all() {
+    local use_test_config=false
+    local custom_config=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --test)
+                use_test_config=true
+                shift
+                ;;
+            --config)
+                custom_config="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                echo ""
+                echo "Usage: $0 stop [--test] [--config FILE]"
+                exit 1
+                ;;
+        esac
+    done
+
+    log_info "============================================================"
+    log_info "Stopping BioYoda servers (API + Qdrant)"
+    log_info "============================================================"
+    echo ""
+
+    # Build arguments for subcommands
+    local config_args=""
+    if [[ "$use_test_config" == true ]]; then
+        config_args="--test"
+    elif [[ -n "$custom_config" ]]; then
+        config_args="--config $custom_config"
+    fi
+
+    # Step 1: Stop API first (it depends on Qdrant)
+    log_info "Step 1/2: Stopping API server"
+    api_stop $config_args 2>/dev/null || true
+    sleep 1
+    echo ""
+
+    # Step 2: Stop Qdrant
+    log_info "Step 2/2: Stopping Qdrant server"
+    qdrant_stop $config_args 2>/dev/null || true
+    sleep 1
+
+    echo ""
+    log_info "============================================================"
+    log_success "BioYoda servers stopped"
+    log_info "============================================================"
+    echo ""
+}
+
+##############################################################################
 # Main Entry Point
 ##############################################################################
 
@@ -1777,14 +2129,39 @@ main() {
     shift
 
     case $command in
+        start)
+            # Check if it's a module stop (e.g., "stop pubmed") or server stop
+            if [[ $# -gt 0 ]] && [[ "$1" != "--"* ]]; then
+                # This is likely a typo or old usage, show error
+                log_error "Unknown module: $1"
+                echo ""
+                echo "Did you mean:"
+                echo "  $0 start              # Start Qdrant and API servers"
+                echo "  $0 run $1             # Run data processing pipeline"
+                exit 1
+            else
+                # Start both Qdrant and API
+                start_all "$@"
+            fi
+            ;;
+        stop)
+            # Check if it's a module stop (e.g., "stop pubmed") or server stop
+            if [[ $# -gt 0 ]] && [[ "$1" != "--"* ]]; then
+                # This is stopping a pipeline module
+                stop "$@"
+            else
+                # Stop both API and Qdrant servers
+                stop_all "$@"
+            fi
+            ;;
         run)
             run "$@"
             ;;
-        stop)
-            stop "$@"
-            ;;
         status)
             status "$@"
+            ;;
+        test)
+            test "$@"
             ;;
         validate)
             validate "$@"

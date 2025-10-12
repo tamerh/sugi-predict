@@ -39,7 +39,10 @@ class RAGEngine:
         default_collections: Optional[List[str]] = None,
         default_top_k: int = 5,
         max_context_length: int = 100000,
-        enable_validation: bool = True
+        enable_validation: bool = True,
+        enable_aggregation: bool = True,
+        retrieval_multiplier: int = 4,
+        aggregation_strategy: str = "max"
     ):
         """
         Initialize RAG engine
@@ -48,9 +51,12 @@ class RAGEngine:
             search_engine: BioYodaSearchEngine instance
             llm_config: LLM provider configuration dict
             default_collections: Default collections to search
-            default_top_k: Default number of results to retrieve
+            default_top_k: Default number of documents to return
             max_context_length: Maximum context length in characters
             enable_validation: Enable citation validation
+            enable_aggregation: Enable chunk aggregation by document (deduplication)
+            retrieval_multiplier: Retrieve N times more chunks before aggregation (default: 4)
+            aggregation_strategy: Scoring strategy for aggregation ("max", "avg", "sum")
         """
         self.search_engine = search_engine
         self.llm_provider = get_llm_provider(llm_config)
@@ -64,10 +70,20 @@ class RAGEngine:
         self.max_context_length = max_context_length
         self.enable_validation = enable_validation
 
+        # New aggregation settings
+        self.enable_aggregation = enable_aggregation
+        self.retrieval_multiplier = retrieval_multiplier
+        self.aggregation_strategy = aggregation_strategy
+
         logger.info(
             f"✅ RAG Engine initialized with {llm_config.get('provider')} "
             f"(model: {llm_config.get('model')})"
         )
+        if enable_aggregation:
+            logger.info(
+                f"   Document aggregation: enabled (multiplier={retrieval_multiplier}, "
+                f"strategy={aggregation_strategy})"
+            )
 
     async def ask(
         self,
@@ -109,12 +125,22 @@ class RAGEngine:
             # Step 1: Retrieve relevant context
             search_start = time.time()
 
+            # Calculate retrieval limit (retrieve more chunks if aggregation is enabled)
+            if self.enable_aggregation:
+                retrieval_limit = top_k * self.retrieval_multiplier
+                logger.debug(
+                    f"Retrieving {retrieval_limit} chunks (top_k={top_k} × multiplier={self.retrieval_multiplier}) "
+                    f"for aggregation"
+                )
+            else:
+                retrieval_limit = top_k
+
             if len(collections) == 1:
                 # Single collection search
                 search_results = self.search_engine.search_single_collection(
                     query=question,
                     collection=collections[0],
-                    limit=top_k,
+                    limit=retrieval_limit,
                     filters=filters
                 )
             else:
@@ -122,13 +148,26 @@ class RAGEngine:
                 multi_results = self.search_engine.search_multi_collection(
                     query=question,
                     collections=collections,
-                    limit=top_k,
+                    limit=retrieval_limit,
                     filters=filters
                 )
                 # Merge and rank by score
                 search_results = self.search_engine.merge_and_rank_results(
                     multi_results,
-                    limit=top_k
+                    limit=retrieval_limit
+                )
+
+            # Step 1.5: Aggregate chunks by document (if enabled)
+            if self.enable_aggregation and search_results:
+                logger.debug(f"Aggregating {len(search_results)} chunks by document...")
+                search_results = self.search_engine.aggregate_chunks_by_document(
+                    results=search_results,
+                    limit=top_k,
+                    scoring_strategy=self.aggregation_strategy
+                )
+                logger.info(
+                    f"After aggregation: {len(search_results)} unique documents "
+                    f"(from {retrieval_limit} chunks)"
                 )
 
             search_time_ms = (time.time() - search_start) * 1000

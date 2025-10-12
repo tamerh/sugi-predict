@@ -42,6 +42,20 @@ class SearchRequest(BaseModel):
         default=True,
         description="Whether to merge and re-rank results across collections"
     )
+    aggregate_chunks: bool = Field(
+        default=True,
+        description="Whether to aggregate chunks by document (deduplication)"
+    )
+    retrieval_multiplier: int = Field(
+        default=4,
+        ge=1,
+        le=10,
+        description="Retrieve N× more chunks before aggregation (if enabled)"
+    )
+    aggregation_strategy: str = Field(
+        default="max",
+        description="Scoring strategy for aggregation: 'max', 'avg', or 'sum'"
+    )
 
     @validator('query')
     def query_not_empty(cls, v):

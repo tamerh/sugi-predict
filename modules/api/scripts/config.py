@@ -13,20 +13,40 @@ logger = logging.getLogger(__name__)
 class APIConfig:
     """API Configuration Manager"""
 
-    def __init__(self, config_path: str = "../../config/api_config.yaml"):
+    def __init__(self, config_path: str = None):
         """
         Initialize configuration from YAML file
 
         Args:
-            config_path: Path to configuration YAML file
+            config_path: Path to configuration YAML file. If None, uses BIOYODA_CONFIG env var
+                        or defaults to config.yaml (test_config.yaml in test mode)
         """
+        if config_path is None:
+            # Check for environment variable
+            config_path = os.environ.get('BIOYODA_CONFIG')
+
+            if config_path is None:
+                # Auto-detect based on environment
+                # If we're in test mode (check if test_out exists), use test_config
+                test_out = Path("../../test_out")
+                if test_out.exists():
+                    config_path = "../../config/test_config.yaml"
+                    logger.info("Test mode detected (test_out/ exists), using test_config.yaml")
+                else:
+                    config_path = "../../config/config.yaml"
+                    logger.info("Production mode, using config.yaml")
+
         self.config_path = config_path
         self._config = self._load_config()
 
         # Extract commonly used values
         self.qdrant_url = self._get_qdrant_url()
-        self.model_name = self._config['search']['model_name']
-        self.vector_dimension = self._config['search']['vector_dimension']
+
+        # Get model_name from pubmed config (all collections should use same model)
+        # This ensures API uses the same model that was used during indexing
+        self.model_name = self._config['pubmed']['model_name']
+        self.vector_dimension = self._config['pubmed']['vector_dimension']
+
         self.default_limit = self._config['search']['default_limit']
         self.max_limit = self._config['search']['max_limit']
         self.collections = self._config['collections']
@@ -34,7 +54,8 @@ class APIConfig:
 
         logger.info(f"Configuration loaded from: {config_path}")
         logger.info(f"Qdrant URL: {self.qdrant_url}")
-        logger.info(f"Model: {self.model_name}")
+        logger.info(f"Model: {self.model_name} (from pubmed config)")
+        logger.info(f"Vector dimension: {self.vector_dimension}")
 
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file"""
@@ -62,7 +83,7 @@ class APIConfig:
             return url
 
         # Try connection info file
-        connection_info_path = self._config['qdrant'].get('connection_info_path')
+        connection_info_path = self._config.get('qdrant_api', {}).get('connection_info_path')
         if connection_info_path:
             conn_file = Path(connection_info_path)
             if conn_file.exists():
@@ -77,7 +98,7 @@ class APIConfig:
                     logger.warning(f"Could not read connection info file: {e}")
 
         # Fall back to default
-        url = self._config['qdrant']['url']
+        url = self._config.get('qdrant_api', {}).get('url', 'http://localhost:6333')
         logger.info(f"Using default Qdrant URL: {url}")
         return url
 
@@ -95,12 +116,12 @@ class APIConfig:
 config: Optional[APIConfig] = None
 
 
-def init_config(config_path: str = "../../config/api_config.yaml") -> APIConfig:
+def init_config(config_path: str = None) -> APIConfig:
     """
     Initialize global configuration
 
     Args:
-        config_path: Path to configuration file
+        config_path: Path to configuration file (optional, auto-detects if None)
 
     Returns:
         Initialized APIConfig instance
@@ -112,16 +133,13 @@ def init_config(config_path: str = "../../config/api_config.yaml") -> APIConfig:
 
 def get_config() -> APIConfig:
     """
-    Get global configuration instance
+    Get global configuration instance (auto-initializes if needed)
 
     Returns:
         APIConfig instance
-
-    Raises:
-        RuntimeError: If configuration not initialized
     """
     global config
     if config is None:
-        # Auto-initialize with default path
+        # Auto-initialize (will auto-detect config file)
         config = init_config()
     return config

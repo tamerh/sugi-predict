@@ -18,7 +18,7 @@ pubmed:
   # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Model settings (same as production)
-  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+  model_name: "NeuML/pubmedbert-base-embeddings"
   vector_dimension: 768
 
   # Processing settings
@@ -46,7 +46,7 @@ clinical_trials:
   # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Model settings (same as PubMed)
-  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+  model_name: "NeuML/pubmedbert-base-embeddings"
   vector_dimension: 768
 
   # Processing settings
@@ -71,7 +71,7 @@ clinical_trials:
   # TEST MODE SETTINGS
   test_mode: true                    # Enable test optimizations
   test_trials_limit: 100             # Process only first 100 trials (fallback)
-  test_nct_ids_file: "tests/fixtures/clinical_trials/test_nct_ids.txt"  # Filter by specific NCT IDs
+  test_nct_ids_file: "tests2/fixtures/clinical_trials/test_nct_ids.txt"  # Filter by specific NCT IDs
 
   # Job resources - OPTIMIZED FOR TEST
   download_memory_mb: 8192     # 8GB (vs 16GB production)
@@ -109,12 +109,57 @@ cluster:
   default_memory_mb: 8192       # 8GB for testing
   default_threads: 1
 
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  title: "BioYoda Search API (Test Mode)"
+  version: "0.1.0"
+  description: "Semantic search API for biomedical literature and clinical trials"
+
+# Qdrant Connection (for API)
+qdrant_api:
+  url: "http://localhost:6333"
+  timeout: 30
+  connection_info_path: "test_out/data/qdrant/connection_info.txt"  # Auto-detect URL from test output
+
+# Search Settings (for API)
+search:
+  # NOTE: model_name is read from pubmed.model_name or clinical_trials.model_name
+  # to ensure it matches what was used during indexing
+  default_limit: 10
+  max_limit: 100
+  cache_model: true
+  batch_size: 32
+
+# Collection Metadata (for API)
+collections:
+  pubmed_abstracts:
+    name: "pubmed_abstracts"
+    description: "PubMed abstracts - Test dataset (50 abstracts)"
+    primary_fields: ["pmid", "chunk_text"]
+    search_fields: ["chunk_text"]
+    display_name: "PubMed (Test)"
+
+  clinical_trials:
+    name: "clinical_trials"
+    description: "ClinicalTrials.gov - Test dataset (50 trials)"
+    primary_fields: ["nct_id", "chunk_text", "chunk_type"]
+    search_fields: ["chunk_text"]
+    display_name: "Clinical Trials (Test)"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  file: "test_out/logs/api/api.log"
+
 # RAG (Retrieval-Augmented Generation) Configuration - TEST MODE
 rag:
   # LLM Provider Configuration
   provider: "gemini"  # anthropic | openai | gemini | local
-  model: "gemini-1.5-flash"
-  api_key: "${GOOGLE_API_KEY}"  # Set via environment variable
+  model: "gemini-2.0-flash-lite"
+  api_key: "AIzaSyDwpxZ9xw511Btlrdcr2rInc8Ck2WOgh0A"  # Set via environment variable
 
   # RAG Parameters - TEST MODE
   default_top_k: 3              # Fewer results for testing
@@ -131,6 +176,11 @@ rag:
   # Safety and validation
   enable_validation: true       # Enable citation validation
   require_citations: true       # Require citations in responses
+
+  # Document Aggregation Settings (NEW)
+  enable_aggregation: true      # Enable chunk deduplication and aggregation
+  retrieval_multiplier: 4       # Retrieve 4× more chunks before aggregation
+  aggregation_strategy: "max"   # Scoring: "max" | "avg" | "sum"
 
   # Performance settings
   search_timeout: 10            # Shorter timeout for testing

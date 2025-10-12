@@ -1,22 +1,24 @@
 # BioYoda Search API
 
-**Status**: MVP Implementation Complete ✅
+**Status**: RAG Implementation Complete ✅
 **Version**: 0.1.0
 **Last Updated**: October 2025
 
 ## Overview
 
-RESTful API for semantic search across biomedical literature and clinical trials.
+RESTful API for semantic search and AI-powered Q&A across biomedical literature and clinical trials.
 
 ### Features
 
 - ✅ **Single collection search** - Search PubMed or Clinical Trials independently
 - ✅ **Multi-collection search** - Search across both collections simultaneously
 - ✅ **Result merging & ranking** - Intelligent cross-collection result ranking
+- ✅ **Document aggregation** - Smart deduplication of chunked results
 - ✅ **Metadata filtering** - Filter results by specific fields
 - ✅ **Fast semantic search** - Sub-second query response times
+- ✅ **RAG Q&A** - AI-powered question answering with citations
+- ✅ **Citation validation** - Prevents hallucinations with source validation
 - ✅ **Interactive documentation** - Swagger UI and ReDoc
-- 🚧 **RAG Integration** - Coming in Phase 2 (see Roadmap)
 
 ### Current Collections
 
@@ -89,6 +91,9 @@ Use the included CLI tool to search from command line:
 # Simple search (from project root)
 ./bioyoda.sh search "CRISPR gene editing"
 
+# RAG Q&A with AI-powered answers
+./bioyoda.sh search "What is CRISPR gene editing?" --ask
+
 # Via api subcommand
 ./bioyoda.sh api search "cancer treatment" --collection pubmed_abstracts
 
@@ -97,16 +102,85 @@ Use the included CLI tool to search from command line:
 
 # Or call directly
 python modules/api/scripts/bioyoda_search.py "Alzheimer disease" --limit 5
+python modules/api/scripts/bioyoda_search.py "What is Alzheimer's?" --ask
 ```
 
 **Interactive mode example:**
 ```
 bioyoda> search CRISPR gene editing
+bioyoda> ask What are the side effects of CRISPR?
 bioyoda> pubmed Alzheimer disease
 bioyoda> trials cancer immunotherapy
 bioyoda> collections
 bioyoda> quit
 ```
+
+## Document Aggregation System
+
+### The Problem
+
+Clinical trials and papers are chunked for better embedding quality (e.g., summary, eligibility, outcomes as separate chunks). This causes:
+- **Duplicate results**: Same trial appears 4× in search results
+- **Fragmented context**: Important information scattered across chunks
+- **Low diversity**: Other relevant documents pushed down
+
+### The Solution
+
+**Smart retrieval + aggregation pipeline:**
+
+1. **Over-retrieve**: Fetch N× more chunks (default: 4× = 40 chunks for top 10 request)
+2. **Group by document**: Aggregate chunks by `nct_id` or `pmid`
+3. **Combine context**: Merge text from all chunks per document
+4. **Score intelligently**: Use max/avg/sum of chunk scores
+5. **Return unique docs**: Return requested number of unique documents
+
+### Example
+
+**Query:** "vagal nerve stimulation eligibility criteria"
+
+**Before (chunk-level):**
+```
+1. NCT04484285 - Eligibility (exclusion)    0.626
+2. NCT04484285 - Eligibility (inclusion)    0.603
+3. NCT04484285 - Demographics               0.520
+4. NCT01726608 - Eligibility                0.421
+5. NCT04484285 - Summary                    0.412  ← Duplicate again!
+```
+
+**After (document-level):**
+```
+1. NCT04484285 (4 chunks combined)          0.626
+2. NCT01726608                              0.421
+3. NCT00033826                              0.385
+4. NCT02164942                              0.382
+5. NCT05888103                              0.381
+```
+Result: 5 unique trials with complete context
+
+### Configuration
+
+**In config file:**
+```yaml
+rag:
+  enable_aggregation: true        # Enable/disable
+  retrieval_multiplier: 4         # Over-retrieve factor
+  aggregation_strategy: "max"     # "max" | "avg" | "sum"
+```
+
+**Via API:**
+```json
+{
+  "query": "...",
+  "aggregate_chunks": true,
+  "retrieval_multiplier": 4,
+  "aggregation_strategy": "max"
+}
+```
+
+**Scoring Strategies:**
+- **max** (default): Use highest chunk score (best match wins)
+- **avg**: Average of all chunks (balanced relevance)
+- **sum**: Sum of all chunks (rewards multiple matches)
 
 ## API Documentation
 
@@ -156,7 +230,7 @@ List available collections with statistics.
 
 ### POST /search
 
-Semantic search endpoint.
+Semantic search endpoint with document aggregation.
 
 **Request**:
 ```json
@@ -165,7 +239,10 @@ Semantic search endpoint.
   "collections": ["pubmed_abstracts", "clinical_trials"],
   "limit": 10,
   "filters": null,
-  "merge_results": true
+  "merge_results": true,
+  "aggregate_chunks": true,
+  "retrieval_multiplier": 4,
+  "aggregation_strategy": "max"
 }
 ```
 
@@ -185,11 +262,63 @@ Semantic search endpoint.
       "collection": "pubmed_abstracts",
       "payload": {
         "pmid": "12345",
-        "chunk_text": "Title: CRISPR...\nAbstract: ..."
+        "chunk_text": "Title: CRISPR...\nAbstract: ...",
+        "aggregated_from_chunks": 3,
+        "chunk_scores": [0.92, 0.87, 0.81],
+        "max_chunk_score": 0.92,
+        "avg_chunk_score": 0.867
       }
     }
   ],
   "search_time_ms": 234.56
+}
+```
+
+### POST /ask
+
+RAG (Retrieval-Augmented Generation) question answering with citations.
+
+**Request**:
+```json
+{
+  "question": "What are the eligibility criteria for vagal nerve stimulation studies?",
+  "collections": ["clinical_trials"],
+  "top_k": 5,
+  "temperature": 0.1,
+  "max_tokens": 1000
+}
+```
+
+**Response**:
+```json
+{
+  "question": "What are the eligibility criteria...",
+  "answer": "Studies using transcutaneous vagal nerve stimulation (tVNS) have specific eligibility criteria... (Trial NCT04484285)",
+  "sources": [
+    {
+      "id": "NCT04484285",
+      "score": 0.626,
+      "collection": "clinical_trials",
+      "title": "Home Operations Utilizing Stimulation",
+      "text_preview": "Study intervention: Transcutaneous Vagal Nerve Stimulation...",
+      "url": "https://clinicaltrials.gov/study/NCT04484285"
+    }
+  ],
+  "metrics": {
+    "search_time_ms": 156.23,
+    "llm_time_ms": 2331.45,
+    "total_time_ms": 2487.68,
+    "num_sources": 5,
+    "model_used": "gemini-2.0-flash-lite",
+    "estimated_cost_usd": 0.0002
+  },
+  "validation": {
+    "citation_coverage": 0.80,
+    "cited_count": 4,
+    "valid_citations": ["NCT04484285", "NCT01726608"],
+    "invalid_citations": [],
+    "warning": null
+  }
 }
 ```
 
@@ -457,29 +586,69 @@ config/
    - Very large collections may need optimization
    - Consider adding HNSW index parameters
 
+## Future Improvements
+
+### 1. Hybrid Search (Semantic + Keyword)
+Combine dense embeddings (S-BioBERT) with sparse BM25 for better recall.
+
+**Benefits:**
+- Semantic: Handles synonyms ("VNS" ↔ "vagal nerve stimulation")
+- Keyword: Exact matches for technical terms (gene names, drugs)
+- Combined score: `α·semantic + (1-α)·keyword`
+
+**Implementation:** Add BM25 index alongside vector index, typical α=0.7
+
+### 2. Query Expansion
+Automatically expand queries with medical synonyms and abbreviations.
+
+**Example:** `"vagal nerve stimulation"` → `"vagal nerve stimulation OR VNS OR tVNS OR transcutaneous VNS"`
+
+**Tools:** UMLS/MeSH thesaurus, abbreviation database, LLM rewriting
+
+### 3. Cross-Encoder Re-ranking
+Add second-stage reranking for better top-k precision.
+
+**Pipeline:** `Query → Retrieve 100 (bi-encoder) → Rerank to 10 (cross-encoder)`
+
+**Models:** `ms-marco-MiniLM-L-12-v2` or `BioBERT-mnli`
+
+### 4. Query Intent Classification
+Classify query type to optimize retrieval.
+
+**Types:**
+- Factual ("What is X?") → Focus on summaries
+- Eligibility ("Who can join?") → Focus on eligibility chunks
+- Comparison ("X vs Y") → Multi-document synthesis
+- Procedural ("How to X?") → Focus on methods
+
+### 5. Temporal Awareness
+Prioritize recent studies when relevant, add recency boost to scoring.
+
+### 6. Multi-Modal Retrieval
+Extend to figures, tables, supplementary materials (e.g., "Show survival curves for drug X").
+
 ## Roadmap
 
-### Phase 1: Core Search ✅ (Current)
+### Phase 1: Core Search ✅
 - ✅ Basic search implementation
 - ✅ Multi-collection support
 - ✅ Result ranking
 - ✅ Metadata filtering
 - ✅ API documentation
 
-### Phase 2: RAG Integration (Next - 2-3 weeks)
-- [ ] `/ask` endpoint for Q&A
-- [ ] LLM integration (OpenAI/Anthropic/Local)
-- [ ] Prompt engineering framework
-- [ ] Citation generation
-- [ ] Answer validation
-- [ ] Context window management
+### Phase 2: RAG Integration ✅ (Complete)
+- ✅ `/ask` endpoint for Q&A
+- ✅ LLM integration (Gemini/Anthropic/OpenAI)
+- ✅ Prompt engineering framework
+- ✅ Citation generation & validation
+- ✅ Document aggregation system
+- ✅ Context window management
 
-See main README.md for full RAG implementation plan.
-
-### Phase 3: Advanced Search (4-6 weeks)
-- [ ] Query expansion (synonyms)
-- [ ] Biomedical term normalization
-- [ ] Advanced filtering (date ranges)
+### Phase 3: Advanced Search (Next - 4-6 weeks)
+- [ ] Hybrid search (semantic + BM25)
+- [ ] Query expansion with UMLS
+- [ ] Cross-encoder reranking
+- [ ] Advanced filtering (date ranges, study types)
 - [ ] Result highlighting
 - [ ] Search analytics
 

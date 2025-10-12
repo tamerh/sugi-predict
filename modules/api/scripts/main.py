@@ -72,7 +72,10 @@ async def lifespan(app: FastAPI):
                 default_collections=rag_config.get('default_collections', ['pubmed_abstracts', 'clinical_trials']),
                 default_top_k=rag_config.get('default_top_k', 5),
                 max_context_length=rag_config.get('max_context_length', 100000),
-                enable_validation=rag_config.get('enable_validation', True)
+                enable_validation=rag_config.get('enable_validation', True),
+                enable_aggregation=rag_config.get('enable_aggregation', True),
+                retrieval_multiplier=rag_config.get('retrieval_multiplier', 4),
+                aggregation_strategy=rag_config.get('aggregation_strategy', 'max')
             )
             logger.info(f"✅ RAG engine initialized with {rag_config.get('provider')} ({rag_config.get('model')})")
         else:
@@ -358,22 +361,44 @@ async def search(request: SearchRequest):
                 detail=f"Invalid collections: {invalid_collections}. Available: {available_collections}"
             )
 
+        # Calculate retrieval limit (retrieve more chunks if aggregation is enabled)
+        retrieval_limit = request.limit
+        if request.aggregate_chunks:
+            retrieval_limit = request.limit * request.retrieval_multiplier
+            logger.debug(
+                f"Retrieving {retrieval_limit} chunks for aggregation "
+                f"(limit={request.limit} × multiplier={request.retrieval_multiplier})"
+            )
+
         # Perform search
         results = search_engine.search_multi_collection(
             query=request.query,
             collections=request.collections,
-            limit=request.limit,
+            limit=retrieval_limit,
             filters=request.filters
         )
 
         # Merge results if requested
         if request.merge_results:
-            merged_results = search_engine.merge_and_rank_results(results)
+            merged_results = search_engine.merge_and_rank_results(results, limit=retrieval_limit)
         else:
             # Keep results separated by collection
             merged_results = []
             for collection, collection_results in results.items():
                 merged_results.extend(collection_results)
+
+        # Aggregate chunks by document if requested
+        if request.aggregate_chunks and merged_results:
+            logger.debug(f"Aggregating {len(merged_results)} chunks by document...")
+            merged_results = search_engine.aggregate_chunks_by_document(
+                results=merged_results,
+                limit=request.limit,
+                scoring_strategy=request.aggregation_strategy
+            )
+            logger.info(
+                f"After aggregation: {len(merged_results)} unique documents "
+                f"(strategy={request.aggregation_strategy})"
+            )
 
         # Calculate statistics
         results_per_collection = {
