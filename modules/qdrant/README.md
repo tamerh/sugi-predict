@@ -150,8 +150,10 @@ modules/qdrant/
 │   └── insert_from_faiss.py     # Insertion script (Snakemake)
 └── setup/
     └── singularity/
-        ├── qdrant.sif           # Qdrant container
-        └── config.yaml          # Qdrant config
+        └── qdrant.sif           # Qdrant container
+
+config/
+└── qdrant_config.yaml           # Qdrant server configuration
 ```
 
 ### Workflow Logic
@@ -184,27 +186,64 @@ modules/qdrant/
 
 ## Configuration
 
-Settings in `config/config.yaml`:
+### Qdrant Server Configuration
+
+Qdrant server settings are in **`config/qdrant_config.yaml`**. This file is bind-mounted into the Singularity container when starting the server.
+
+Key settings (optimized for HPC/NFS):
+```yaml
+service:
+  host: 0.0.0.0
+  http_port: 6333
+
+storage:
+  wal_capacity_mb: 256            # 256MB WAL for better NFS tolerance
+  wal_segments_ahead: 2
+  flush_interval_sec: 30          # Flush WAL every 30 seconds
+
+optimizer:
+  max_segment_size: 2147483648    # 2GB segments (reduced for WAL stability)
+  memmap_threshold: 524288000     # 500MB
+  indexing_threshold: 1073741824  # 1GB
+```
+
+### Insertion Settings
+
+Insertion settings are in **`config/config.yaml`**:
 
 ```yaml
 qdrant:
-  storage_dir: "data/qdrant"
-  log_dir: "logs/qdrant"
-  batch_size: 500                    # Insertion batch size
+  batch_size: 500                    # Insertion batch size (reduced for NFS stability)
 
   server:
-    memory_mb: 32000                 # 32GB (adjust as needed)
+    memory_mb: 131072                # 128GB for server
     runtime_hours: 48                # 2 days default
 
 pubmed:
   qdrant:
     collection_name: "pubmed_abstracts"
-    memory_mb: 16384                 # Memory for insertion job
+    memory_mb: 8192                  # Memory for insertion job
 
 clinical_trials:
   qdrant:
     collection_name: "clinical_trials"
-    memory_mb: 16384
+    memory_mb: 8192
+```
+
+### WAL Optimization for NFS
+
+The configuration includes optimizations for HPC environments with NFS storage:
+
+- **Increased WAL capacity** (256MB): Reduces WAL flush frequency
+- **Smaller segments** (2GB vs 5GB): Better for incremental writes
+- **Frequent flushes** (30s): Prevents WAL buildup
+- **Lower thresholds**: Triggers memory mapping and indexing earlier
+- **Retry logic**: Automatic exponential backoff on WAL errors in insert script
+
+To modify Qdrant server settings, edit `config/qdrant_config.yaml` and restart the server:
+```bash
+./bioyoda.sh qdrant stop
+./bioyoda.sh qdrant start
 ```
 
 ## Output & Storage
@@ -316,6 +355,42 @@ qstat -u $(whoami) | grep q_server
 - Increase server memory: `--memory 64000`
 - Reduce batch size in config
 - Use GPU node with more RAM
+
+### WAL Errors
+
+**"segment creator thread already failed" or WAL errors**:
+
+This indicates Qdrant's Write-Ahead Log system has failed, usually due to:
+- Disk space exhaustion
+- NFS/network filesystem issues
+- Too many concurrent writes
+
+**Solutions**:
+
+1. **Restart Qdrant server** (required):
+```bash
+./bioyoda.sh qdrant stop
+./bioyoda.sh qdrant start
+```
+
+2. **Check disk space**:
+```bash
+df -h /path/to/qdrant/storage
+```
+
+3. **Reduce batch size** (edit `config/config.yaml`):
+```yaml
+qdrant:
+  batch_size: 250  # Reduce from 500
+```
+
+4. **Check Qdrant logs**:
+```bash
+tail -f out/logs/qdrant/server.log
+tail -f out/logs/qdrant/insert_pubmed.log
+```
+
+The insert script now includes automatic retry logic with exponential backoff, but persistent errors require server restart.
 
 ## Performance
 

@@ -17,6 +17,7 @@ import sys
 import argparse
 import pickle
 import gc
+import time
 from glob import glob
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +29,7 @@ from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 from qdrant_client.http import models
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 def log_with_timestamp(message: str) -> None:
     """Prints a message with timestamp and memory usage."""
@@ -35,6 +37,59 @@ def log_with_timestamp(message: str) -> None:
     memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
     log_line = f"[{timestamp}] [MEM: {memory_mb:.1f}MB] {message}"
     print(log_line, flush=True)
+
+def upsert_with_retry(client: QdrantClient, collection_name: str, points: list,
+                      max_retries: int = 5, initial_delay: float = 2.0) -> bool:
+    """
+    Upsert points with exponential backoff retry on WAL errors.
+
+    Args:
+        client: Qdrant client
+        collection_name: Collection to insert into
+        points: List of PointStruct to insert
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds (doubles each retry)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    delay = initial_delay
+
+    for attempt in range(max_retries):
+        try:
+            client.upsert(collection_name=collection_name, points=points)
+            return True
+
+        except UnexpectedResponse as e:
+            error_msg = str(e)
+
+            # Extract detailed error from response if available
+            if hasattr(e, 'content'):
+                log_with_timestamp(f"  └─ Response content: {e.content}")
+
+            # Check if it's a WAL-related error
+            if "WAL" in error_msg or "segment creator" in error_msg:
+                if attempt < max_retries - 1:
+                    log_with_timestamp(f"  └─ WAL/segment error (attempt {attempt + 1}/{max_retries}): {error_msg}")
+                    log_with_timestamp(f"  └─ Waiting {delay:.1f}s before retry...")
+                    time.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    log_with_timestamp(f"  └─ FAILED after {max_retries} attempts")
+                    log_with_timestamp(f"  └─ ERROR: {error_msg}")
+                    log_with_timestamp(f"  └─ HINT: Qdrant server may need restart or storage cleanup")
+                    return False
+            else:
+                # Non-WAL error, don't retry
+                log_with_timestamp(f"  └─ Non-recoverable error: {error_msg}")
+                return False
+
+        except Exception as e:
+            log_with_timestamp(f"  └─ ERROR: {type(e).__name__}: {e}")
+            return False
+
+    return False
 
 def create_collection_if_needed(client: QdrantClient, collection_name: str,
                                  vector_size: int = 768) -> None:
@@ -50,7 +105,7 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
                 size=vector_size,
                 distance=Distance.COSINE
             ),
-            # Optimize for large datasets
+            # Optimize for large datasets with better WAL handling
             hnsw_config=models.HnswConfigDiff(
                 m=16,
                 ef_construct=100,
@@ -60,9 +115,15 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
                 deleted_threshold=0.2,
                 vacuum_min_vector_number=1000,
                 default_segment_number=0,
-                max_segment_size=5_000_000,  # 5M vectors per segment
-                memmap_threshold=1_000_000,
-                indexing_threshold=2_000_000
+                max_segment_size=2_000_000,  # 2M vectors per segment (reduced for better WAL stability)
+                memmap_threshold=500_000,     # Lower threshold for memory mapping
+                indexing_threshold=1_000_000, # Lower threshold for indexing
+                flush_interval_sec=30         # Flush WAL more frequently (every 30 seconds)
+            ),
+            # Explicitly set WAL config for NFS environments
+            wal_config=models.WalConfigDiff(
+                wal_capacity_mb=256,          # Limit WAL size to 256MB
+                wal_segments_ahead=2          # Keep fewer WAL segments ahead
             )
         )
         log_with_timestamp(f"Collection '{collection_name}' created")
@@ -200,9 +261,13 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
 
                 # Batch insert
                 if len(batch) >= batch_size:
-                    client.upsert(collection_name=collection_name, points=batch)
-                    log_with_timestamp(f"  └─ Inserted batch ({total_inserted:,} total)")
-                    batch = []
+                    success = upsert_with_retry(client, collection_name, batch)
+                    if success:
+                        log_with_timestamp(f"  └─ Inserted batch ({total_inserted:,} total)")
+                        batch = []
+                    else:
+                        log_with_timestamp(f"  └─ Batch insert failed, stopping file processing")
+                        break
 
             # Clear memory
             del index, vectors, metadata
@@ -215,8 +280,11 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
 
     # Insert final batch
     if batch:
-        client.upsert(collection_name=collection_name, points=batch)
-        log_with_timestamp(f"Inserted final batch")
+        success = upsert_with_retry(client, collection_name, batch)
+        if success:
+            log_with_timestamp(f"Inserted final batch")
+        else:
+            log_with_timestamp(f"WARNING: Final batch insertion failed")
 
     log_with_timestamp("")
     log_with_timestamp("="*80)
@@ -258,8 +326,8 @@ def main():
     parser.add_argument(
         '--batch-size',
         type=int,
-        default=1000,
-        help='Batch size for insertion (default: 1000)'
+        default=500,
+        help='Batch size for insertion (default: 500, reduce to 100-250 for NFS/slow storage)'
     )
     parser.add_argument(
         '--start-id',

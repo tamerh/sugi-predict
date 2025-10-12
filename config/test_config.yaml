@@ -90,7 +90,7 @@ qdrant:
   # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Insertion settings
-  batch_size: 100              # Small batches for testing (vs 1000 production)
+  batch_size: 100              # Small batches for testing (vs 500 production)
 
   # Server settings - OPTIMIZED FOR TEST
   server:

@@ -1000,7 +1000,7 @@ qdrant_start() {
     # Call start_server.sh directly
     bash modules/qdrant/scripts/start_server.sh \
         --container modules/qdrant/setup/singularity/qdrant.sif \
-        --config modules/qdrant/setup/singularity/config.yaml \
+        --config config/qdrant_config.yaml \
         --storage ${base_dir}/data/qdrant \
         --memory-mb ${memory_mb} \
         --runtime $((runtime_hours * 3600)) \
