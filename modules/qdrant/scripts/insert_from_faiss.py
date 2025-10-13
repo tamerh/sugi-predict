@@ -229,9 +229,54 @@ def load_faiss_and_metadata(index_path: str) -> tuple:
 
     return index, metadata
 
+def delete_trial_vectors(client: QdrantClient, collection_name: str, nct_ids: list) -> int:
+    """
+    Delete all vectors for given NCT IDs from the collection.
+
+    This is used in update mode to remove old vectors before inserting updated trials.
+
+    Args:
+        client: Qdrant client
+        collection_name: Collection name
+        nct_ids: List of NCT IDs to delete
+
+    Returns:
+        Number of NCT IDs processed for deletion
+    """
+    deleted_count = 0
+
+    for nct_id in nct_ids:
+        try:
+            client.delete(
+                collection_name=collection_name,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="nct_id",
+                                match=models.MatchValue(value=nct_id)
+                            )
+                        ]
+                    )
+                )
+            )
+            deleted_count += 1
+
+            # Log every 100 deletions
+            if deleted_count % 100 == 0:
+                log_with_timestamp(f"    Deleted vectors for {deleted_count}/{len(nct_ids)} trials...")
+
+        except Exception as e:
+            log_with_timestamp(f"    WARNING: Failed to delete vectors for {nct_id}: {e}")
+            continue
+
+    return deleted_count
+
 def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                       batch_size: int = 1000, start_id: int = 0,
-                      vector_size: int = 768, tracking_file: str = None) -> int:
+                      vector_size: int = 768, tracking_file: str = None,
+                      chunk_tracking_file: str = None,
+                      update_mode: bool = False) -> int:
     """
     Insert data from FAISS files to Qdrant
 
@@ -242,7 +287,9 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
         batch_size: Batch size for insertion
         start_id: Starting point ID (for resuming)
         vector_size: Vector dimension
-        tracking_file: Optional path to tracking JSON file (for incremental updates)
+        tracking_file: Optional path to PubMed tracking JSON file (for incremental updates)
+        chunk_tracking_file: Optional path to chunk tracking JSON file (for clinical trials)
+        update_mode: If True, delete old vectors before inserting (for clinical trials updates)
 
     Returns:
         Total number of vectors inserted
@@ -256,12 +303,53 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     log_with_timestamp(f"Batch size: {batch_size}")
     log_with_timestamp(f"Starting point ID: {start_id}")
     if tracking_file:
-        log_with_timestamp(f"Tracking file: {tracking_file}")
+        log_with_timestamp(f"PubMed tracking file: {tracking_file}")
+    if chunk_tracking_file:
+        log_with_timestamp(f"Chunk tracking file: {chunk_tracking_file}")
+    if update_mode:
+        log_with_timestamp(f"Update mode: ENABLED (will delete old vectors before inserting)")
     log_with_timestamp("")
 
     # Load tracking data if provided
     tracker = None
+    chunk_tracker = None
     already_inserted = set()
+
+    # Load chunk tracking for clinical trials
+    if chunk_tracking_file:
+        try:
+            # Import chunk tracking module
+            import importlib.util
+            chunk_tracking_module_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(faiss_dir))),
+                "modules", "clinical_trials", "scripts", "chunk_tracking.py"
+            )
+            if not os.path.exists(chunk_tracking_module_path):
+                # Try alternative path
+                chunk_tracking_module_path = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "clinical_trials", "scripts", "chunk_tracking.py"
+                )
+
+            if os.path.exists(chunk_tracking_module_path):
+                spec = importlib.util.spec_from_file_location("chunk_tracking", chunk_tracking_module_path)
+                chunk_tracking_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(chunk_tracking_module)
+                ChunkTracker = chunk_tracking_module.ChunkTracker
+
+                chunk_tracker = ChunkTracker(chunk_tracking_file)
+                already_inserted = chunk_tracker.get_chunks_not_inserted_to_qdrant()
+                # Invert: we want chunks that ARE inserted, not those that are NOT inserted
+                all_chunks = set(chunk_tracker.tracking_data["chunks"].keys())
+                already_inserted = all_chunks - already_inserted
+                log_with_timestamp(f"Loaded chunk tracking: {len(already_inserted)} chunks already inserted to Qdrant")
+            else:
+                log_with_timestamp(f"WARNING: Could not find chunk_tracking.py, proceeding without chunk tracking")
+        except Exception as e:
+            log_with_timestamp(f"WARNING: Could not load chunk tracking: {e}")
+            log_with_timestamp(f"Proceeding without chunk tracking...")
+
+    # Load PubMed tracking if provided
     if tracking_file:
         try:
             # Import tracking module (assume it's in pubmed/scripts)
@@ -320,21 +408,32 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     log_with_timestamp(f"Found {len(index_files)} FAISS files to process")
 
     # Filter out already-inserted files if tracking is enabled
-    if tracker and already_inserted:
+    if (tracker or chunk_tracker) and already_inserted:
         original_count = len(index_files)
         filtered_files = []
         for index_path in index_files:
-            source_file = map_faiss_to_source_file(index_path, faiss_dir)
-            if source_file not in already_inserted:
-                filtered_files.append(index_path)
-            else:
-                log_with_timestamp(f"  Skipping {os.path.basename(index_path)} (already inserted)")
+            # For chunk tracking (clinical trials): use chunk filename directly
+            if chunk_tracker:
+                # Extract chunk filename from path (e.g., "trials_chunk_0001.json")
+                # The index file is "trials_chunk_0001.index", we need the .json version
+                chunk_filename = os.path.basename(index_path).replace('.index', '.json')
+                if chunk_filename not in already_inserted:
+                    filtered_files.append(index_path)
+                else:
+                    log_with_timestamp(f"  Skipping {os.path.basename(index_path)} (already inserted)")
+            # For PubMed tracking: map to source XML file
+            elif tracker:
+                source_file = map_faiss_to_source_file(index_path, faiss_dir)
+                if source_file not in already_inserted:
+                    filtered_files.append(index_path)
+                else:
+                    log_with_timestamp(f"  Skipping {os.path.basename(index_path)} (already inserted)")
 
         index_files = filtered_files
         skipped_count = original_count - len(index_files)
         if skipped_count > 0:
-            log_with_timestamp(f"Filtered out {skipped_count} already-inserted files")
-        log_with_timestamp(f"Processing {len(index_files)} new files")
+            log_with_timestamp(f"Filtered out {skipped_count} already-inserted files/chunks")
+        log_with_timestamp(f"Processing {len(index_files)} new files/chunks")
 
     if not index_files:
         log_with_timestamp(f"No new files to insert")
@@ -384,6 +483,26 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                 log_with_timestamp(f"  └─ Skipping (empty)")
                 continue
 
+            # If update mode is enabled for clinical trials, delete old vectors first
+            if update_mode and "clinical_trials" in collection_name.lower():
+                log_with_timestamp(f"  └─ Update mode: Collecting NCT IDs for deletion...")
+
+                # Extract unique NCT IDs from metadata
+                nct_ids_in_chunk = set()
+                for meta_key in metadata:
+                    meta = metadata[meta_key]
+                    nct_id = meta.get('nct_id')
+                    if nct_id:
+                        nct_ids_in_chunk.add(nct_id)
+
+                if nct_ids_in_chunk:
+                    log_with_timestamp(f"  └─ Found {len(nct_ids_in_chunk)} unique NCT IDs")
+                    log_with_timestamp(f"  └─ Deleting old vectors for these trials...")
+                    deleted_count = delete_trial_vectors(client, collection_name, list(nct_ids_in_chunk))
+                    log_with_timestamp(f"  └─ Deleted vectors for {deleted_count} trials")
+                else:
+                    log_with_timestamp(f"  └─ WARNING: No NCT IDs found in metadata")
+
             # Extract vectors
             vectors = np.zeros((n_vectors, vector_size), dtype=np.float32)
             for i in range(n_vectors):
@@ -427,7 +546,14 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                         break
 
             # Mark as inserted in tracking if enabled
-            if tracker:
+            if chunk_tracker:
+                try:
+                    chunk_filename = os.path.basename(index_path).replace('.index', '.json')
+                    chunk_tracker.mark_inserted_to_qdrant(chunk_filename)
+                    log_with_timestamp(f"  └─ Marked {chunk_filename} as inserted in chunk tracking")
+                except Exception as e:
+                    log_with_timestamp(f"  └─ WARNING: Could not update chunk tracking: {e}")
+            elif tracker:
                 try:
                     source_file = map_faiss_to_source_file(index_path, faiss_dir)
                     tracker.mark_inserted_to_qdrant(source_file)
@@ -511,7 +637,18 @@ def main():
         '--tracking-file',
         type=str,
         default=None,
-        help='Path to tracking JSON file (for incremental updates, avoids reprocessing)'
+        help='Path to PubMed tracking JSON file (for incremental updates, avoids reprocessing)'
+    )
+    parser.add_argument(
+        '--chunk-tracking-file',
+        type=str,
+        default=None,
+        help='Path to chunk tracking JSON file (for clinical trials, tracks chunk-level insertion)'
+    )
+    parser.add_argument(
+        '--update-mode',
+        action='store_true',
+        help='Enable update mode (delete old vectors before inserting for clinical trials)'
     )
 
     args = parser.parse_args()
@@ -530,7 +667,9 @@ def main():
             batch_size=args.batch_size,
             start_id=args.start_id,
             vector_size=args.vector_size,
-            tracking_file=args.tracking_file
+            tracking_file=args.tracking_file,
+            chunk_tracking_file=args.chunk_tracking_file,
+            update_mode=args.update_mode
         )
     except KeyboardInterrupt:
         log_with_timestamp("\nInterrupted by user")

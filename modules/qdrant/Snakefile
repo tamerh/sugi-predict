@@ -24,6 +24,9 @@ configfile: "config/config.yaml"
 BASE_DIR = config["base_dir"]
 PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.path.dirname(workflow.snakefile))))
 
+# Check update mode
+UPDATE_MODE = config.get("update_mode", "full")
+
 # Module-specific paths
 QDRANT_MODULE_DIR = os.path.join(PROJECT_ROOT, "modules", "qdrant")  # Scripts in project root
 QDRANT_SCRIPTS = os.path.join(QDRANT_MODULE_DIR, "scripts")
@@ -187,6 +190,7 @@ rule insert_clinical_trials_to_qdrant:
         batch_size = config["qdrant"]["batch_size"],
         faiss_dir = CLINICAL_TRIALS_FAISS_DIR,
         tracking_file = CLINICAL_TRIALS_TRACKING_FILE,
+        chunk_tracking_file = config["clinical_trials"].get("update", {}).get("chunk_tracking_file", os.path.join(STATE_DIR, "clinical_trials", "processed_chunks.json")),
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_qdrant_cluster.log")
     resources:
@@ -237,12 +241,28 @@ rule insert_clinical_trials_to_qdrant:
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using tracking file for incremental updates" >> {log}
         fi
 
+        # Build chunk tracking flag if enabled
+        CHUNK_TRACKING_FLAG=""
+        if [ -n "{params.chunk_tracking_file}" ]; then
+            CHUNK_TRACKING_FLAG="--chunk-tracking-file {params.chunk_tracking_file}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using chunk tracking file: {params.chunk_tracking_file}" >> {log}
+        fi
+
+        # Add update mode flag for clinical trials (enables deletion before insertion)
+        UPDATE_MODE_FLAG=""
+        if [[ "{UPDATE_MODE}" == "update" ]]; then
+            UPDATE_MODE_FLAG="--update-mode"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Update mode enabled: will delete old vectors before inserting" >> {log}
+        fi
+
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
             --collection {params.collection} \
             --qdrant-url $QDRANT_URL \
             --batch-size {params.batch_size} \
             $TRACKING_FLAG \
+            $CHUNK_TRACKING_FLAG \
+            $UPDATE_MODE_FLAG \
             >> {log} 2>&1
 
         # Mark as done

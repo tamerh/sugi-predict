@@ -79,7 +79,7 @@ The insertion script integrates with the PubMed tracking system to avoid reproce
 ### Update Mode (Incremental)
 ```bash
 ./bioyoda.sh run pubmed --mode update --local
-# (Clinical Trials update mode to be implemented)
+./bioyoda.sh run clinical_trials --local  # Auto-detects updates (idempotent)
 ```
 
 **Behavior:**
@@ -89,6 +89,8 @@ The insertion script integrates with the PubMed tracking system to avoid reproce
    - **New document** (new PMID/NCT) → Creates new point
    - **Existing document** (same PMID/NCT) → **Replaces** old vector
 4. No duplicates, always latest version
+
+**Clinical Trials**: The pipeline is **idempotent** - it automatically detects changes using a tracking database and processes only new/updated trials. No mode flag needed.
 
 ### Example Update Scenario
 
@@ -282,9 +284,76 @@ python modules/pubmed/scripts/tracking.py \
 
 ### Test with Clinical Trials
 ```bash
-# Similar workflow for clinical trials
-# NCT IDs will be hashed deterministically
+# Idempotent - automatically detects updates
+./bioyoda.sh run clinical_trials --test --local
+
+# Insert to Qdrant with tracking
+python modules/qdrant/scripts/insert_from_faiss.py \
+    --faiss-dir test_out/data/processed/clinical_trials \
+    --collection clinical_trials_test \
+    --qdrant-url http://localhost:6333 \
+    --tracking-file test_out/state/clinical_trials/processed_chunks.json
+
+# NCT IDs are hashed deterministically for upserts
 ```
+
+## Clinical Trials Update Strategy
+
+**Implemented**: Clinical trials now supports automatic incremental updates.
+
+### How It Works
+
+1. **Tracking Database**: SQLite DB (`trials_tracking.db`) stores trial content hashes
+2. **Change Detection**: Compares new AACT snapshot with tracking DB
+3. **Selective Processing**: Only new + updated trials are processed into update chunks
+4. **Named Chunks**: Update chunks named with dates: `trials_update_20251013_chunk_0001.json`
+5. **Upsert to Qdrant**: Updated trials automatically replace old vectors (same NCT ID = same point ID)
+
+### Update Workflow
+
+```bash
+# Day 1: Initial load
+./bioyoda.sh run clinical_trials --local
+./bioyoda.sh qdrant insert clinical_trials
+# → All trials in Qdrant
+
+# Day 2+: Automatic incremental update
+./bioyoda.sh run clinical_trials --local
+# → Downloads new snapshot
+# → Detects changed trials (hash comparison)
+# → Creates: trials_update_20251013_chunk_*.json
+./bioyoda.sh qdrant insert clinical_trials
+# → Upserts changed trials (replaces old vectors)
+```
+
+### State Preservation
+
+**Key benefit**: Metadata preserved across runs:
+```json
+{
+  "chunks": {
+    "trials_chunk_0001.json": {
+      "status": "completed",
+      "vectors_count": 259,
+      "qdrant_inserted": true,
+      "qdrant_inserted_date": "2025-10-13"
+    },
+    "trials_update_20251013_chunk_0001.json": {
+      "status": "ready_to_process",
+      "num_trials": 50
+    }
+  }
+}
+```
+
+### Performance
+
+**Example**: 554K trials total, 1K changed
+- Initial load: ~4 hours
+- Update detection: ~2 minutes
+- Process 1K changed trials: ~3 minutes
+- Insert to Qdrant: ~30 seconds
+- **Total update time: ~6 minutes** (vs 4 hours full reprocess)
 
 ## Future Enhancements
 

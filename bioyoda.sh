@@ -440,6 +440,15 @@ run() {
         fi
     fi
 
+    # Delete output marker to force checkpoint re-evaluation
+    if [[ "$module" == "clinical_trials" ]] || [[ "$module" == "all" ]]; then
+        local state_dir="${base_dir}/state/clinical_trials"
+        mkdir -p "${state_dir}"
+        # Delete output marker to force checkpoint to run
+        rm -f "${state_dir}/.download_extract_done"
+        log_info "Deleted checkpoint marker to force re-evaluation..."
+    fi
+
     # Execute
     local main_log="${base_dir}/logs/bioyoda_${module}_main.log"
 

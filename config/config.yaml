@@ -31,6 +31,10 @@ pubmed:
   merge_memory_mb: 262144    # 256GB
   merge_runtime: 10080       # 168 hours in minutes
 
+  # Incremental update settings
+  update:
+    download_updates_only: true  # Skip baseline in update mode
+
   # Qdrant insertion settings
   qdrant:
     collection_name: "pubmed_abstracts"
@@ -77,6 +81,12 @@ clinical_trials:
   process_runtime: 480         # 8 hours per chunk (reduced from 7 days)
   merge_memory_mb: 32768       # 32GB for merging all chunks
   merge_runtime: 240           # 4 hours for merge
+
+  # Incremental update settings
+  update:
+    chunk_prefix: "trials_update"
+    keep_update_chunks: true  # Keep dated update chunks for history
+    update_chunk_size: 20000  # Trials per update chunk (same as regular chunks)
 
   # Qdrant insertion settings
   qdrant:

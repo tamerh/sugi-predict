@@ -9,6 +9,7 @@
 
 import os
 import glob
+from datetime import datetime
 
 # Load module-specific configuration
 ct_config = config["clinical_trials"]
@@ -19,11 +20,19 @@ ct_config = config["clinical_trials"]
 BASE_DIR = config["base_dir"]
 PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.path.dirname(workflow.snakefile))))
 
+# Check update mode
+UPDATE_MODE = config.get("update_mode", "full")
+
 RAW_DIR = os.path.join(BASE_DIR, "raw_data", "clinical_trials")
-PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials")
+# Use subfolder based on mode: full/ or updates/
+if UPDATE_MODE == "update":
+    PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials", "updates")
+else:
+    PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials", "full")
 MERGED_DIR = os.path.join(BASE_DIR, "data", "merged", "clinical_trials")
 LOG_DIR = os.path.join(BASE_DIR, "logs", "clinical_trials")
 MODULE_SCRIPTS = os.path.join(PROJECT_ROOT, "modules", "clinical_trials", "scripts")  # Scripts in project root
+STATE_DIR = os.path.join(BASE_DIR, "state", "clinical_trials")
 
 # Update config with constructed paths for downstream use
 ct_config["raw_dir"] = RAW_DIR
@@ -39,64 +48,75 @@ os.makedirs(RAW_DIR, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(MERGED_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(STATE_DIR, exist_ok=True)
 
 # Helper function to aggregate chunk indices after checkpoint
 def aggregate_trial_chunk_indices(wildcards):
     """
     Aggregate all processed chunk index files after checkpoint completes.
-    This is called after the extract checkpoint finishes and discovers chunks.
+    Reads from processed_chunks.json (single source of truth).
     """
     # Wait for checkpoint to complete
-    checkpoints.clinical_trials_extract.get()
+    checkpoints.clinical_trials_download_and_extract.get()
 
     import sys
     import json
 
-    # Use config directly to avoid global variable pollution
-    ct_processed_dir = config["clinical_trials"]["processed_dir"]
+    # Load processed_chunks.json from STATE_DIR
+    state_dir = config["base_dir"] + "/state/clinical_trials"
+    processed_chunks_path = os.path.join(state_dir, "processed_chunks.json")
 
-    # Load chunk manifest
-    manifest_path = os.path.join(ct_processed_dir, "chunk_manifest.json")
-
-    if not os.path.exists(manifest_path):
-        sys.stderr.write(f"[CHECKPOINT AGGREGATION] ERROR: Manifest not found at {manifest_path}\n")
+    if not os.path.exists(processed_chunks_path):
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] ERROR: processed_chunks.json not found at {processed_chunks_path}\n")
         sys.stderr.flush()
         return []
 
-    with open(manifest_path, 'r') as f:
-        manifest = json.load(f)
+    with open(processed_chunks_path, 'r') as f:
+        data = json.load(f)
 
-    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Manifest loaded: chunked={manifest['chunked']}\n")
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Loaded processed_chunks.json\n")
     sys.stderr.flush()
 
-    if manifest['chunked']:
-        # Return list of chunk indices (NOT merged!)
-        indices = []
-        for chunk_info in manifest['chunks']:
-            chunk_filename = chunk_info['filename'].replace('.json', '.index')
-            chunk_index_path = os.path.join(ct_processed_dir, chunk_filename)
-            indices.append(chunk_index_path)
-            sys.stderr.write(f"[CHECKPOINT AGGREGATION]   -> {chunk_index_path}\n")
+    # Check if no changes in update mode
+    if data.get('no_changes', False):
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] No changes detected - nothing to process\n")
+        sys.stderr.flush()
+        return []
 
-        sys.stderr.write(f"[CHECKPOINT AGGREGATION] Total chunk indices: {len(indices)}\n")
+    # Get chunks that need processing (status: ready_to_process or completed)
+    chunks_dict = data.get('chunks', {})
+    if not chunks_dict:
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] No chunks found\n")
         sys.stderr.flush()
-        return indices
-    else:
-        # Single file mode - return the single processed index
-        single_index_path = os.path.join(ct_processed_dir, "clinical_trials_single.index")
-        sys.stderr.write(f"[CHECKPOINT AGGREGATION] Single file mode: {single_index_path}\n")
-        sys.stderr.flush()
-        return [single_index_path]
+        return []
+
+    ct_processed_dir = config["clinical_trials"]["processed_dir"]
+    indices = []
+
+    for chunk_filename, chunk_info in chunks_dict.items():
+        # Convert .json to .index
+        chunk_index_name = chunk_filename.replace('.json', '.index')
+        chunk_index_path = os.path.join(ct_processed_dir, chunk_index_name)
+        indices.append(chunk_index_path)
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION]   -> {chunk_index_path}\n")
+
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Total chunks to process: {len(indices)}\n")
+    sys.stderr.flush()
+    return indices
 
 
 # Top-level rule for clinical_trials module
 # Default: produces chunk indices only (NO merge)
 # Similar to PubMed: individual files ready for Qdrant insertion
+# IMPORTANT: Depends on checkpoint done_marker to trigger it
+# Note: processed_chunks.json is read directly by aggregate function, not as Snakemake input
 rule clinical_trials_all:
     input:
-        aggregate_trial_chunk_indices
+        checkpoint_done = os.path.join(STATE_DIR, ".download_extract_done"),
+        indices = aggregate_trial_chunk_indices
 
 # Completion marker for Qdrant dependency
+# Note: processed_chunks.json is read directly in shell, not as Snakemake input
 rule clinical_trials_processing_complete:
     input:
         indices = aggregate_trial_chunk_indices
@@ -104,9 +124,13 @@ rule clinical_trials_processing_complete:
         done = os.path.join(PROCESSED_DIR, ".processing_complete")
     params:
         processed_dir = PROCESSED_DIR,
+        state_file = os.path.join(STATE_DIR, "processed_chunks.json"),
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_processing_complete.log")
     shell:
         """
+        # Check if this is a no-changes scenario
+        NO_CHANGES=$(python -c "import json; data = json.load(open('{params.state_file}')); print(data.get('no_changes', False))" 2>/dev/null || echo "False")
+
         # Count actual index files created
         INDEX_COUNT=$(find {params.processed_dir} -name "*.index" 2>/dev/null | wc -l)
 
@@ -115,74 +139,31 @@ rule clinical_trials_processing_complete:
         echo "Index files from input: $(echo {input.indices} | wc -w)" >> {output.done}
         echo "Completed at: $(date)" >> {output.done}
 
+        if [ "$NO_CHANGES" = "True" ]; then
+            echo "Update mode: No changes detected - nothing to process" >> {output.done}
+            exit 0
+        fi
+
         if [ "$INDEX_COUNT" -eq 0 ]; then
             echo "ERROR: No index files were created!" | tee -a {output.done}
             exit 1
         fi
         """
 
-# Rule 1: Download AACT database snapshot
-rule clinical_trials_download:
+# Combined checkpoint: Download + Extract (Single source of truth: processed_chunks.json)
+# Note: This checkpoint ALWAYS runs - bioyoda.sh deletes the output marker before each run
+# IMPORTANT: processed_chunks.json is NOT an output - script creates it as side effect
+# This prevents Snakemake from deleting it on re-runs
+checkpoint clinical_trials_download_and_extract:
     output:
-        snapshot_zip = os.path.join(RAW_DIR, "aact_snapshot.zip"),
-        extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
-        download_flag = os.path.join(RAW_DIR, ".download_complete")
+        done_marker = os.path.join(STATE_DIR, ".download_extract_done")
     params:
-        script = os.path.join(MODULE_SCRIPTS, "download_aact.py"),
+        script = os.path.join(MODULE_SCRIPTS, "download_and_extract.py"),
         download_dir = RAW_DIR,
         extract_dir = os.path.join(RAW_DIR, "extracted"),
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_download.log")
-    log:
-        os.path.join(LOG_DIR, "download.log")
-    conda:
-        config["conda_env"]
-    threads: 1
-    resources:
-        mem_mb=ct_config["download_memory_mb"]
-    shell:
-        """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
-
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
-
-        echo "Starting AACT database download..." >> {log}
-
-        python {params.script} \
-            --download-dir {params.download_dir} \
-            --extract-dir {params.extract_dir} \
-            >> {log} 2>&1
-
-        # Find the downloaded zip file (timestamped) and create symlink to expected name
-        DOWNLOADED_ZIP=$(ls {params.download_dir}/aact_flat_files_*.zip 2>/dev/null | head -1)
-        if [[ -f "$DOWNLOADED_ZIP" ]]; then
-            echo "Creating symlink from $DOWNLOADED_ZIP to {output.snapshot_zip}" >> {log}
-            ln -sf $(basename "$DOWNLOADED_ZIP") {output.snapshot_zip}
-        else
-            echo "ERROR: No downloaded zip file found" >> {log}
-            exit 1
-        fi
-
-        # Create completion flag
-        touch {output.download_flag}
-
-        echo "Download and extraction completed successfully" >> {log}
-        """
-
-# Checkpoint 2: Extract text from AACT tables to JSON (with optional chunking)
-# This is a checkpoint because we don't know how many chunks will be created
-checkpoint clinical_trials_extract:
-    input:
-        extraction_info = os.path.join(RAW_DIR, "extracted", "extraction_info.json"),
-        download_flag = os.path.join(RAW_DIR, ".download_complete")
-    output:
-        manifest = os.path.join(PROCESSED_DIR, "chunk_manifest.json")
-    params:
-        script = os.path.join(MODULE_SCRIPTS, "extract_text_optimized.py"),
-        extract_dir = os.path.join(RAW_DIR, "extracted"),
-        output_json = ct_config["trials_json"],
+        processed_dir = PROCESSED_DIR,
+        state_file = os.path.join(STATE_DIR, "processed_chunks.json"),
+        tracking_db = ct_config.get("update", {}).get("tracking_db", os.path.join(STATE_DIR, "trials_tracking.db")),
         min_summary_length = ct_config.get("min_summary_length", 100),
         chunk_size = ct_config.get("trials_per_chunk", 0) if ct_config.get("enable_chunking", False) else 0,
         include_flags = (
@@ -194,9 +175,9 @@ checkpoint clinical_trials_extract:
         ),
         limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
         nct_ids_flag = f"--nct-ids-file {os.path.join(PROJECT_ROOT, ct_config['test_nct_ids_file'])}" if (ct_config.get("test_mode", False) and ct_config.get("test_nct_ids_file")) else "",
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_extract.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_download_extract.log")
     log:
-        os.path.join(LOG_DIR, "extract.log")
+        os.path.join(LOG_DIR, "download_and_extract.log")
     conda:
         config["conda_env"]
     threads: 1
@@ -204,18 +185,31 @@ checkpoint clinical_trials_extract:
         mem_mb=ct_config["extract_memory_mb"]
     shell:
         """
-        # Backup previous log if it exists
+        # Backup previous log
         if [ -f {log} ]; then
             mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
         fi
 
         echo "==================== RUN STARTED: $(date) ====================" > {log}
+        echo "Snakemake mode: {UPDATE_MODE}" >> {log}
+        echo "Checkpoint triggered (output marker deleted by bioyoda.sh)" >> {log}
+        echo "" >> {log}
 
-        echo "Starting text extraction from AACT tables..." >> {log}
+        # IMPORTANT: Always run the script (it's idempotent)
+        # This ensures Snakemake doesn't skip the checkpoint
+        echo "Running combined download_and_extract.py script..." >> {log}
+        echo "The script is IDEMPOTENT - it automatically determines what to do:" >> {log}
+        echo "  - No state file → Fresh run (process everything)" >> {log}
+        echo "  - State file exists, last_update == today → Skip (nothing to do)" >> {log}
+        echo "  - State file exists, last_update != today → Update (incremental)" >> {log}
+        echo "" >> {log}
 
         python {params.script} \
+            --download-dir {params.download_dir} \
             --extract-dir {params.extract_dir} \
-            --output-json {params.output_json} \
+            --output-json {params.processed_dir}/trials_data.json \
+            --processed-chunks-output {params.state_file} \
+            --tracking-db {params.tracking_db} \
             --min-summary-length {params.min_summary_length} \
             --chunk-size {params.chunk_size} \
             {params.include_flags} \
@@ -223,29 +217,42 @@ checkpoint clinical_trials_extract:
             {params.nct_ids_flag} \
             >> {log} 2>&1
 
-        echo "Extraction completed successfully" >> {log}
-        echo "Chunk size: {params.chunk_size}" >> {log}
-        echo "Manifest: {output.manifest}" >> {log}
+        EXIT_CODE=$?
+
+        if [ $EXIT_CODE -ne 0 ]; then
+            echo "" >> {log}
+            echo "ERROR: Script failed with exit code $EXIT_CODE" >> {log}
+            exit 1
+        fi
+
+        # Create done marker for Snakemake (processed_chunks.json created by script as side effect)
+        touch {output.done_marker}
+
+        echo "" >> {log}
+        echo "==================== COMPLETED: $(date) ====================" >> {log}
         """
 
 # Rule 3a: Process individual chunk (for chunked mode)
+# Handles both patterns: trials_chunk_XXXX and trials_update_YYYYMMDD_chunk_XXXX
 rule clinical_trials_process_chunk:
     input:
-        chunk_json = os.path.join(RAW_DIR, "chunked", "trials_chunk_{chunk_id}.json")
+        chunk_json = os.path.join(RAW_DIR, "chunked", "{chunk_name}.json")
     output:
-        index = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}.index"),
-        metadata = os.path.join(PROCESSED_DIR, "trials_chunk_{chunk_id}.json")  # Consistent naming: .index + .json
+        index = os.path.join(PROCESSED_DIR, "{chunk_name}.index"),
+        metadata = os.path.join(PROCESSED_DIR, "{chunk_name}.json")  # Consistent naming: .index + .json
     params:
         script = os.path.join(MODULE_SCRIPTS, "process_trials_chunk.py"),
+        tracking_script = os.path.join(MODULE_SCRIPTS, "chunk_tracking.py"),
+        chunk_tracking_file = ct_config.get("update", {}).get("chunk_tracking_file", os.path.join(STATE_DIR, "processed_chunks.json")),
         model = ct_config["model_name"],
         vector_dim = ct_config["vector_dimension"],
         encode_batch_size = ct_config.get("encode_batch_size", 128),
         num_workers = ct_config.get("num_workers", 1),
         max_chunk_length = ct_config.get("max_chunk_length", 500),
         min_text_length = ct_config.get("min_text_length", 50),
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_process_chunk.{chunk_id}.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_process_chunk.{chunk_name}.log")
     log:
-        os.path.join(LOG_DIR, "process_chunk_{chunk_id}.log")
+        os.path.join(LOG_DIR, "process_chunk_{chunk_name}.log")
     conda:
         config["conda_env"]
     threads: ct_config.get("num_workers", 1)
@@ -259,7 +266,7 @@ rule clinical_trials_process_chunk:
         fi
 
         echo "==================== RUN STARTED: $(date) ====================" > {log}
-        echo "Processing chunk {wildcards.chunk_id}..." >> {log}
+        echo "Processing chunk {wildcards.chunk_name}..." >> {log}
 
         python {params.script} \
             --input-json {input.chunk_json} \
@@ -273,8 +280,25 @@ rule clinical_trials_process_chunk:
             --min-text-length {params.min_text_length} \
             >> {log} 2>&1
 
+        # Extract chunk name from input file
+        CHUNK_NAME=$(basename {input.chunk_json})
+
+        # Count vectors in generated metadata file
+        VECTOR_COUNT=$(python -c "import json; data = json.load(open('{output.metadata}')); print(len(data))")
+
         echo "Chunk processing completed successfully" >> {log}
         echo "Index: {output.index}" >> {log}
+        echo "Vectors generated: $VECTOR_COUNT" >> {log}
+
+        # Mark chunk as processed in tracking file
+        echo "Marking chunk as processed in tracking file..." >> {log}
+        python {params.tracking_script} \
+            --tracking-file {params.chunk_tracking_file} \
+            mark "$CHUNK_NAME" \
+            --vectors "$VECTOR_COUNT" \
+            >> {log} 2>&1
+
+        echo "Chunk marked as processed in tracking" >> {log}
         """
 
 # Rule 3b: Process single file (for non-chunked mode, backward compatibility)

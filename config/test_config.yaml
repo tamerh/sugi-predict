@@ -35,6 +35,10 @@ pubmed:
   process_memory_mb: 8192      # 8GB (need more for model loading)
   merge_memory_mb: 8192        # 8GB (vs 256GB production) - enough for 2×1000 abstracts
 
+  # Incremental update settings
+  update:
+    download_updates_only: true  # Skip baseline in update mode
+
   # Qdrant insertion settings - TEST MODE
   qdrant:
     collection_name: "pubmed_abstracts"
@@ -70,14 +74,20 @@ clinical_trials:
 
   # TEST MODE SETTINGS
   test_mode: true                    # Enable test optimizations
-  test_trials_limit: 100             # Process only first 100 trials (fallback)
-  test_nct_ids_file: "tests2/fixtures/clinical_trials/test_nct_ids.txt"  # Filter by specific NCT IDs
+  test_trials_limit: 400             # Process only first 100 trials (fallback)
+  #test_nct_ids_file: "tests/fixtures/clinical_trials/test_nct_ids.txt"  # Filter by specific NCT IDs
 
   # Job resources - OPTIMIZED FOR TEST
   download_memory_mb: 8192     # 8GB (vs 16GB production)
   extract_memory_mb: 8192      # 8GB (vs 16GB production)
   process_memory_mb: 8192      # 8GB per chunk (vs 12GB production)
   merge_memory_mb: 8192        # 8GB for merge (vs 32GB production)
+
+  # Incremental update settings
+  update:
+    chunk_prefix: "trials_update"
+    keep_update_chunks: true  # Keep dated update chunks for history
+    update_chunk_size: 50     # Small chunks for testing (production: 20000)
 
   # Qdrant insertion settings - TEST MODE
   qdrant:

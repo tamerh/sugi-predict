@@ -52,6 +52,127 @@ snakemake --cores 1 \
 # Output: out/data/merged/clinical_trials/master_clinical_trials.index
 ```
 
+## Incremental Updates
+
+**New Feature**: The pipeline now supports **idempotent incremental updates** - automatically detecting and processing only changed trials.
+
+### How It Works
+
+The system uses:
+- **State File** (`processed_chunks.json`): Tracks processed chunks and their metadata
+- **Tracking Database** (`trials_tracking.db`): SQLite database tracking trial content hashes
+- **Combined Script** (`download_and_extract.py`): Handles download → extract → change detection → chunking
+
+**Auto-detection**:
+```bash
+# Just run the pipeline - it automatically determines what to do
+./bioyoda.sh run clinical_trials --cluster --jobs 30
+
+# System checks:
+# 1. No state file → Fresh run (process everything)
+# 2. State file exists, last_update == today → Skip (already processed today)
+# 3. State file exists, last_update != today → Update (process only changes)
+```
+
+### Update Workflow
+
+```bash
+# Day 1: Initial load
+./bioyoda.sh run clinical_trials --cluster --jobs 30
+# → Creates: trials_chunk_0001.index, trials_chunk_0002.index, ...
+# → State: processed_chunks.json + trials_tracking.db
+
+# Day 2+: Automatic incremental update
+./bioyoda.sh run clinical_trials --cluster --jobs 30
+# → Compares new AACT snapshot with tracking DB
+# → Identifies new + updated trials
+# → Creates: trials_update_20251013_chunk_0001.index, ...
+# → Preserves existing chunks and metadata
+
+# Insert updates to Qdrant (upserts automatically)
+./bioyoda.sh qdrant insert clinical_trials --cluster --jobs 10
+# → New trials: inserted as new points
+# → Updated trials: old vectors replaced (using NCT ID)
+```
+
+### Change Detection
+
+The system tracks content changes using **SHA256 hashes**:
+
+```python
+# Tracked for each trial:
+{
+  "nct_id": "NCT01234567",
+  "last_update_date": "2025-01-15",
+  "content_hash": "a3f5e9...",  # Hash of trial content
+  "last_processed_date": "2025-01-15T10:30:00"
+}
+```
+
+**Only processes trials when**:
+1. **New trial**: NCT ID not in tracking DB
+2. **Content changed**: Hash differs from tracking DB
+3. **Unchanged trials**: Skipped (saves processing time)
+
+### State Preservation
+
+**Key Feature**: State file metadata is preserved across runs:
+
+```json
+{
+  "last_update": "2025-10-13T12:57:34",
+  "no_changes": false,
+  "chunks": {
+    "trials_chunk_0001.json": {
+      "status": "completed",
+      "processed_date": "2025-10-12",
+      "vectors_count": 259,
+      "qdrant_inserted": true,
+      "qdrant_inserted_date": "2025-10-13"
+    },
+    "trials_update_20251013_chunk_0001.json": {
+      "status": "ready_to_process",
+      "num_trials": 50,
+      "size_mb": 0.3
+    }
+  }
+}
+```
+
+✅ **Qdrant metadata** (`qdrant_inserted`, `qdrant_inserted_date`) preserved
+✅ **Vector counts** (`vectors_count`) preserved
+✅ **Processing dates** tracked for all chunks
+✅ **Update chunks** named with dates for tracking
+
+### Performance Benefits
+
+**Example**: 554K trials, 1K trials changed
+
+| Mode | Initial Load | Update (1K changed) | Time Savings |
+|------|--------------|---------------------|--------------|
+| **Full** | 4 hours | 4 hours | 0% |
+| **Incremental** | 4 hours | ~10 minutes | 96% |
+
+**Update costs**:
+- Download: ~5 minutes (14GB snapshot)
+- Change detection: ~2 minutes (hash comparison)
+- Process changed trials: ~3 minutes (1K trials)
+- Total: ~10 minutes vs 4 hours
+
+### Monitoring Updates
+
+Check state file for update status:
+```bash
+# View state file
+cat out/state/clinical_trials/processed_chunks.json
+
+# Check tracking database
+sqlite3 out/state/clinical_trials/trials_tracking.db "SELECT COUNT(*) FROM trials"
+
+# List update chunks (dated)
+ls -lh out/raw_data/clinical_trials/chunked/trials_update_*.json
+```
+
 ## Pipeline Steps
 
 ### 1. Download (`download_aact.py`)

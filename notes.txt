@@ -1,5 +1,7 @@
 todos
 
+faiss script should start  shoul start where it left....
+
 1- biobtre integration
 2- data update integration
 3- grant data integration
