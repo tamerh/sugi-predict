@@ -1,0 +1,3 @@
+[submodule "external/biobtreev2"]
+	path = external/biobtreev2
+	url = git@github.com:tamerh/biobtreev2.git

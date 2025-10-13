@@ -1,9 +1,14 @@
+ok to update your memory just read the root README file and modules/**/README file to get know about project again.....today i added new
+submodule project external/biobtreev2 this the fork of public biobtree project you can check details in its readme or websearch....this
+so project is also mine  
+
+
 todos
 
-faiss script should start  shoul start where it left....
-
 1- biobtre integration
-2- data update integration
+
+
+0-faiss script should start  shoul start where it left....
 3- grant data integration
 4- patent data integration
 5- RAG improvement query expansion...ID mappings....
@@ -17,6 +22,11 @@ faiss script should start  shoul start where it left....
 Business launch plan...
 --strategically maybe small feature of the system first...clinical trials and so on...
 -- 
+
+
+git submodule deinit -f external/biobtreev2
+git rm -f external/biobtreev2
+
 
 
 update plan

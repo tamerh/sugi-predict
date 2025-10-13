@@ -1,0 +1,23 @@
+name: biobtree
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Go compiler and tools
+  - go >=1.20
+
+  # Build tools
+  - make
+  - gcc_linux-64
+  - gxx_linux-64
+
+  # Version control
+  - git
+
+  # Web UI build tools (for Vue.js frontend)
+  - nodejs >=18
+  # - npm
+
+  # Useful utilities
+  - curl
+  - jq
