@@ -89,6 +89,7 @@ Commands:
     run <module> [options]    Run data processing pipeline (PubMed/Clinical Trials)
     stop <module> [options]   Stop a running data processing pipeline
     status                    Show pipeline status
+    snapshot --name <name>    Create isolated code snapshot for production runs
     test [--pipeline]         Run test suite (default: fixture mode, --pipeline: full E2E)
     qdrant <subcommand>       Manage Qdrant vector database (start/stop/insert/status)
     api <subcommand>          Manage BioYoda Search API (start/stop/test/search/status)
@@ -242,6 +243,11 @@ Examples:
     # Clean specific module
     $0 clean pubmed
     $0 clean qdrant
+
+    # Create isolated snapshot for production
+    $0 snapshot --name prod_v1.0
+    cd snapshots/prod_v1.0/code
+    ./bioyoda.sh run all --cluster --bg
 
 For more information, visit: https://github.com/yourusername/bioyoda
 EOF
@@ -1996,6 +2002,238 @@ test_cleanup() {
 }
 
 ##############################################################################
+# Snapshot Function
+##############################################################################
+
+snapshot() {
+    local snapshot_name=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --name)
+                snapshot_name="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                echo ""
+                echo "Usage: $0 snapshot --name <name>"
+                echo ""
+                echo "Example:"
+                echo "  $0 snapshot --name prod_v1.0"
+                echo "  cd snapshots/prod_v1.0/code"
+                echo "  ./bioyoda.sh run pubmed --cluster --bg"
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$snapshot_name" ]]; then
+        log_error "--name required"
+        echo ""
+        echo "Usage: $0 snapshot --name <name>"
+        echo ""
+        echo "Example:"
+        echo "  $0 snapshot --name prod_v1.0"
+        echo "  cd snapshots/prod_v1.0/code"
+        exit 1
+    fi
+
+    # Create snapshot structure in snapshots/ directory
+    local snapshots_dir="$(pwd)/snapshots"
+    local snapshot_root="${snapshots_dir}/${snapshot_name}"
+    local code_dir="${snapshot_root}/code"
+
+    if [[ -d "$snapshot_root" ]]; then
+        log_error "Snapshot '${snapshot_name}' already exists at: ${snapshot_root}"
+        exit 1
+    fi
+
+    log_info "============================================================"
+    log_info "Creating snapshot: ${snapshot_name}"
+    log_info "============================================================"
+    echo ""
+
+    # Create directory structure
+    log_info "Step 1/4: Creating directory structure"
+    mkdir -p "${snapshots_dir}"
+    mkdir -p "${code_dir}"
+    mkdir -p "${snapshot_root}"/{raw_data,data,logs,state}
+    log_success "Directories created"
+    echo ""
+
+    # Copy code
+    log_info "Step 2/4: Copying code"
+    log_info "  Copying modules/..."
+    rsync -a --exclude='out*/' --exclude='*_out/' --exclude='.git/' \
+        --exclude='__pycache__/' --exclude='*.pyc' --exclude='.snakemake/' \
+        modules/ "${code_dir}/modules/"
+
+    log_info "  Copying config/..."
+    rsync -a config/ "${code_dir}/config/"
+
+    log_info "  Copying bioyoda.sh..."
+    cp bioyoda.sh "${code_dir}/"
+    chmod +x "${code_dir}/bioyoda.sh"
+
+    log_success "Code copied"
+    echo ""
+
+    # Modify config files
+    log_info "Step 3/4: Modifying config files"
+
+    for config_file in "${code_dir}"/config/*.yaml; do
+        if [[ -f "$config_file" ]]; then
+            local filename=$(basename "$config_file")
+            log_info "  Processing ${filename}..."
+
+            # Use Python to modify YAML files (preserving comments and formatting)
+            python3 << EOF
+import sys
+
+try:
+    from ruamel.yaml import YAML
+except ImportError:
+    # Fallback to basic yaml if ruamel.yaml not available
+    import yaml as basic_yaml
+    print(f"    ⚠ Warning: ruamel.yaml not found, using basic yaml (comments will be lost)", file=sys.stderr)
+
+    config_path = '${config_file}'
+    snapshot_root = '${snapshot_root}'
+    code_dir = '${code_dir}'
+
+    with open(config_path, 'r') as f:
+        config = basic_yaml.safe_load(f)
+
+    config['base_dir'] = snapshot_root
+    config['project_root'] = code_dir
+
+    with open(config_path, 'w') as f:
+        basic_yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    print(f"    ✓ Updated {config_path.split('/')[-1]}")
+    sys.exit(0)
+
+# Use ruamel.yaml to preserve comments and formatting
+config_path = '${config_file}'
+snapshot_root = '${snapshot_root}'
+code_dir = '${code_dir}'
+
+try:
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.width = 4096  # Prevent line wrapping
+
+    # Load config
+    with open(config_path, 'r') as f:
+        config = yaml.load(f)
+
+    # Update base_dir
+    config['base_dir'] = snapshot_root
+
+    # Add project_root
+    config['project_root'] = code_dir
+
+    # Write back with preserved formatting
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f)
+
+    print(f"    ✓ Updated {config_path.split('/')[-1]}")
+except Exception as e:
+    print(f"    ✗ Error updating ${filename}: {e}", file=sys.stderr)
+    sys.exit(1)
+EOF
+        fi
+    done
+
+    log_success "Config files updated"
+    echo ""
+
+    # Create manifest
+    log_info "Step 4/4: Creating snapshot manifest"
+
+    local git_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    local git_commit=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    local git_short=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local git_status="clean"
+    if ! git diff --quiet 2>/dev/null; then
+        git_status="MODIFIED"
+    fi
+
+    cat > "${code_dir}/SNAPSHOT_INFO.txt" << EOF
+================================================================================
+                      BioYoda Snapshot Information
+================================================================================
+
+Snapshot Name:    ${snapshot_name}
+Created:          $(date)
+Created By:       $(whoami)
+Source Directory: $(pwd)
+
+Git Information:
+  Branch:         ${git_branch}
+  Commit:         ${git_commit}
+  Short Hash:     ${git_short}
+  Status:         ${git_status}
+
+Directory Structure:
+  ${snapshot_root}/
+  ├── code/              # Code snapshot (this directory)
+  │   ├── modules/       # Pipeline modules
+  │   ├── config/        # Modified configs (base_dir and project_root set)
+  │   └── bioyoda.sh     # Main script
+  ├── raw_data/          # Downloaded raw data
+  ├── data/              # Processed data and outputs
+  ├── logs/              # Pipeline logs
+  └── state/             # Tracking files
+
+Usage:
+  cd snapshots/${snapshot_name}/code
+  ./bioyoda.sh run pubmed --cluster --bg --config config/config.yaml
+
+Configuration:
+  - All config files have been updated with:
+    base_dir: ${snapshot_root}
+    project_root: ${code_dir}
+
+  - This ensures all outputs go to the snapshot directory
+  - Scripts are loaded from the snapshot code directory
+  - Fully isolated from the main development directory
+
+Notes:
+  - This snapshot is self-contained and independent
+  - You can modify code in this snapshot without affecting the main directory
+  - Multiple snapshots can coexist (prod_v1.0, prod_v1.1, exp_test, etc.)
+
+================================================================================
+EOF
+
+    log_success "Manifest created"
+    echo ""
+
+    # Final summary
+    echo ""
+    log_info "============================================================"
+    log_success "Snapshot created successfully!"
+    log_info "============================================================"
+    echo ""
+    log_info "Snapshot Details:"
+    log_info "  Name:     ${snapshot_name}"
+    log_info "  Location: ${snapshot_root}/"
+    log_info "  Code:     ${code_dir}/"
+    log_info "  Git:      ${git_short} (${git_branch})"
+    echo ""
+    log_info "To use this snapshot:"
+    echo ""
+    echo "  cd snapshots/${snapshot_name}/code"
+    echo "  ./bioyoda.sh run pubmed --cluster --bg --config config/config.yaml"
+    echo ""
+    log_info "Snapshot info: snapshots/${snapshot_name}/code/SNAPSHOT_INFO.txt"
+    echo ""
+}
+
+##############################################################################
 # Quick Start/Stop Functions
 ##############################################################################
 
@@ -2178,6 +2416,9 @@ main() {
             ;;
         status)
             status "$@"
+            ;;
+        snapshot)
+            snapshot "$@"
             ;;
         test)
             test "$@"

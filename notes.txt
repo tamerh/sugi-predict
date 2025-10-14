@@ -1,7 +1,9 @@
+Use git worktrees to run multiple Claude sessions in parallel.
+
+
 ok to update your memory just read the root README file and modules/**/README file to get know about project again.....today i added new
 submodule project external/biobtreev2 this the fork of public biobtree project you can check details in its readme or websearch....this
 so project is also mine  
-
 
 todos
 
@@ -75,7 +77,6 @@ qstat -f
  ./bioyoda.sh run clinical_trials --config config/test_config.yaml --local
 
 ./bioyoda.sh run pubmed --config config/test_config.yaml --local
-
 
 ./bioyoda.sh run clinical_trials --cluster --bg
 

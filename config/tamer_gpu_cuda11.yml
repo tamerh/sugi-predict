@@ -31,6 +31,7 @@ dependencies:
   - pydantic  # Let conda resolve compatible version
   - pydantic-settings
   - pyyaml
+  - ruamel.yaml  # YAML with comment preservation (for snapshot feature)
 
   - pip
   - pip:

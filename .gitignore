@@ -8,8 +8,10 @@ logs.bkp/
 # New structure
 out/
 test_out/
+snapshots/
 
 # Other directories
+biobtreev2
 vibe/
 old/
 bkp
