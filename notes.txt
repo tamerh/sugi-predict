@@ -150,3 +150,12 @@ https://scite.ai/pricing
   optimization you'd want is to increase batch sizes to take advantage of GPU memory.
 
   
+
+  ✅ MDBX works perfectly on your NFS filesystem using the mdbx.Exclusive flag!
+
+  What is the Exclusive flag?
+
+  - Ensures single-process exclusive access to the database
+  - Bypasses file locking issues on NFS (your NFS has local_lock=none)
+  - Perfect for biobtree since it's typically single-process access during build/generate phases
+  - Safe for your use case where one process builds the DB, then it's read-only accessed

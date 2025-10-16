@@ -1,0 +1,97 @@
+##############################################################################
+#
+#   BioYoda Test Overrides
+#   Only test-specific changes - merges with config.yaml at runtime
+#
+##############################################################################
+
+# Override base directory for test mode
+base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/test_out"
+
+# PubMed test overrides
+pubmed:
+  # Test mode settings
+  test_mode: true
+  test_abstracts_limit: 100
+  debug_mode: true
+  debug_sample_size: 2
+  test_fixture_file: "test_out/raw_data/pubmed/baseline/test_abstracts.xml.gz"
+
+  # Reduced resources for testing
+  process_memory_mb: 8192      # 8GB (vs 12GB production)
+  merge_memory_mb: 8192        # 8GB (vs 256GB production)
+
+  # Qdrant insertion overrides
+  qdrant:
+    memory_mb: 4096            # 4GB (vs 8GB production)
+    runtime_hours: 1           # 1 hour (vs 8 hours production)
+
+# Clinical Trials test overrides
+clinical_trials:
+  # Test mode settings
+  test_mode: true
+  test_trials_limit: 400             # Process only first 400 trials (fallback)
+  #test_nct_ids_file: "tests/fixtures/clinical_trials/test_nct_ids.txt"  # Filter by specific NCT IDs
+
+  # Smaller chunks for testing
+  trials_per_chunk: 50         # Very small (vs 20000 production)
+  encode_batch_size: 32        # Optimized for CPU
+  num_workers: 1
+
+  # Reduced resources for testing
+  download_memory_mb: 8192     # 8GB (vs 16GB production)
+  extract_memory_mb: 8192      # 8GB (vs 16GB production)
+  process_memory_mb: 8192      # 8GB (vs 12GB production)
+  merge_memory_mb: 8192        # 8GB (vs 32GB production)
+
+  # Update settings overrides
+  update:
+    update_chunk_size: 50      # Small (vs 20000 production)
+
+  # Qdrant insertion overrides
+  qdrant:
+    memory_mb: 4096            # 4GB (vs 8GB production)
+    runtime_hours: 1           # 1 hour (vs 4 hours production)
+
+# Qdrant test overrides
+qdrant:
+  batch_size: 100              # Small batches (vs 500 production)
+  server:
+    memory_mb: 16384           # 16GB (vs 128GB production)
+    runtime_hours: 4           # 4 hours (vs 48 hours production)
+
+# Cluster test overrides
+cluster:
+  max_jobs: 10                 # Reduced for testing (vs 100 production)
+  default_memory_mb: 8192      # 8GB for testing
+
+# API test overrides
+api:
+  title: "BioYoda Search API (Test Mode)"
+
+# Qdrant API connection override
+qdrant_api:
+  connection_info_path: "test_out/data/qdrant/connection_info.txt"
+
+# Collection metadata overrides for test
+collections:
+  pubmed_abstracts:
+    description: "PubMed abstracts - Test dataset (100 abstracts)"
+    display_name: "PubMed (Test)"
+
+  clinical_trials:
+    description: "ClinicalTrials.gov - Test dataset (400 trials)"
+    display_name: "Clinical Trials (Test)"
+
+# Logging override
+logging:
+  file: "test_out/logs/api/api.log"
+
+# RAG test overrides
+rag:
+  default_top_k: 3             # Fewer results (vs 5 production)
+  max_top_k: 10                # Lower max (vs 20 production)
+  default_max_tokens: 500      # Shorter answers (vs 1000 production)
+  max_context_length: 50000    # Smaller context (vs 100000 production)
+  search_timeout: 10           # Shorter timeout (vs 30 production)
+  llm_timeout: 60              # Shorter timeout (vs 120 production)

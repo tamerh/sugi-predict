@@ -10,8 +10,11 @@ out/
 test_out/
 snapshots/
 
+# Generated config files (created on-the-fly from config.yaml + test_overrides.yaml)
+config/test_config.yaml
+
 # Other directories
-biobtreev2
+biobtreev2/
 vibe/
 old/
 bkp

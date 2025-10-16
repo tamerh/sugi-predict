@@ -73,6 +73,87 @@ check_snakemake() {
     fi
 }
 
+merge_test_config() {
+    # Generate test_config.yaml from config.yaml + test_overrides.yaml on-the-fly
+    # This avoids maintaining two full config files
+
+    if [[ ! -f "config/config.yaml" ]]; then
+        log_error "config/config.yaml not found!"
+        exit 1
+    fi
+
+    if [[ ! -f "config/test_overrides.yaml" ]]; then
+        log_error "config/test_overrides.yaml not found!"
+        exit 1
+    fi
+
+    log_info "Generating test_config.yaml from config.yaml + test_overrides.yaml..."
+
+    python3 << 'MERGE_EOF'
+import sys
+
+try:
+    from ruamel.yaml import YAML
+    use_ruamel = True
+except ImportError:
+    import yaml
+    use_ruamel = False
+    print("  ⚠ Warning: ruamel.yaml not found, using standard yaml (comments will be lost)", file=sys.stderr)
+    print("  ⚠ Install with: pip install ruamel.yaml", file=sys.stderr)
+
+def deep_merge(base, override):
+    """Deep merge override dict into base dict"""
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+if use_ruamel:
+    # Use ruamel.yaml to preserve comments and formatting
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.width = 4096  # Prevent line wrapping
+    yaml.default_flow_style = False
+
+    # Load configs
+    with open('config/config.yaml') as f:
+        config = yaml.load(f)
+
+    with open('config/test_overrides.yaml') as f:
+        overrides = yaml.load(f)
+
+    # Merge (ruamel.yaml uses special dict types that preserve comments)
+    merged = deep_merge(config, overrides)
+
+    # Write test_config.yaml with preserved formatting
+    with open('config/test_config.yaml', 'w') as f:
+        yaml.dump(merged, f)
+
+    print("  ✓ Generated config/test_config.yaml (comments preserved)")
+else:
+    # Fallback to standard yaml
+    with open('config/config.yaml') as f:
+        config = yaml.safe_load(f)
+
+    with open('config/test_overrides.yaml') as f:
+        overrides = yaml.safe_load(f)
+
+    merged = deep_merge(config, overrides)
+
+    with open('config/test_config.yaml', 'w') as f:
+        yaml.dump(merged, f, default_flow_style=False, sort_keys=False)
+
+    print("  ✓ Generated config/test_config.yaml (no comments)")
+MERGE_EOF
+
+    if [[ $? -ne 0 ]]; then
+        log_error "Failed to generate test_config.yaml"
+        exit 1
+    fi
+}
+
 ##############################################################################
 # Command Functions
 ##############################################################################
@@ -324,6 +405,8 @@ run() {
     if [[ -n "$custom_config" ]]; then
         active_config="$custom_config"
     elif [[ "$use_test_config" == true ]]; then
+        # Generate test_config.yaml on-the-fly from config.yaml + test_overrides.yaml
+        merge_test_config
         active_config="config/test_config.yaml"
         log_info "Using test configuration: config/test_config.yaml"
     fi
@@ -1006,6 +1089,8 @@ qdrant_start() {
     if [[ -n "$custom_config" ]]; then
         active_config="$custom_config"
     elif [[ "$use_test_config" == true ]]; then
+        # Generate test_config.yaml on-the-fly from config.yaml + test_overrides.yaml
+        merge_test_config
         active_config="config/test_config.yaml"
         log_info "Using test configuration: config/test_config.yaml"
     fi
@@ -1207,6 +1292,8 @@ qdrant_insert() {
     if [[ -n "$custom_config" ]]; then
         active_config="$custom_config"
     elif [[ "$use_test_config" == true ]]; then
+        # Generate test_config.yaml on-the-fly from config.yaml + test_overrides.yaml
+        merge_test_config
         active_config="config/test_config.yaml"
         log_info "Using test configuration: config/test_config.yaml"
     fi
@@ -1560,6 +1647,8 @@ api_start() {
     if [[ -n "$custom_config" ]]; then
         active_config="$custom_config"
     elif [[ "$use_test_config" == true ]]; then
+        # Generate test_config.yaml on-the-fly from config.yaml + test_overrides.yaml
+        merge_test_config
         active_config="config/test_config.yaml"
         log_info "Using test configuration: config/test_config.yaml"
         # Test mode: automatically run in background
@@ -1828,7 +1917,8 @@ test() {
         esac
     done
 
-    # Use test config
+    # Generate and use test config
+    merge_test_config
     local test_config="config/test_config.yaml"
     local base_dir="test_out"  # test_config.yaml uses base_dir: test_out/
 
