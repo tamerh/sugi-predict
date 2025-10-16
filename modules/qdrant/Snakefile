@@ -14,6 +14,10 @@
 
 import os
 import sys
+from datetime import datetime
+
+# Generate timestamp for this run (all logs will use same timestamp)
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Load configuration
 configfile: "config/config.yaml"
@@ -112,15 +116,10 @@ rule insert_pubmed_to_qdrant:
     conda:
         config["conda_env"]
     log:
-        f"{QDRANT_LOG_DIR}/insert_pubmed.log"
+        f"{QDRANT_LOG_DIR}/insert_pubmed_{RUN_TIMESTAMP}.log"
     shell:
         """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
-
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
+echo "==================== RUN STARTED: $(date) ====================" > {log}
 
         # Check if connection info exists
         if [ ! -f {input.connection_info} ]; then
@@ -199,15 +198,10 @@ rule insert_clinical_trials_to_qdrant:
     conda:
         config["conda_env"]
     log:
-        f"{QDRANT_LOG_DIR}/insert_clinical_trials.log"
+        f"{QDRANT_LOG_DIR}/insert_clinical_trials_{RUN_TIMESTAMP}.log"
     shell:
         """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
-
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
+echo "==================== RUN STARTED: $(date) ====================" > {log}
 
         # Check if connection info exists
         if [ ! -f {input.connection_info} ]; then

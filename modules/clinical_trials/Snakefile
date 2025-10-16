@@ -11,6 +11,9 @@ import os
 import glob
 from datetime import datetime
 
+# Generate timestamp for this run (all logs will use same timestamp)
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+
 # Load module-specific configuration
 ct_config = config["clinical_trials"]
 
@@ -177,7 +180,7 @@ checkpoint clinical_trials_download_and_extract:
         nct_ids_flag = f"--nct-ids-file {os.path.join(PROJECT_ROOT, ct_config['test_nct_ids_file'])}" if (ct_config.get("test_mode", False) and ct_config.get("test_nct_ids_file")) else "",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_download_extract.log")
     log:
-        os.path.join(LOG_DIR, "download_and_extract.log")
+        os.path.join(LOG_DIR, f"download_and_extract_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: 1
@@ -185,12 +188,7 @@ checkpoint clinical_trials_download_and_extract:
         mem_mb=ct_config["extract_memory_mb"]
     shell:
         """
-        # Backup previous log
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
-
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
+echo "==================== RUN STARTED: $(date) ====================" > {log}
         echo "Snakemake mode: {UPDATE_MODE}" >> {log}
         echo "Checkpoint triggered (output marker deleted by bioyoda.sh)" >> {log}
         echo "" >> {log}
@@ -252,7 +250,7 @@ rule clinical_trials_process_chunk:
         min_text_length = ct_config.get("min_text_length", 50),
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_process_chunk.{chunk_name}.log")
     log:
-        os.path.join(LOG_DIR, "process_chunk_{chunk_name}.log")
+        os.path.join(LOG_DIR, f"process_chunk_{{chunk_name}}_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: ct_config.get("num_workers", 1)
@@ -320,7 +318,7 @@ rule clinical_trials_process_single:
         limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_process.log")
     log:
-        os.path.join(LOG_DIR, "process.log")
+        os.path.join(LOG_DIR, f"process_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: ct_config.get("num_workers", 1)
@@ -372,7 +370,7 @@ rule clinical_trials_merge:
         vector_dim = ct_config["vector_dimension"],
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_merge.log")
     log:
-        os.path.join(LOG_DIR, "merge.log")
+        os.path.join(LOG_DIR, f"merge_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: 1
@@ -431,7 +429,7 @@ rule clinical_trials_validate:
         vector_dim = ct_config["vector_dimension"],
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "clinical_trials_validate.log")
     log:
-        os.path.join(LOG_DIR, "validate.log")
+        os.path.join(LOG_DIR, f"validate_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     shell:

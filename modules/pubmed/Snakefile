@@ -7,6 +7,10 @@
 
 import os
 import glob
+from datetime import datetime
+
+# Generate timestamp for this run (all logs will use same timestamp)
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Get PubMed-specific configuration
 pubmed_config = config["pubmed"]
@@ -154,7 +158,7 @@ checkpoint pubmed_download:
         debug_limit = pubmed_config.get("debug_sample_size", 2),
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_download.log")
     log:
-        os.path.join(LOG_DIR, "download.log")
+        os.path.join(LOG_DIR, f"download_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: 1
@@ -162,12 +166,7 @@ checkpoint pubmed_download:
         mem_mb=config["cluster"]["default_memory_mb"]
     shell:
         """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
-
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
+echo "==================== RUN STARTED: $(date) ====================" > {log}
         echo "Starting PubMed download..." >> {log}
         echo "DEBUG: raw_dir param = {params.raw_dir}" >> {log}
         echo "DEBUG: script = {params.script}" >> {log}
@@ -218,7 +217,7 @@ rule pubmed_process_file:
         limit_flag = f"--limit {pubmed_config['test_abstracts_limit']}" if pubmed_config.get("test_mode", False) else "",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_process_file.{subdir}.{filename}.log")
     log:
-        os.path.join(LOG_DIR, "process", "{subdir}", "{filename}.log")
+        os.path.join(LOG_DIR, "process", "{subdir}", f"{{filename}}_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: 1
@@ -267,7 +266,7 @@ rule pubmed_merge:
         merged_dir = MERGED_DIR,
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_merge.log")
     log:
-        os.path.join(LOG_DIR, "merge.log")
+        os.path.join(LOG_DIR, f"merge_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: 1
@@ -275,12 +274,7 @@ rule pubmed_merge:
         mem_mb=pubmed_config["merge_memory_mb"]
     shell:
         """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
-
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
+echo "==================== RUN STARTED: $(date) ====================" > {log}
         echo "Starting merge of $(echo {input.indices} | wc -w) index files..." >> {log}
 
         python {params.script} \
@@ -304,17 +298,12 @@ rule pubmed_validate:
         vector_dim = pubmed_config["vector_dimension"],
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "pubmed_validate.log")
     log:
-        os.path.join(LOG_DIR, "validate.log")
+        os.path.join(LOG_DIR, f"validate_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     shell:
         """
-        # Backup previous log if it exists
-        if [ -f {log} ]; then
-            mv {log} {log}.$(date +%Y%m%d_%H%M%S).bak
-        fi
-
-        echo "==================== RUN STARTED: $(date) ====================" > {log}
+echo "==================== RUN STARTED: $(date) ====================" > {log}
         echo "Validating final indices..." >> {log}
 
         python -c "

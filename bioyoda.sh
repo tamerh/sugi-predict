@@ -1107,6 +1107,9 @@ qdrant_start() {
     mkdir -p ${base_dir}/logs/qdrant
     mkdir -p ${base_dir}/data/qdrant
 
+    # Generate timestamp for server log
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+
     # Call start_server.sh directly
     bash modules/qdrant/scripts/start_server.sh \
         --container modules/qdrant/setup/singularity/qdrant.sif \
@@ -1117,7 +1120,7 @@ qdrant_start() {
         --job-name q_server \
         --mode ${mode} \
         --connection-info ${base_dir}/data/qdrant/connection_info.txt \
-        --log ${base_dir}/logs/qdrant/server.log \
+        --log ${base_dir}/logs/qdrant/server_${timestamp}.log \
         --queue ${queue}
 
     if [[ $? -eq 0 ]]; then
@@ -1706,7 +1709,9 @@ api_start() {
 
     # Execute
     if [[ "$background" == true ]]; then
-        local api_log="${base_dir}/logs/api/server.log"
+        # Generate timestamp for server log
+        local timestamp=$(date +%Y%m%d_%H%M%S)
+        local api_log="${base_dir}/logs/api/server_${timestamp}.log"
         log_info "Starting API server in background..."
         log_info "Log: ${api_log}"
         log_info "Monitor with: tail -f ${api_log}"
