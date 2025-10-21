@@ -171,6 +171,7 @@ Commands:
     stop <module> [options]   Stop a running data processing pipeline
     status                    Show pipeline status
     snapshot --name <name>    Create isolated code snapshot for production runs
+                              (raw_data is symlinked to shared snapshots/raw_data/)
     test [--pipeline]         Run test suite (default: fixture mode, --pipeline: full E2E)
     qdrant <subcommand>       Manage Qdrant vector database (start/stop/insert/status)
     api <subcommand>          Manage BioYoda Search API (start/stop/test/search/status)
@@ -329,6 +330,12 @@ Examples:
     $0 snapshot --name prod_v1.0
     cd snapshots/prod_v1.0/code
     ./bioyoda.sh run all --cluster --bg
+
+    # Snapshots use shared raw_data by default:
+    # - raw_data/ is symlinked to snapshots/raw_data/ (saves disk space)
+    # - Each snapshot maintains independent state/ for tracking
+    # - Manual coordination: only run one download/update at a time
+    # - To use isolated raw_data: rm raw_data && mkdir raw_data
 
 For more information, visit: https://github.com/yourusername/bioyoda
 EOF
@@ -1110,7 +1117,18 @@ qdrant_start() {
     # Generate timestamp for server log
     local timestamp=$(date +%Y%m%d_%H%M%S)
 
-    # Call start_server.sh directly
+    # Read storage configuration from config (auto-detects production vs development)
+    local scratch_base=$(grep -A20 "^qdrant:" ${active_config} | grep -A5 "storage:" | grep "local_scratch_base:" | sed 's/.*local_scratch_base: *"\?\([^"]*\)"\?.*/\1/' || echo "")
+
+    # Auto-detect mode based on scratch_base presence
+    if [[ -n "$scratch_base" ]]; then
+        log_info "Production mode: Using local scratch at ${scratch_base}"
+        log_info "  Data will be stored in: ${scratch_base}/qdrant_<hostname>_<date>/"
+    else
+        log_info "Development mode: Using NFS storage at ${base_dir}/data/qdrant"
+    fi
+
+    # Call start_server.sh directly (mode auto-detected based on scratch_base)
     bash modules/qdrant/scripts/start_server.sh \
         --container modules/qdrant/setup/singularity/qdrant.sif \
         --config config/qdrant_config.yaml \
@@ -1121,7 +1139,8 @@ qdrant_start() {
         --mode ${mode} \
         --connection-info ${base_dir}/data/qdrant/connection_info.txt \
         --log ${base_dir}/logs/qdrant/server_${timestamp}.log \
-        --queue ${queue}
+        --queue ${queue} \
+        --scratch-base "${scratch_base}"
 
     if [[ $? -eq 0 ]]; then
         log_success "Qdrant server started successfully"
@@ -2154,7 +2173,18 @@ snapshot() {
     log_info "Step 1/4: Creating directory structure"
     mkdir -p "${snapshots_dir}"
     mkdir -p "${code_dir}"
-    mkdir -p "${snapshot_root}"/{raw_data,data,logs,state}
+
+    # Create shared raw_data directory and symlink to it
+    local shared_raw_data="${snapshots_dir}/raw_data"
+    mkdir -p "${shared_raw_data}"
+    ln -s "${shared_raw_data}" "${snapshot_root}/raw_data"
+    log_info "  raw_data: SYMLINKED to shared ${shared_raw_data}"
+
+    # Always create per-snapshot directories (NEVER shared)
+    mkdir -p "${snapshot_root}"/{data,logs,state}
+    log_info "  data/: Per-snapshot (outputs)"
+    log_info "  logs/: Per-snapshot (logs)"
+    log_info "  state/: Per-snapshot (tracking files - NEVER shared)"
     log_success "Directories created"
     echo ""
 
@@ -2278,10 +2308,10 @@ Directory Structure:
   │   ├── modules/       # Pipeline modules
   │   ├── config/        # Modified configs (base_dir and project_root set)
   │   └── bioyoda.sh     # Main script
-  ├── raw_data/          # Downloaded raw data
-  ├── data/              # Processed data and outputs
-  ├── logs/              # Pipeline logs
-  └── state/             # Tracking files
+  ├── raw_data/          # SYMLINK to shared snapshots/raw_data/
+  ├── data/              # Processed data and outputs (PER-SNAPSHOT)
+  ├── logs/              # Pipeline logs (PER-SNAPSHOT)
+  └── state/             # State tracking files (PER-SNAPSHOT, NEVER SHARED)
 
 Usage:
   cd snapshots/${snapshot_name}/code
@@ -2296,10 +2326,27 @@ Configuration:
   - Scripts are loaded from the snapshot code directory
   - Fully isolated from the main development directory
 
+Raw Data Sharing:
+  - raw_data/ is SYMLINKED to shared snapshots/raw_data/
+  - Saves disk space by reusing downloaded data across snapshots
+  - All snapshots read from the same raw_data source
+  - Each snapshot maintains its own state/ for tracking what it has processed
+  - state/ is NEVER shared - each snapshot tracks independently
+
+  Manual Coordination Required:
+  - Do NOT run concurrent downloads/updates (only one at a time)
+  - Wait for one snapshot's download to finish before starting another
+  - Processing/reading from raw_data is safe concurrently
+
+  Need Isolated raw_data?:
+  - Delete the symlink: rm raw_data
+  - Create real directory: mkdir raw_data
+
 Notes:
   - This snapshot is self-contained and independent
   - You can modify code in this snapshot without affecting the main directory
   - Multiple snapshots can coexist (prod_v1.0, prod_v1.1, exp_test, etc.)
+  - State tracking (state/) is always per-snapshot, even with shared raw_data
 
 ================================================================================
 EOF

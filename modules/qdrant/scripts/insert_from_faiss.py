@@ -29,6 +29,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 import psutil
+import requests
 from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
@@ -42,6 +43,41 @@ def log_with_timestamp(message: str) -> None:
     log_line = f"[{timestamp}] [MEM: {memory_mb:.1f}MB] {message}"
     print(log_line, flush=True)
 
+def get_qdrant_telemetry(qdrant_url: str) -> dict:
+    """
+    Get Qdrant server telemetry metrics.
+
+    Args:
+        qdrant_url: Qdrant server URL
+
+    Returns:
+        Dictionary with telemetry metrics, or empty dict if unavailable
+    """
+    try:
+        response = requests.get(f"{qdrant_url}/telemetry", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+
+            # Extract key metrics
+            metrics = {}
+
+            # Memory metrics (in MB)
+            if 'app' in data and 'memory' in data['app']:
+                memory = data['app']['memory']
+                metrics['memory_used_mb'] = memory.get('used_bytes', 0) / 1024 / 1024
+                metrics['memory_total_mb'] = memory.get('total_bytes', 0) / 1024 / 1024
+
+            # Collection count
+            if 'collections' in data:
+                metrics['collections_count'] = len(data['collections'])
+
+            return metrics
+        else:
+            return {}
+    except Exception as e:
+        # Silent fail - telemetry is optional
+        return {}
+
 def get_point_id_from_metadata(meta: dict, fallback_id: int) -> int:
     """
     Extract point ID from metadata using document unique identifiers.
@@ -49,7 +85,9 @@ def get_point_id_from_metadata(meta: dict, fallback_id: int) -> int:
     Priority order:
     1. pmid (PubMed) - use directly as integer
     2. nct_id (Clinical Trials) - hash to integer (NCT IDs are alphanumeric)
-    3. fallback_id - sequential ID for backward compatibility
+    3. patent_id (Patents) - hash to integer (Patent IDs are alphanumeric)
+    4. surechembl_id (Patent Compounds) - hash to integer (SureChEMBL IDs are alphanumeric)
+    5. fallback_id - sequential ID for backward compatibility
 
     Args:
         meta: Metadata dictionary
@@ -74,6 +112,22 @@ def get_point_id_from_metadata(meta: dict, fallback_id: int) -> int:
         hash_bytes = hashlib.sha256(nct_id.encode()).digest()[:8]
         point_id = int.from_bytes(hash_bytes, byteorder='big', signed=False)
         # Ensure positive and within reasonable range (Qdrant uses unsigned 64-bit)
+        return point_id & 0x7FFFFFFFFFFFFFFF  # Ensure positive 63-bit number
+
+    # Try Patent ID (Patents text)
+    if 'patent_id' in meta:
+        patent_id = str(meta['patent_id'])
+        # Hash patent ID to get consistent integer
+        hash_bytes = hashlib.sha256(patent_id.encode()).digest()[:8]
+        point_id = int.from_bytes(hash_bytes, byteorder='big', signed=False)
+        return point_id & 0x7FFFFFFFFFFFFFFF  # Ensure positive 63-bit number
+
+    # Try SureChEMBL ID (Patent compounds)
+    if 'surechembl_id' in meta:
+        surechembl_id = str(meta['surechembl_id'])
+        # Hash SureChEMBL ID to get consistent integer
+        hash_bytes = hashlib.sha256(surechembl_id.encode()).digest()[:8]
+        point_id = int.from_bytes(hash_bytes, byteorder='big', signed=False)
         return point_id & 0x7FFFFFFFFFFFFFFF  # Ensure positive 63-bit number
 
     # No unique ID found, use fallback
@@ -133,13 +187,48 @@ def upsert_with_retry(client: QdrantClient, collection_name: str, points: list,
     return False
 
 def create_collection_if_needed(client: QdrantClient, collection_name: str,
-                                 vector_size: int = 768) -> None:
-    """Create Qdrant collection if it doesn't exist."""
+                                 vector_size: int = 768, enable_quantization: bool = True,
+                                 hnsw_m: int = 16, hnsw_ef_construct: int = 100,
+                                 max_segment_size: int = 2_000_000,
+                                 default_segment_number: int = 2,
+                                 indexing_threshold: int = 1_000_000) -> None:
+    """Create Qdrant collection if it doesn't exist.
+
+    Args:
+        client: Qdrant client
+        collection_name: Collection name
+        vector_size: Vector dimension
+        enable_quantization: Enable scalar quantization (default: True, recommended for large collections)
+        hnsw_m: HNSW m parameter (graph connectivity, default: 16)
+        hnsw_ef_construct: HNSW ef_construct parameter (build quality, default: 100)
+        max_segment_size: Maximum segment size in points (default: 2_000_000)
+        default_segment_number: Default number of segments (default: 2, set to 0 for dynamic)
+        indexing_threshold: Minimum points before indexing starts (default: 1_000_000, higher = fewer segments)
+    """
     try:
         client.get_collection(collection_name)
         log_with_timestamp(f"Collection '{collection_name}' already exists")
     except Exception:
         log_with_timestamp(f"Creating collection '{collection_name}'...")
+
+        # Prepare quantization config if enabled
+        quantization_config = None
+        if enable_quantization:
+            log_with_timestamp(f"  ✓ Scalar quantization ENABLED (int8, quantile=0.99)")
+            quantization_config = models.ScalarQuantization(
+                scalar=models.ScalarQuantizationConfig(
+                    type=models.ScalarType.INT8,
+                    quantile=0.99,
+                    always_ram=True
+                )
+            )
+        else:
+            log_with_timestamp(f"  ⚠ Quantization DISABLED")
+
+        log_with_timestamp(f"  HNSW config: m={hnsw_m}, ef_construct={hnsw_ef_construct}")
+        log_with_timestamp(f"  Segment config: default_segment_number={default_segment_number}, max_segment_size={max_segment_size:,} points")
+        log_with_timestamp(f"  Indexing threshold: {indexing_threshold:,} points (higher = fewer segments during bulk insert)")
+
         client.create_collection(
             collection_name=collection_name,
             vectors_config=VectorParams(
@@ -148,26 +237,28 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
             ),
             # Optimize for large datasets with better WAL handling
             hnsw_config=models.HnswConfigDiff(
-                m=16,
-                ef_construct=100,
+                m=hnsw_m,
+                ef_construct=hnsw_ef_construct,
                 full_scan_threshold=10000
             ),
             optimizers_config=models.OptimizersConfigDiff(
                 deleted_threshold=0.2,
                 vacuum_min_vector_number=1000,
-                default_segment_number=0,
-                max_segment_size=2_000_000,  # 2M vectors per segment (reduced for better WAL stability)
+                default_segment_number=default_segment_number,
+                max_segment_size=max_segment_size,
                 memmap_threshold=500_000,     # Lower threshold for memory mapping
-                indexing_threshold=1_000_000, # Lower threshold for indexing
+                indexing_threshold=indexing_threshold,  # Configurable indexing threshold
                 flush_interval_sec=30         # Flush WAL more frequently (every 30 seconds)
             ),
             # Explicitly set WAL config for NFS environments
             wal_config=models.WalConfigDiff(
                 wal_capacity_mb=256,          # Limit WAL size to 256MB
                 wal_segments_ahead=2          # Keep fewer WAL segments ahead
-            )
+            ),
+            # Add quantization config if enabled
+            quantization_config=quantization_config
         )
-        log_with_timestamp(f"Collection '{collection_name}' created")
+        log_with_timestamp(f"Collection '{collection_name}' created with quantization={enable_quantization}")
 
 def find_faiss_files(faiss_dir: str) -> list:
     """Find all FAISS index files in directory."""
@@ -229,6 +320,78 @@ def load_faiss_and_metadata(index_path: str) -> tuple:
 
     return index, metadata
 
+def wait_for_green_status(client: QdrantClient, collection_name: str) -> tuple:
+    """
+    Wait for collection to reach GREEN status after insertion.
+
+    After bulk insertion, Qdrant needs time to optimize and index vectors.
+    Status transitions: YELLOW (optimizing) → GREEN (ready for queries)
+
+    Args:
+        client: Qdrant client
+        collection_name: Collection name
+
+    Returns:
+        Tuple of (status, wait_time_seconds)
+    """
+    log_with_timestamp("")
+    log_with_timestamp("="*80)
+    log_with_timestamp("WAITING FOR COLLECTION OPTIMIZATION")
+    log_with_timestamp("="*80)
+    log_with_timestamp("Collection is optimizing in background (HNSW indexing, segment merging)")
+    log_with_timestamp("This is normal after bulk insertion - wait for GREEN status before queries")
+    log_with_timestamp("")
+
+    wait_time = 0
+    check_interval = 5  # Check every 5 seconds
+    log_interval = 30   # Log every 30 seconds
+    last_log_time = 0
+
+    while True:
+        try:
+            info = client.get_collection(collection_name)
+            status = info.status
+
+            # Get additional info for logging
+            points_count = info.points_count if hasattr(info, 'points_count') else 0
+            indexed_count = info.indexed_vectors_count if hasattr(info, 'indexed_vectors_count') else 0
+            segments_count = info.segments_count if hasattr(info, 'segments_count') else 0
+
+            if status == "green":
+                log_with_timestamp("")
+                log_with_timestamp(f"✓ Collection is GREEN after {wait_time}s")
+                log_with_timestamp(f"  Points: {points_count:,}")
+                log_with_timestamp(f"  Indexed: {indexed_count:,} ({indexed_count/points_count*100:.1f}%)" if points_count > 0 else "  Indexed: N/A")
+                log_with_timestamp(f"  Segments: {segments_count}")
+                log_with_timestamp(f"  Collection is ready for queries!")
+                return (status, wait_time)
+
+            # Log status periodically
+            if wait_time - last_log_time >= log_interval or wait_time == 0:
+                indexed_pct = (indexed_count/points_count*100) if points_count > 0 else 0
+
+                # Get telemetry for memory info
+                from urllib.parse import urlparse
+                base_url = f"{urlparse(client._client.rest_uri).scheme}://{urlparse(client._client.rest_uri).netloc}"
+                telemetry = get_qdrant_telemetry(base_url)
+                memory_info = ""
+                if telemetry and 'memory_used_mb' in telemetry:
+                    memory_info = f" | Memory: {telemetry['memory_used_mb']:.1f}MB"
+
+                log_with_timestamp(f"⏳ Status: {status.upper()} | Waiting: {wait_time}s | Points: {points_count:,} | Indexed: {indexed_pct:.1f}% | Segments: {segments_count}{memory_info}")
+                last_log_time = wait_time
+
+            # Wait before next check
+            time.sleep(check_interval)
+            wait_time += check_interval
+
+        except Exception as e:
+            log_with_timestamp(f"⚠ Error checking status: {e}")
+            log_with_timestamp(f"  Retrying in {check_interval}s...")
+            time.sleep(check_interval)
+            wait_time += check_interval
+            continue
+
 def delete_trial_vectors(client: QdrantClient, collection_name: str, nct_ids: list) -> int:
     """
     Delete all vectors for given NCT IDs from the collection.
@@ -276,7 +439,13 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                       batch_size: int = 1000, start_id: int = 0,
                       vector_size: int = 768, tracking_file: str = None,
                       chunk_tracking_file: str = None,
-                      update_mode: bool = False) -> int:
+                      update_mode: bool = False,
+                      hnsw_m: int = 16, hnsw_ef_construct: int = 100,
+                      max_segment_size: int = 2_000_000,
+                      default_segment_number: int = 2,
+                      indexing_threshold: int = 1_000_000,
+                      enable_quantization: bool = True,
+                      prefer_grpc: bool = False) -> int:
     """
     Insert data from FAISS files to Qdrant
 
@@ -290,6 +459,13 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
         tracking_file: Optional path to PubMed tracking JSON file (for incremental updates)
         chunk_tracking_file: Optional path to chunk tracking JSON file (for clinical trials)
         update_mode: If True, delete old vectors before inserting (for clinical trials updates)
+        hnsw_m: HNSW m parameter (graph connectivity, default: 16)
+        hnsw_ef_construct: HNSW ef_construct parameter (build quality, default: 100)
+        max_segment_size: Maximum segment size in points (default: 2_000_000)
+        default_segment_number: Default number of segments (default: 2, set to 0 for dynamic)
+        indexing_threshold: Minimum points before indexing starts (default: 1_000_000, set higher for large datasets)
+        enable_quantization: Enable scalar quantization (default: True)
+        prefer_grpc: Prefer gRPC protocol over HTTP (20-30% faster for bulk inserts, default: False)
 
     Returns:
         Total number of vectors inserted
@@ -384,19 +560,60 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     # Initialize Qdrant client
     log_with_timestamp("Connecting to Qdrant...")
     try:
-        # Increase timeout to 300s (5 minutes) for slow NFS writes
-        client = QdrantClient(url=qdrant_url, timeout=300)
-        # Test connection
-        collections = client.get_collections()
-        log_with_timestamp(f"Connected. Existing collections: {len(collections.collections)}")
-        log_with_timestamp(f"Client timeout set to 300 seconds")
+        # Parse URL to extract host and port
+        from urllib.parse import urlparse
+        parsed_url = urlparse(qdrant_url)
+        host = parsed_url.hostname or 'localhost'
+        http_port = parsed_url.port or 6333
+
+        # Initialize client with gRPC preference if requested
+        if prefer_grpc:
+            # Try gRPC first (default gRPC port is HTTP port + 1)
+            grpc_port = http_port + 1
+            log_with_timestamp(f"Attempting gRPC connection to {host}:{grpc_port}...")
+            try:
+                client = QdrantClient(
+                    host=host,
+                    port=http_port,
+                    grpc_port=grpc_port,
+                    prefer_grpc=True,
+                    timeout=300
+                )
+                # Test connection
+                collections = client.get_collections()
+                log_with_timestamp(f"✓ Connected via gRPC (20-30% faster for bulk inserts)")
+                log_with_timestamp(f"  Existing collections: {len(collections.collections)}")
+                log_with_timestamp(f"  Timeout: 300 seconds")
+            except Exception as grpc_error:
+                # Fall back to HTTP
+                log_with_timestamp(f"⚠ gRPC connection failed: {grpc_error}")
+                log_with_timestamp(f"Falling back to HTTP...")
+                client = QdrantClient(url=qdrant_url, timeout=300)
+                collections = client.get_collections()
+                log_with_timestamp(f"✓ Connected via HTTP (fallback)")
+                log_with_timestamp(f"  Existing collections: {len(collections.collections)}")
+                log_with_timestamp(f"  Timeout: 300 seconds")
+        else:
+            # Use HTTP
+            client = QdrantClient(url=qdrant_url, timeout=300)
+            collections = client.get_collections()
+            log_with_timestamp(f"✓ Connected via HTTP")
+            log_with_timestamp(f"  Existing collections: {len(collections.collections)}")
+            log_with_timestamp(f"  Timeout: 300 seconds")
+            log_with_timestamp(f"  Tip: Use --prefer-grpc for 20-30% faster bulk inserts")
     except Exception as e:
         log_with_timestamp(f"ERROR: Failed to connect to Qdrant at {qdrant_url}")
         log_with_timestamp(f"Error: {e}")
         raise
 
     # Create collection if needed
-    create_collection_if_needed(client, collection_name, vector_size)
+    create_collection_if_needed(client, collection_name, vector_size,
+                                enable_quantization=enable_quantization,
+                                hnsw_m=hnsw_m,
+                                hnsw_ef_construct=hnsw_ef_construct,
+                                max_segment_size=max_segment_size,
+                                default_segment_number=default_segment_number,
+                                indexing_threshold=indexing_threshold)
 
     # Find all FAISS files
     index_files = find_faiss_files(faiss_dir)
@@ -452,6 +669,10 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                     id_strategy = "pmid"
                 elif 'nct_id' in first_meta:
                     id_strategy = "nct_id"
+                elif 'patent_id' in first_meta:
+                    id_strategy = "patent_id"
+                elif 'surechembl_id' in first_meta:
+                    id_strategy = "surechembl_id"
         except Exception:
             pass  # Ignore errors, will use sequential as fallback
 
@@ -460,6 +681,10 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
         log_with_timestamp("  Using PMID as point ID (enables upsert for incremental updates)")
     elif id_strategy == "nct_id":
         log_with_timestamp("  Using hashed NCT ID as point ID (enables upsert for incremental updates)")
+    elif id_strategy == "patent_id":
+        log_with_timestamp("  Using hashed Patent ID as point ID (enables upsert for incremental updates)")
+    elif id_strategy == "surechembl_id":
+        log_with_timestamp("  Using hashed SureChEMBL ID as point ID (enables upsert for incremental updates)")
     else:
         log_with_timestamp("  Using sequential IDs (fallback mode)")
     log_with_timestamp("")
@@ -565,6 +790,17 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
             del index, vectors, metadata
             gc.collect()
 
+            # Log Qdrant telemetry after each file
+            telemetry = get_qdrant_telemetry(qdrant_url)
+            if telemetry:
+                memory_used = telemetry.get('memory_used_mb', 0)
+                memory_total = telemetry.get('memory_total_mb', 0)
+                if memory_total > 0:
+                    memory_pct = (memory_used / memory_total) * 100
+                    log_with_timestamp(f"  └─ Qdrant memory: {memory_used:.1f}MB / {memory_total:.1f}MB ({memory_pct:.1f}%)")
+                else:
+                    log_with_timestamp(f"  └─ Qdrant memory: {memory_used:.1f}MB")
+
         except Exception as e:
             log_with_timestamp(f"  └─ ERROR: {e}")
             log_with_timestamp(f"  └─ Continuing with next file...")
@@ -585,14 +821,21 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     log_with_timestamp(f"Final point ID: {global_point_id}")
     log_with_timestamp("="*80)
 
-    # Verify collection
+    # Wait for collection to reach GREEN status
+    # This is critical - collection is not ready for queries until GREEN
     try:
-        info = client.get_collection(collection_name)
-        log_with_timestamp(f"Collection verification:")
-        log_with_timestamp(f"  Points count: {info.points_count:,}")
-        log_with_timestamp(f"  Status: {info.status}")
+        final_status, optimization_time = wait_for_green_status(client, collection_name)
+        log_with_timestamp("")
+        log_with_timestamp("="*80)
+        log_with_timestamp(f"COLLECTION READY FOR PRODUCTION")
+        log_with_timestamp("="*80)
+        log_with_timestamp(f"Total insertion time: (see logs above)")
+        log_with_timestamp(f"Optimization time: {optimization_time}s ({optimization_time/60:.1f} minutes)")
+        log_with_timestamp(f"Final status: {final_status.upper()}")
+        log_with_timestamp("="*80)
     except Exception as e:
-        log_with_timestamp(f"WARNING: Could not verify collection: {e}")
+        log_with_timestamp(f"WARNING: Error waiting for GREEN status: {e}")
+        log_with_timestamp(f"Collection may not be fully optimized yet")
 
     return total_inserted
 
@@ -650,6 +893,54 @@ def main():
         action='store_true',
         help='Enable update mode (delete old vectors before inserting for clinical trials)'
     )
+    parser.add_argument(
+        '--hnsw-m',
+        type=int,
+        default=16,
+        help='HNSW m parameter (graph connectivity, default: 16)'
+    )
+    parser.add_argument(
+        '--hnsw-ef-construct',
+        type=int,
+        default=100,
+        help='HNSW ef_construct parameter (index build quality, default: 100)'
+    )
+    parser.add_argument(
+        '--max-segment-size',
+        type=int,
+        default=2_000_000,
+        help='Maximum segment size in points (default: 2,000,000)'
+    )
+    parser.add_argument(
+        '--default-segment-number',
+        type=int,
+        default=2,
+        help='Default number of segments (default: 2, set to 0 for dynamic segmentation)'
+    )
+    parser.add_argument(
+        '--indexing-threshold',
+        type=int,
+        default=1_000_000,
+        help='Minimum points before indexing starts (default: 1M, use 5M+ for large datasets to reduce segments)'
+    )
+    parser.add_argument(
+        '--enable-quantization',
+        action='store_true',
+        default=True,
+        help='Enable scalar quantization (default: True)'
+    )
+    parser.add_argument(
+        '--disable-quantization',
+        dest='enable_quantization',
+        action='store_false',
+        help='Disable scalar quantization'
+    )
+    parser.add_argument(
+        '--prefer-grpc',
+        action='store_true',
+        default=False,
+        help='Prefer gRPC protocol over HTTP (20-30%% faster for bulk inserts, auto-fallback to HTTP)'
+    )
 
     args = parser.parse_args()
 
@@ -669,7 +960,14 @@ def main():
             vector_size=args.vector_size,
             tracking_file=args.tracking_file,
             chunk_tracking_file=args.chunk_tracking_file,
-            update_mode=args.update_mode
+            update_mode=args.update_mode,
+            hnsw_m=args.hnsw_m,
+            hnsw_ef_construct=args.hnsw_ef_construct,
+            max_segment_size=args.max_segment_size,
+            default_segment_number=args.default_segment_number,
+            indexing_threshold=args.indexing_threshold,
+            enable_quantization=args.enable_quantization,
+            prefer_grpc=args.prefer_grpc
         )
     except KeyboardInterrupt:
         log_with_timestamp("\nInterrupted by user")

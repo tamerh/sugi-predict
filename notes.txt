@@ -1,4 +1,91 @@
-Use git worktrees to run multiple Claude sessions in parallel.
+nohup python3 modules/patents/scripts/process_uspto_json.py       --input-dir /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto       --filter-ids test_out/raw_data/patents/surechembl/2025-10-01/us_patent_ids.txt       --output /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto/uspto_historical.parquet  > /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/logs/patents/process_uspto_json_$(date +%Y%m%d_%H%M%S).log 2>&1 &
+
+
+
+patents data for text....
+
+ ok we are going to talk little bit more about patents integration which you can get the details in the modules/patents/README also briefy update
+  your memory for the project from the root README......now as you remembered we couldnt integrate the patents details text like abstracts and so on
+  since surechembl didnt include this....this is probably the reasons of different region licese polices like US and Europe...but for US we can get
+  these texts and process it from this link data.uspto.gov/bulkdata/datasets/APPDT?fileDataFromDate=2025-10-08&fileDataToDate=2025-10-09 but i guess
+  there is a human control check but can you still download? and lets plan this first for this topic? 
+
+ ok i like this plan but just we need some improvments....for integrating to biobtree it wont be like new plugin but 
+just as new datasource like others where it will reside in update module and also with proper configuration.......for 
+RAG integration in my vision vision there are this router but little bit more intelligent....we will be litle bit expand
+ the queries using LLM infront of course give me your suggestion...but my vision is like from the query via LLM we will 
+expand several qdrant and biobtree queries and then combine them for the best answer...what do you think based on this 
+lets improve the compherensive plan you did
+
+ok now we are going to discuss another topic....i would like integrate patent/grants data to my project maybe first 
+read about again project vision and current implementation via README and biobtreev2/README. biobtree at some point will
+ be integrated to main bioyoda RAG system but this is later. so regarding the patents/grants data integration i found 
+out following blog article and then notice the sureCHEMBL project where they are providing bi-weekly full data please 
+also check their website...so thing that i want to discuss is till now bioyoda project with qdrant db provide semantic 
+search capabilities and at the same time biobtree project is giant mapping of crosss references but it has also text 
+data but not as powerful as semantic but still part of these connection.....at the same time notice how we integrate 
+pubmed and clinical trials in main bioyoda project with nice semantic search...my grant vision is in the RAG part 
+combine this 2 power....anyway now based on this make compherensive analysis about how we can process patent/grant 
+data?.....
+
+RDKit has recently added the ability to read ChemDraw binary files (.CDX). Interestingly, the biggest provider of these 
+files is the United States Patent and Trademark Office (USPTO), which has been supplying them since 2001 for both patent
+ applications and granted patents. Accessing this public dataset (easier in the past than today) was a perfect 
+opportunity to put RDKit’s new functionality to the test.
+
+Each week, the USPTO uploads a tar file containing the latest patent approvals and another for patent applications. I 
+first filter the patents based on IPC/CPC codes relevant to the pharmaceutical sector and then extract all compounds 
+found in the .CDX files attached to each patent. Alongside the compounds, I also extract relevant patent metadata, 
+including:
+
+    Title
+    Abstract
+    CPC/IPC codes
+    External files .CDX and all compounds extracted from them, including the section of the patent where each compound 
+appears
+    ...
+
+Each USPTO tar file produces a corresponding JSON file with the extracted data. All of this can be processed on a laptop
+ (base M4 MacBook Air) in roughly 1.5 hours, and the resulting datasets are small enough to be hosted on GitHub Pages, 
+with a separate repository created for each year. The code used for extraction will eventually be pushed to the 
+repository.
+
+This project was just for fun, but it turned out to be a really interesting exercise. I may explore ways to improve 
+compound extraction in the future, but for now, I am keeping the simplest approach and updating it regularly.
+
+The main page for the project is available at https://eloyfelix.github.io/uspto-chem/
+
+Bear in mind that this only covers the USPTO. For broader chemical coverage from patents, including EPO and WO, 
+SureChEMBL, developed by the EMBL-EBI Chemical Biology Services, is an excellent resource and has been steadily 
+improving its functionality
+
+
+----------------------------
+
+ok now just update your memory again with just main README file and modules/*/README for the project and tests/README. 
+At the moment the issue i am having is my 27 millions pubmed collection is exteremly slow. Alhough we tried the quantization 
+unfortunately this didnt help. Also what i read is that things are also related with our other config particularly ....
+And another issue we had was i am at the moment working with NFS file system this is at least will be the same for the faiss
+indexes generation and as you know we are building the qdrant indexes from these files and we are doing this in local mode 
+in sge interactive session. Now some good news is that in this mode i have access to the /localstorge/tgur as a local storage
+so we can somehow use this area. But beyond this we have new some kind of benchmark system maybe some large pubmed files. 
+we can generate this similarly how we did with the tests script i can point you the current raw_data location. so what we need is
+somehow testing with different setting to find out what is going wrong with qdrant why it is slow and also use this setup. But remember
+this setup needs to be simplistic not complicated as i am the only developer...So first we need make good plan...also here is the some suggestions...This is one suggestion for instance i recieved but i am not sure if it is suitable or not for instance like the disk 
+reccomendatation. But for sure what is my aim is do all the preprocessing before hand so i have fast search system. Because 
+now i have access to these cluster with big memory and cpu resource but when i deploy to prod i wont have you get me?...These settings trade a one-time, upfront computational cost for permanently fast searches.
+
+    HNSW Index (hnsw_config):
+
+        m: 64 or higher: Creates a dense, highly connected graph for faster navigation.
+
+        ef_construct: 512 or higher: This is the most important setting for building a high-quality index. It uses a lot of CPU during indexing to ensure search is fast later.
+
+        on_disk: true: A crucial safety net for large collections. It prevents out-of-memory errors by allowing the index to live on the disk, which is still very fast on an SSD.
+
+    Optimizer (optimizer_config):
+
+        max_segment_size: 30_000_000 (or larger than your total points): This is the key to preventing index fragmentation. It forces Qdrant to merge everything into one single, massive, efficient segment.Use git worktrees to run multiple Claude sessions in parallel.
 
 
 ok to update your memory just read the root README file and modules/**/README file to get know about project again.....today i added new

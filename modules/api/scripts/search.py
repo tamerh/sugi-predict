@@ -28,7 +28,7 @@ class BioYodaSearchEngine:
     """
 
     def __init__(self, qdrant_url: str, collection_models: Optional[Dict[str, str]] = None,
-                 model_name: Optional[str] = None, timeout: int = 30):
+                 model_name: Optional[str] = None, timeout: int = 180):
         """
         Initialize search engine
 
@@ -138,7 +138,8 @@ class BioYodaSearchEngine:
         query: str,
         collection: str,
         limit: int = 10,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
+        search_ef: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Search a single collection using the correct embedding model
@@ -148,6 +149,9 @@ class BioYodaSearchEngine:
             collection: Collection name
             limit: Maximum number of results
             filters: Optional metadata filters
+            search_ef: HNSW search parameter (higher = more accurate but slower)
+                      Default: auto-scaled based on limit (4x limit)
+                      For 27M+ docs: 128-256 recommended for speed, 512+ for accuracy
 
         Returns:
             List of search results with scores and payloads
@@ -162,7 +166,14 @@ class BioYodaSearchEngine:
                 query_filter = self._build_filter(filters)
                 logger.debug(f"Applying filters: {filters}")
 
-            # Perform search
+            # Auto-scale ef based on limit if not provided
+            # For large collections (27M+), use conservative ef for speed
+            if search_ef is None:
+                # Default: 4x limit, capped at 256 for very large collections
+                search_ef = min(limit * 4, 256)
+                logger.debug(f"Auto-scaled search_ef to {search_ef} (limit={limit})")
+
+            # Perform search with HNSW optimization
             start_time = time.time()
             results = self.client.search(
                 collection_name=collection,
@@ -170,7 +181,8 @@ class BioYodaSearchEngine:
                 limit=limit,
                 query_filter=query_filter,
                 with_payload=True,
-                with_vectors=False  # Don't return vectors (saves bandwidth)
+                with_vectors=False,  # Don't return vectors (saves bandwidth)
+                search_params={"hnsw_ef": search_ef}  # Control HNSW search accuracy
             )
             search_time = (time.time() - start_time) * 1000
 

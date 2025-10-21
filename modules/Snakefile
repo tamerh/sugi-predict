@@ -30,7 +30,7 @@ config["merged_dir"] = os.path.join(BASE_DIR, "data", "merged")
 config["project_root"] = PROJECT_ROOT  # Make available to other Snakefiles
 
 # Local rules (don't submit to cluster)
-localrules: all, pubmed, clinical_trials
+localrules: all, pubmed, clinical_trials, patents
 
 # Create logging directory
 os.makedirs(config["logs_dir"], exist_ok=True)
@@ -58,12 +58,14 @@ def estimate_mb_required(file_path, size_factor=8000, min_mb=8000, max_mb=30000)
 # Include module workflows (data processing only)
 include: "pubmed/Snakefile"
 include: "clinical_trials/Snakefile"
+include: "patents/Snakefile"
 
 # Top-level target: build all data modules
 rule all:
     input:
         rules.pubmed_all.input,
-        rules.clinical_trials_all.input
+        rules.clinical_trials_all.input,
+        rules.patents_all.input
 
 # Individual module targets (data processing only)
 # Note: Merge is optional - can be done separately if needed
@@ -74,6 +76,10 @@ rule pubmed:
 rule clinical_trials:
     input:
         rules.clinical_trials_all.input
+
+rule patents:
+    input:
+        rules.patents_all.input
 
 ##############################################################################
 # Pipeline Completion Handlers

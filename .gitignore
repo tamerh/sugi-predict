@@ -40,3 +40,9 @@ __pycache__/
 htmlcov/
 *.egg-info/
 .tox/
+
+benchmark/qdrant_bench/results
+benchmark/qdrant_bench/results2
+benchmark/qdrant_bench/qdrant_data
+benchmark/qdrant_bench/*.log
+benchmark/qdrant_bench/nohup.out

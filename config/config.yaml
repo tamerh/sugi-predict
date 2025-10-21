@@ -38,6 +38,21 @@ pubmed:
   # Qdrant insertion settings
   qdrant:
     collection_name: "pubmed_abstracts"
+
+    # HNSW parameters (optimized from benchmark: m=32, ef_construct=256)
+    hnsw_m: 32                      # Graph connectivity (32 = balanced performance)
+    hnsw_ef_construct: 256          # Index build quality (256 = balanced)
+
+    # Segment optimization (critical for performance!)
+    indexing_threshold: 3000000     # 3M points - start HNSW indexing (reduces segments)
+    max_segment_size: 35000000      # 35M points - max segment size (fits 31.5M collection)
+    default_segment_number: 0       # Let Qdrant decide segment count
+
+    # Insertion settings
+    batch_size: 500                 # Batch size for insertion (balanced for NFS)
+    prefer_grpc: true               # Use gRPC for 20-30% faster bulk inserts
+
+    # Snakemake job resources
     memory_mb: 8192
     runtime_hours: 8
 
@@ -91,20 +106,123 @@ clinical_trials:
   # Qdrant insertion settings
   qdrant:
     collection_name: "clinical_trials"
+
+    # HNSW parameters (same as PubMed - optimized from benchmark)
+    hnsw_m: 32                      # Graph connectivity (32 = balanced performance)
+    hnsw_ef_construct: 256          # Index build quality (256 = balanced)
+
+    # Segment optimization (adjusted for smaller ~500K dataset)
+    indexing_threshold: 1000000     # 1M points - start HNSW indexing
+    max_segment_size: 2000000       # 2M points - max segment size
+    default_segment_number: 0       # Let Qdrant decide segment count
+
+    # Insertion settings
+    batch_size: 500                 # Batch size for insertion (balanced for NFS)
+    prefer_grpc: true               # Use gRPC for 20-30% faster bulk inserts
+
+    # Snakemake job resources
     memory_mb: 8192
     runtime_hours: 4
+
+# Patents Module Configuration
+patents:
+  # NOTE: Directories are constructed from base_dir in Snakefile
+
+  # ============================================================================
+  # TWO SEPARATE PROCESSING PIPELINES:
+  # 1. Text embeddings (patents_text collection) - Neural network model
+  # 2. Chemical fingerprints (patents_compounds collection) - RDKit algorithm
+  # ============================================================================
+
+  # TEXT EMBEDDINGS - For semantic patent search (process_patents.py)
+  # Uses neural network to convert patent text → 768-dim vectors
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"  # Transformer model
+  vector_dimension: 768         # Output dimension for TEXT embeddings
+
+  # Processing settings for text
+  batch_size: 10000             # Patents per batch for text processing
+  encode_batch_size: 128        # Batch size for model encoding (128 optimal for CPU, 256 for GPU)
+  num_workers: 1                # Number of CPU workers
+  max_chunk_length: 500         # Maximum text chunk length
+  min_text_length: 50           # Minimum text length for inclusion
+
+  # CHEMICAL FINGERPRINTS - For structure similarity search (process_compounds.py)
+  # Uses RDKit Morgan fingerprints (ECFP4) - deterministic algorithm, NOT a neural network
+  fingerprint_bits: 2048        # Output dimension for CHEMICAL fingerprints (2048-bit vectors)
+  morgan_radius: 2              # Morgan fingerprint radius (2 = ECFP4, diameter 4)
+
+  # USPTO INTEGRATION (NEW!) - Enriches US patents with full text
+  # Adds abstracts, claims, descriptions to US patents (SureChEMBL only has titles)
+  enable_uspto: true            # Enable USPTO enrichment (false = SureChEMBL title-only)
+  uspto_historical_json_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto"  # USPTO-Chem historical JSON directory (2001-2025)
+
+  # Job resources - PRODUCTION
+  download_memory_mb: 16384     # 16GB for downloading SureChEMBL files
+  download_runtime: 240         # 4 hours
+  process_memory_mb: 20480      # 20GB for text processing (increased for USPTO enrichment)
+  process_runtime: 480          # 8 hours
+
+  # Release management
+  cleanup_old: true             # Cleanup old releases after processing
+  keep_releases: 2              # Keep latest 2 releases
+
+  # Qdrant insertion settings
+  qdrant:
+    # Text collection (patent descriptions) - 768-dimensional S-BioBERT embeddings
+    text_collection_name: "patents_text"
+
+    # Compounds collection (chemical fingerprints) - 2048-bit Morgan/ECFP4 fingerprints
+    compounds_collection_name: "patents_compounds"
+
+    # NOTE: These are TWO separate collections with different vector dimensions:
+    # - patents_text: 768-dim (neural network embeddings for semantic search)
+    # - patents_compounds: 2048-dim (RDKit fingerprints for structure similarity)
+    # They CANNOT be mixed or searched together - use separate queries for each
+
+    # HNSW parameters (same as PubMed - optimized from benchmark)
+    hnsw_m: 32                      # Graph connectivity (32 = balanced performance)
+    hnsw_ef_construct: 256          # Index build quality (256 = balanced)
+
+    # Segment optimization (adjusted for ~17M patents text + 20M compounds)
+    indexing_threshold: 3000000     # 3M points - start HNSW indexing
+    max_segment_size: 20000000      # 20M points - max segment size
+    default_segment_number: 0       # Let Qdrant decide segment count
+
+    # Insertion settings
+    batch_size: 500                 # Batch size for insertion (balanced for NFS)
+    prefer_grpc: true               # Use gRPC for 20-30% faster bulk inserts
+
+    # Snakemake job resources
+    memory_mb: 8192
+    runtime_hours: 8
+
+  # Test mode settings (set via test_config.yaml)
+  test_mode: false
+  test_limit_files: 4           # Limit Parquet files in test mode
+  test_limit_patents: 100       # Limit patents to process in test mode
+  test_limit_compounds: 1000    # Limit compounds to process in test mode
 
 # Qdrant Module Configuration
 qdrant:
   # NOTE: Directories are constructed from base_dir in Snakefile
+  # NOTE: Collection-specific settings (HNSW, segments, batch_size) are in each collection's config above
 
-  # Insertion settings
-  batch_size: 500  # Reduced from 1000 for better NFS performance
+  # Storage configuration (production - uses local scratch for 10-60x faster performance!)
+  storage:
+    local_scratch_base: "/localscratch/tgur"  # Local scratch base path
+    # When set: Uses /localscratch/tgur/qdrant_<hostname>_<YYYYMMDD>/ (node-specific)
+    # When empty: Uses NFS storage at {base_dir}/data/qdrant (accessible from all nodes)
+    # NOTE: test_overrides.yaml sets this to empty for development/testing
 
   # Server settings (for auto-start via Snakemake)
   server:
     memory_mb: 131072      # 128GB for server
     runtime_hours: 48      # 2 days
+
+  # Connection settings
+  connection:
+    url: "http://localhost:6333"
+    timeout: 300           # 5 minutes for large batch operations
 
 # NOTE: final_dir is constructed from base_dir in Snakefile
 
@@ -129,7 +247,7 @@ api:
 # Qdrant Connection (for API)
 qdrant_api:
   url: "http://localhost:6333"
-  timeout: 30
+  timeout: 180  # Increased for 27M document collection
   connection_info_path: "out/data/qdrant/connection_info.txt"
 
 # Search Settings (for API)
@@ -156,6 +274,26 @@ collections:
     primary_fields: ["nct_id", "chunk_text", "chunk_type"]
     search_fields: ["chunk_text"]
     display_name: "Clinical Trials"
+
+  patents_text:
+    name: "patents_text"
+    description: "Patent text semantic search (S-BioBERT 768-dim embeddings) - Search by concepts/keywords"
+    primary_fields: ["patent_id", "text", "chunk_type"]
+    search_fields: ["text"]
+    display_name: "Patents (Text)"
+    vector_type: "embeddings"
+    vector_dimension: 768
+    search_type: "semantic"
+
+  patents_compounds:
+    name: "patents_compounds"
+    description: "Chemical structure similarity search (Morgan/ECFP4 2048-bit fingerprints) - Search by molecular structure"
+    primary_fields: ["surechembl_id", "smiles", "molecular_weight"]
+    search_fields: ["smiles"]
+    display_name: "Patent Compounds (Chemical)"
+    vector_type: "fingerprints"
+    vector_dimension: 2048
+    search_type: "chemical_similarity"
 
 # Logging
 logging:

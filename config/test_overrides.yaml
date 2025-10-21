@@ -53,8 +53,43 @@ clinical_trials:
     memory_mb: 4096            # 4GB (vs 8GB production)
     runtime_hours: 1           # 1 hour (vs 4 hours production)
 
+# Patents test overrides
+patents:
+  # Test mode settings
+  test_mode: true
+  test_limit_compounds: 1000         # Process only first 1000 compounds (used by Snakefile)
+  test_limit_patents: 500            # Process only first 500 patents (fallback when not using ID file)
+  test_patent_ids_file: "tests/fixtures/patents/test_patent_ids_with_uspto.txt"  # Filter by specific patent IDs (for testing enrichment)
+  test_limit_files: 4                # Limit number of files to download in test mode
+  max_mapping_rows: 10000000         # Scan only first 10M rows of mapping file (vs all 1.5B in production)
+
+  # USPTO test settings (NEW!)
+  enable_uspto: true                 # Test USPTO integration
+  uspto_historical_json_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto"  # Use same historical JSON for testing
+
+  # Smaller batches for testing
+  batch_size: 100              # Patents per batch (vs 10000 production)
+  encode_batch_size: 32        # Batch size for encoding (vs 128 production)
+  processing_batch_size: 1000  # Compounds per processing batch (vs 100000 production)
+  num_workers: 1
+
+  # Reduced resources for testing
+  download_memory_mb: 8192     # 8GB (vs 16GB production)
+  download_runtime: 60         # 1 hour (vs 4 hours production)
+  process_memory_mb: 12288     # 12GB for USPTO enrichment (vs 20GB production)
+  process_runtime: 120         # 2 hours (vs 8 hours production)
+
+  # Qdrant insertion overrides
+  qdrant:
+    memory_mb: 4096            # 4GB (vs 8GB production)
+    runtime_hours: 1           # 1 hour (vs 4 hours production)
+
 # Qdrant test overrides
 qdrant:
+  # Use NFS storage for testing (not local scratch)
+  storage:
+    local_scratch_base: ""     # Empty = use NFS at test_out/data/qdrant (vs local scratch in production)
+
   batch_size: 100              # Small batches (vs 500 production)
   server:
     memory_mb: 16384           # 16GB (vs 128GB production)

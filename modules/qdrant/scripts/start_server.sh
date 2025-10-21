@@ -16,6 +16,7 @@ MODE=""
 CONNECTION_INFO=""
 LOG_FILE=""
 QUEUE="scc"
+SCRATCH_BASE=""             # Base path for local scratch (if set, use production mode)
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         --connection-info) CONNECTION_INFO="$2"; shift 2 ;;
         --log) LOG_FILE="$2"; shift 2 ;;
         --queue) QUEUE="$2"; shift 2 ;;
+        --scratch-base) SCRATCH_BASE="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -40,12 +42,56 @@ if [ ! -f "$CONTAINER" ]; then
     exit 1
 fi
 
+# Auto-detect storage mode based on whether scratch_base is provided
+if [ -n "$SCRATCH_BASE" ]; then
+    # Production mode: Use local scratch with hostname_date pattern
+    STORAGE_MODE="production"
+    HOSTNAME=$(hostname)
+    DATE=$(date '+%Y%m%d')
+    SCRATCH_DIR="${SCRATCH_BASE}/qdrant_${HOSTNAME}_${DATE}"
+
+    echo "Production mode: Using local scratch storage (10-60x faster!)"
+    echo "  Base: $SCRATCH_BASE"
+    echo "  Storage directory: $SCRATCH_DIR"
+
+    # Create scratch directory structure
+    mkdir -p "$SCRATCH_DIR/storage"
+    mkdir -p "$SCRATCH_DIR/snapshots"
+
+    # Create deployment info file
+    cat > "$SCRATCH_DIR/DEPLOYMENT_INFO.txt" <<EOF
+Qdrant Deployment Information
+==============================
+Hostname: $HOSTNAME
+Date: $(date '+%Y-%m-%d %H:%M:%S')
+Storage Directory: $SCRATCH_DIR
+Storage Mode: production (local scratch - 10-60x faster than NFS!)
+NOTE: This is node-specific storage. Data is NOT accessible from other nodes.
+      To access this data, connect to: $HOSTNAME
+EOF
+
+    # Override STORAGE to point to scratch directory
+    ACTUAL_STORAGE="$SCRATCH_DIR/storage"
+    SNAPSHOTS_DIR="$SCRATCH_DIR/snapshots"
+
+    echo "  Created: $SCRATCH_DIR/DEPLOYMENT_INFO.txt"
+else
+    # Development/Test mode: Use NFS storage (accessible from all nodes)
+    STORAGE_MODE="development"
+    echo "Development mode: Using NFS storage (accessible from all nodes)"
+    echo "  Storage directory: $STORAGE"
+    ACTUAL_STORAGE="$STORAGE"
+    SNAPSHOTS_DIR="$(dirname "$STORAGE")/snapshots"
+    mkdir -p "$SNAPSHOTS_DIR"
+fi
+
 echo "Starting Qdrant server in $MODE mode..."
 
 if [ "$MODE" = "cluster" ]; then
     # ====== CLUSTER MODE: Submit as job ======
 
-    # Create job script
+    # Create job script (use original NFS STORAGE for scripts, not scratch)
+    mkdir -p "$STORAGE"
     cat > "$STORAGE/start_server_job.sh" <<JOBSCRIPT
 #!/bin/bash
 #$ -N $JOB_NAME
@@ -67,6 +113,45 @@ echo "Hostname: \$(hostname)"
 QDRANT_HOST=\$(hostname)
 QDRANT_PORT=6333
 
+# Auto-detect storage mode based on whether scratch_base is provided
+SCRATCH_BASE="$SCRATCH_BASE"
+if [ -n "\$SCRATCH_BASE" ]; then
+    # Production mode: Use local scratch
+    STORAGE_MODE="production"
+    DATE=\$(date '+%Y%m%d')
+    SCRATCH_DIR="\${SCRATCH_BASE}/qdrant_\${QDRANT_HOST}_\${DATE}"
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Production mode: Using local scratch (10-60x faster!)"
+    echo "  Storage directory: \$SCRATCH_DIR"
+
+    # Create scratch directory structure
+    mkdir -p "\$SCRATCH_DIR/storage"
+    mkdir -p "\$SCRATCH_DIR/snapshots"
+
+    # Create deployment info file
+    cat > "\$SCRATCH_DIR/DEPLOYMENT_INFO.txt" <<INFOEOF
+Qdrant Deployment Information
+==============================
+Job ID: \$JOB_ID
+Hostname: \$QDRANT_HOST
+Date: \$(date '+%Y-%m-%d %H:%M:%S')
+Storage Directory: \$SCRATCH_DIR
+Storage Mode: production (local scratch - 10-60x faster than NFS!)
+NOTE: This is node-specific storage. Data is NOT accessible from other nodes.
+      To access this data, connect to: \$QDRANT_HOST
+INFOEOF
+
+    ACTUAL_STORAGE="\$SCRATCH_DIR/storage"
+    SNAPSHOTS_DIR="\$SCRATCH_DIR/snapshots"
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Created: \$SCRATCH_DIR/DEPLOYMENT_INFO.txt"
+else
+    # Development/Test mode: Use NFS storage
+    STORAGE_MODE="development"
+    ACTUAL_STORAGE="$ACTUAL_STORAGE"
+    SNAPSHOTS_DIR="$SNAPSHOTS_DIR"
+fi
+
 # Create connection info file
 cat > $CONNECTION_INFO <<EOF
 # Qdrant Connection Information
@@ -75,6 +160,8 @@ cat > $CONNECTION_INFO <<EOF
 QDRANT_HOST=\$QDRANT_HOST
 QDRANT_PORT=\$QDRANT_PORT
 QDRANT_URL=http://\$QDRANT_HOST:\$QDRANT_PORT
+QDRANT_STORAGE=\$ACTUAL_STORAGE
+QDRANT_STORAGE_MODE=\$STORAGE_MODE
 EOF
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Connection info: $CONNECTION_INFO"
@@ -89,8 +176,14 @@ trap cleanup EXIT
 
 # Start Qdrant
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Singularity container..."
+echo "  Storage: \$ACTUAL_STORAGE"
+echo "  Snapshots: \$SNAPSHOTS_DIR"
+
 singularity run \\
-    --bind $STORAGE:/qdrant/storage \\
+    --contain \\
+    --pwd /qdrant \\
+    --bind "\$ACTUAL_STORAGE:/qdrant/storage" \\
+    --bind "\$SNAPSHOTS_DIR:/qdrant/snapshots" \\
     --bind $CONFIG_FILE:/opt/qdrant/config.yaml \\
     $CONTAINER \\
     --config-path /opt/qdrant/config.yaml
@@ -159,14 +252,20 @@ else
 QDRANT_HOST=$QDRANT_HOST
 QDRANT_PORT=$QDRANT_PORT
 QDRANT_URL=http://$QDRANT_HOST:$QDRANT_PORT
+QDRANT_STORAGE=$ACTUAL_STORAGE
+QDRANT_STORAGE_MODE=$STORAGE_MODE
 EOF
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Connection info: $CONNECTION_INFO" | tee -a "$LOG_FILE"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Server URL: http://$QDRANT_HOST:$QDRANT_PORT" | tee -a "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Storage: $ACTUAL_STORAGE" | tee -a "$LOG_FILE"
 
     # Start Qdrant in background
     singularity run \
-        --bind "$STORAGE:/qdrant/storage" \
+        --contain \
+        --pwd /qdrant \
+        --bind "$ACTUAL_STORAGE:/qdrant/storage" \
+        --bind "$SNAPSHOTS_DIR:/qdrant/snapshots" \
         --bind "$CONFIG_FILE:/opt/qdrant/config.yaml" \
         "$CONTAINER" \
         --config-path /opt/qdrant/config.yaml \

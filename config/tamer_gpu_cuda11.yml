@@ -25,6 +25,11 @@ dependencies:
   - snakemake>=9.0
   - graphviz
 
+  # Patents module dependencies
+  - rdkit  # Chemical structure processing
+  - pyarrow  # Parquet file reading
+  - fastparquet  # Alternative Parquet backend
+
   # API dependencies (modules/api/)
   - fastapi
   - uvicorn
