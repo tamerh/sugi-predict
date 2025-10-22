@@ -138,9 +138,7 @@ patents:
   vector_dimension: 768         # Output dimension for TEXT embeddings
 
   # Chunking strategy for parallel processing (PRODUCTION)
-  patents_per_chunk: 1000000    # 1M patents per chunk (~43 chunks for 43M patents)
-                                # Each chunk: ~1M patents × 2-3KB text ≈ 2-3GB memory
-                                # Allows parallel processing with 16GB per job
+  patents_per_chunk: 250000    # 250K patents per chunk (~172 chunks for 43M patents)
 
   # Processing settings for text
   batch_size: 10000             # Patents per batch for text processing

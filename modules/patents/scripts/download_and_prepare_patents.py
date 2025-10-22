@@ -264,66 +264,101 @@ def main():
     if args.chunk_size > 0:
         # Chunked output - use STREAMING to avoid loading entire file into memory
         log(f"Chunking enabled: {args.chunk_size} patents per chunk")
-        log(f"Reading patents from: {patents_file}")
 
-        import pyarrow.parquet as pq
+        # Check if chunks already exist
+        existing_chunks = list(raw_chunked_dir.glob("patents_chunk_*.parquet"))
+        state_file_exists = Path(args.processed_chunks_output).exists()
 
-        # Open parquet file for streaming
-        parquet_file = pq.ParquetFile(patents_file)
-        total_patents = parquet_file.metadata.num_rows
-        log(f"Total patents: {total_patents:,}")
+        if existing_chunks and not state_file_exists:
+            # Chunks exist but state file is missing - regenerate state file
+            log(f"Found {len(existing_chunks)} existing chunks but no state file")
+            log(f"Regenerating state file from existing chunks...")
 
-        # Apply limit if specified (test mode)
-        if args.limit and args.limit < total_patents:
-            log(f"Applying limit: {args.limit:,} patents")
-            total_patents = args.limit
+            chunk_files = []
+            for chunk_path in sorted(existing_chunks):
+                chunk_size_mb = chunk_path.stat().st_size / 1024 / 1024
 
-        num_chunks = (total_patents + args.chunk_size - 1) // args.chunk_size
-        log(f"Will create {num_chunks} chunks using streaming")
+                # Get row count from parquet metadata
+                import pyarrow.parquet as pq
+                chunk_parquet = pq.ParquetFile(chunk_path)
+                num_patents = chunk_parquet.metadata.num_rows
 
-        chunk_files = []
-        patents_processed = 0
-        chunk_idx = 0
+                chunk_files.append({
+                    'filename': chunk_path.name,
+                    'num_patents': num_patents,
+                    'size_mb': round(chunk_size_mb, 2)
+                })
 
-        # Stream through parquet file in batches
-        for batch in parquet_file.iter_batches(batch_size=args.chunk_size):
-            # Convert batch to pandas
-            batch_df = batch.to_pandas()
+            write_processed_chunks_json(args.processed_chunks_output, chunk_files, no_changes=False)
+            log(f"✓ Regenerated state file with {len(chunk_files)} chunks")
 
-            # Handle limit
-            if args.limit and patents_processed + len(batch_df) > args.limit:
-                remaining = args.limit - patents_processed
-                batch_df = batch_df.head(remaining)
+        elif existing_chunks and state_file_exists:
+            # Both exist - skip chunking
+            log(f"Chunks and state file already exist ({len(existing_chunks)} chunks)")
+            log(f"Skipping chunking step...")
 
-            if len(batch_df) == 0:
-                break
+        else:
+            # Need to create chunks
+            log(f"Reading patents from: {patents_file}")
 
-            # Save chunk
-            chunk_filename = f"patents_chunk_{chunk_idx+1:04d}.parquet"
-            chunk_path = raw_chunked_dir / chunk_filename
+            import pyarrow.parquet as pq
 
-            batch_df.to_parquet(chunk_path, index=False)
+            # Open parquet file for streaming
+            parquet_file = pq.ParquetFile(patents_file)
+            total_patents = parquet_file.metadata.num_rows
+            log(f"Total patents: {total_patents:,}")
 
-            chunk_size_mb = chunk_path.stat().st_size / 1024 / 1024
-            chunk_files.append({
-                'filename': chunk_filename,
-                'num_patents': len(batch_df),
-                'size_mb': round(chunk_size_mb, 2)
-            })
+            # Apply limit if specified (test mode)
+            if args.limit and args.limit < total_patents:
+                log(f"Applying limit: {args.limit:,} patents")
+                total_patents = args.limit
 
-            patents_processed += len(batch_df)
-            chunk_idx += 1
+            num_chunks = (total_patents + args.chunk_size - 1) // args.chunk_size
+            log(f"Will create {num_chunks} chunks using streaming")
 
-            log(f"  Created chunk {chunk_idx}/{num_chunks}: {chunk_filename} ({len(batch_df):,} patents, {chunk_size_mb:.1f}MB)")
+            chunk_files = []
+            patents_processed = 0
+            chunk_idx = 0
 
-            # Stop if we've hit the limit
-            if args.limit and patents_processed >= args.limit:
-                break
+            # Stream through parquet file in batches
+            for batch in parquet_file.iter_batches(batch_size=args.chunk_size):
+                # Convert batch to pandas
+                batch_df = batch.to_pandas()
 
-        # Write processed_chunks.json
-        write_processed_chunks_json(args.processed_chunks_output, chunk_files, no_changes=False)
-        log(f"✓ Created {len(chunk_files)} chunks in {raw_chunked_dir}")
-        log(f"✓ Total patents chunked: {patents_processed:,}")
+                # Handle limit
+                if args.limit and patents_processed + len(batch_df) > args.limit:
+                    remaining = args.limit - patents_processed
+                    batch_df = batch_df.head(remaining)
+
+                if len(batch_df) == 0:
+                    break
+
+                # Save chunk
+                chunk_filename = f"patents_chunk_{chunk_idx+1:04d}.parquet"
+                chunk_path = raw_chunked_dir / chunk_filename
+
+                batch_df.to_parquet(chunk_path, index=False)
+
+                chunk_size_mb = chunk_path.stat().st_size / 1024 / 1024
+                chunk_files.append({
+                    'filename': chunk_filename,
+                    'num_patents': len(batch_df),
+                    'size_mb': round(chunk_size_mb, 2)
+                })
+
+                patents_processed += len(batch_df)
+                chunk_idx += 1
+
+                log(f"  Created chunk {chunk_idx}/{num_chunks}: {chunk_filename} ({len(batch_df):,} patents, {chunk_size_mb:.1f}MB)")
+
+                # Stop if we've hit the limit
+                if args.limit and patents_processed >= args.limit:
+                    break
+
+            # Write processed_chunks.json
+            write_processed_chunks_json(args.processed_chunks_output, chunk_files, no_changes=False)
+            log(f"✓ Created {len(chunk_files)} chunks in {raw_chunked_dir}")
+            log(f"✓ Total patents chunked: {patents_processed:,}")
 
     else:
         # No chunking - create single-file entry in processed_chunks.json

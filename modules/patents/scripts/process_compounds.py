@@ -135,7 +135,9 @@ class CompoundProcessor:
         """
         log_with_timestamp(f"Processing {len(compounds)} compounds...")
 
-        fingerprints = []
+        # Pre-allocate array to avoid memory issues with np.vstack()
+        # Allocate for all compounds, trim later to actual valid count
+        fingerprints_array = np.zeros((len(compounds), self.fingerprint_bits), dtype=np.float32)
         metadata = []
         valid_count = 0
         invalid_count = 0
@@ -175,7 +177,8 @@ class CompoundProcessor:
                 'formula': formula if not pd.isna(formula) else ''
             }
 
-            fingerprints.append(fp)
+            # Store in pre-allocated array (no append/vstack needed!)
+            fingerprints_array[valid_count] = fp
             metadata.append(meta)
             valid_count += 1
 
@@ -186,8 +189,9 @@ class CompoundProcessor:
 
         log_with_timestamp(f"Completed: {valid_count} valid fingerprints, {invalid_count} invalid/skipped")
 
-        if fingerprints:
-            fingerprints_array = np.vstack(fingerprints)
+        if valid_count > 0:
+            # Trim array to actual valid count (remove unfilled rows)
+            fingerprints_array = fingerprints_array[:valid_count]
             return fingerprints_array, metadata
         else:
             return np.array([]).reshape(0, self.fingerprint_bits), []
