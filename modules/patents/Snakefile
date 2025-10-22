@@ -100,10 +100,58 @@ def get_release_paths():
 # Get paths for current release
 RELEASE_PATHS = get_release_paths()
 
+# Helper function to aggregate patent chunk indices after checkpoint
+def aggregate_patent_chunk_indices(wildcards):
+    """
+    Aggregate all processed chunk index files after checkpoint completes.
+    Reads from processed_chunks.json (single source of truth).
+    Similar to clinical_trials pattern.
+    """
+    # Wait for checkpoint to complete
+    checkpoints.patents_download_checkpoint.get()
+
+    import sys
+    import json
+
+    # Load processed_chunks.json from STATE_DIR
+    state_file = os.path.join(STATE_DIR, "processed_chunks.json")
+
+    if not os.path.exists(state_file):
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] ERROR: processed_chunks.json not found at {state_file}\n")
+        sys.stderr.flush()
+        return []
+
+    with open(state_file, 'r') as f:
+        data = json.load(f)
+
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Loaded processed_chunks.json\n")
+    sys.stderr.flush()
+
+    # Get chunks that need processing
+    chunks_dict = data.get('chunks', {})
+    if not chunks_dict:
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION] No chunks found\n")
+        sys.stderr.flush()
+        return []
+
+    indices = []
+    for chunk_filename, chunk_info in chunks_dict.items():
+        # Convert .parquet to .index (chunks are parquet, processed indices are .index)
+        chunk_index_name = chunk_filename.replace('.parquet', '.index')
+        chunk_index_path = os.path.join(TEXT_DIR, chunk_index_name)
+        indices.append(chunk_index_path)
+        sys.stderr.write(f"[CHECKPOINT AGGREGATION]   -> {chunk_index_path}\n")
+
+    sys.stderr.write(f"[CHECKPOINT AGGREGATION] Total chunks to process: {len(indices)}\n")
+    sys.stderr.flush()
+    return indices
+
 # Unified download rule - handles both SureChEMBL and USPTO (if enabled)
+# CHECKPOINT: Creates processed_chunks.json as side effect (NOT as Snakemake output)
+# Similar to clinical_trials: only done_marker is output
 checkpoint patents_download_checkpoint:
     output:
-        done = os.path.join(STATE_DIR, "download_complete.txt")
+        done_marker = os.path.join(STATE_DIR, ".download_complete")
     params:
         script = os.path.join(MODULE_SCRIPTS, "download_and_prepare_patents.py"),
         surechembl_raw_dir = RAW_DIR,
@@ -118,6 +166,10 @@ checkpoint patents_download_checkpoint:
         uspto_historical_json_dir = patents_config.get("uspto_historical_json_dir", ""),
         uspto_limit_flag = f"--uspto-limit-files {patents_config.get('test_limit_files', 4)}" if patents_config.get("test_mode", False) else "",
         uspto_test_flag = "--uspto-test-mode" if patents_config.get("test_mode", False) else "",
+        # Chunking options
+        chunk_size = patents_config.get("patents_per_chunk", 0),
+        limit = patents_config.get("test_limit_patents", 0) if patents_config.get("test_mode", False) else 0,
+        state_file = os.path.join(STATE_DIR, "processed_chunks.json"),
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "patents_download.log")
     log:
         os.path.join(LOG_DIR, f"download_{RUN_TIMESTAMP}.log")
@@ -125,8 +177,7 @@ checkpoint patents_download_checkpoint:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=patents_config.get("download_memory_mb", 16384),
-        runtime=patents_config.get("download_runtime", 240)
+        mem_mb=patents_config.get("download_memory_mb", 16384)
     shell:
         """
         echo "==================== UNIFIED DOWNLOAD STARTED: $(date) ====================" > {log}
@@ -142,6 +193,9 @@ checkpoint patents_download_checkpoint:
             --uspto-historical-json-dir {params.uspto_historical_json_dir} \
             {params.uspto_limit_flag} \
             {params.uspto_test_flag} \
+            --chunk-size {params.chunk_size} \
+            --processed-chunks-output {params.state_file} \
+            --limit {params.limit} \
             >> {log} 2>&1
 
         EXIT_CODE=$?
@@ -151,8 +205,9 @@ checkpoint patents_download_checkpoint:
             exit 1
         fi
 
-        # Mark download as complete
-        echo "Download pipeline completed at $(date)" > {output.done}
+        # Create done marker for Snakemake (processed_chunks.json created by script as side effect)
+        touch {output.done_marker}
+
         echo "==================== UNIFIED DOWNLOAD COMPLETED: $(date) ====================" >> {log}
         """
 
@@ -185,17 +240,84 @@ def get_downloaded_release_files(wildcards):
     }
 
 # Top-level rule for patents module
-# Produces both text and compound indices
+# Default: produces chunk indices only (NO merge) + compounds index
+# Similar to clinical_trials: individual chunk files ready for Qdrant insertion
+# IMPORTANT: Depends on checkpoint done_marker to trigger it
 rule patents_all:
     input:
-        # Processed indices
-        text_index = os.path.join(TEXT_DIR, "patents_text.index"),
+        checkpoint_done = os.path.join(STATE_DIR, ".download_complete"),
+        indices = aggregate_patent_chunk_indices,
         compounds_index = os.path.join(COMPOUNDS_DIR, "compounds.index")
 
-# Rule 2: Process patents for text embeddings (UPDATED with USPTO enrichment)
-rule patents_process_text:
+# Rule 2a: Process individual patent chunk (text embeddings with USPTO enrichment)
+rule patents_process_chunk:
     input:
-        download_done = os.path.join(STATE_DIR, "download_complete.txt")
+        chunk_file = os.path.join(BASE_DIR, "raw_data", "patents", "chunked", "{chunk_name}.parquet")
+    output:
+        index = os.path.join(TEXT_DIR, "{chunk_name}.index"),
+        metadata = os.path.join(TEXT_DIR, "{chunk_name}.json")
+    params:
+        script = os.path.join(MODULE_SCRIPTS, "process_patents.py"),
+        model = patents_config.get("model_name", "pritamdeka/S-BioBERT-snli-multinli-stsb"),
+        vector_dim = patents_config.get("vector_dimension", 768),
+        encode_batch_size = patents_config.get("encode_batch_size", 128),
+        num_workers = patents_config.get("num_workers", 1),
+        max_chunk_length = patents_config.get("max_chunk_length", 500),
+        min_text_length = patents_config.get("min_text_length", 50),
+        uspto_historical = lambda wildcards, input: get_downloaded_release_files(wildcards).get('uspto_historical', ''),
+        uspto_flag = "--uspto-data" if patents_config.get("enable_uspto", False) else "",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", f"patents_process_chunk_{{chunk_name}}.log")
+    log:
+        os.path.join(LOG_DIR, f"process_chunk_{{chunk_name}}_{RUN_TIMESTAMP}.log")
+    conda:
+        config["conda_env"]
+    threads: patents_config.get("num_workers", 1)
+    resources:
+        mem_mb=patents_config.get("process_memory_mb", 16384)  # Reduced per-chunk memory
+    shell:
+        """
+        echo "==================== PROCESS CHUNK {wildcards.chunk_name} STARTED: $(date) ====================" > {log}
+
+        # Build command with optional USPTO enrichment
+        CMD="python {params.script} \
+            --input {input.chunk_file} \
+            --output-index {output.index} \
+            --output-metadata {output.metadata} \
+            --model-name {params.model} \
+            --vector-dimension {params.vector_dim} \
+            --encode-batch-size {params.encode_batch_size} \
+            --num-workers {params.num_workers} \
+            --max-chunk-length {params.max_chunk_length} \
+            --min-text-length {params.min_text_length}"
+
+        # Add USPTO historical data if enabled and file exists
+        if [ -f "{params.uspto_historical}" ] && [ "{params.uspto_flag}" != "" ]; then
+            echo "USPTO enrichment enabled: {params.uspto_historical}" >> {log}
+            CMD="$CMD {params.uspto_flag} {params.uspto_historical}"
+        else
+            echo "USPTO enrichment disabled or file not found" >> {log}
+        fi
+
+        echo "Running command: $CMD" >> {log}
+        eval "$CMD" >> {log} 2>&1
+
+        EXIT_CODE=$?
+
+        if [ $EXIT_CODE -ne 0 ]; then
+            echo "ERROR: Chunk processing failed with exit code $EXIT_CODE" >> {log}
+            exit 1
+        fi
+
+        # Count vectors
+        VECTOR_COUNT=$(python -c "import json; data = json.load(open('{output.metadata}')); print(len(data))" 2>/dev/null || echo "0")
+        echo "Vectors generated: $VECTOR_COUNT" >> {log}
+
+        echo "==================== PROCESS CHUNK {wildcards.chunk_name} COMPLETED: $(date) ====================" >> {log}
+        """
+
+# Rule 2b: Process patents for text embeddings (DEPRECATED - replaced by chunked processing)
+# This rule is kept for backward compatibility with non-chunked mode (chunk_size=0)
+rule patents_process_text:
     output:
         index = os.path.join(TEXT_DIR, "patents_text.index"),
         metadata = os.path.join(TEXT_DIR, "patents_text.json")
@@ -221,8 +343,7 @@ rule patents_process_text:
         config["conda_env"]
     threads: patents_config.get("num_workers", 1)
     resources:
-        mem_mb=patents_config.get("process_memory_mb", 20480),  # Increased to 20GB for USPTO data
-        runtime=patents_config.get("process_runtime", 480)
+        mem_mb=patents_config.get("process_memory_mb", 20480)  # Increased to 20GB for USPTO data
     shell:
         """
         echo "==================== PROCESS TEXT STARTED: $(date) ====================" > {log}
@@ -273,8 +394,6 @@ rule patents_process_text:
 
 # Rule 3: Process compounds for chemical fingerprints
 rule patents_process_compounds:
-    input:
-        download_done = os.path.join(STATE_DIR, "download_complete.txt")
     output:
         index = os.path.join(COMPOUNDS_DIR, "compounds.index"),
         metadata = os.path.join(COMPOUNDS_DIR, "compounds.json")
@@ -292,8 +411,7 @@ rule patents_process_compounds:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=patents_config.get("process_memory_mb", 16384),
-        runtime=patents_config.get("process_runtime", 480)
+        mem_mb=patents_config.get("process_memory_mb", 16384)
     shell:
         """
         echo "==================== PROCESS COMPOUNDS STARTED: $(date) ====================" > {log}
@@ -324,8 +442,6 @@ rule patents_process_compounds:
 
 # Optional: Prepare biobtree cross-reference data
 rule patents_prepare_biobtree:
-    input:
-        download_done = os.path.join(STATE_DIR, "download_complete.txt")
     output:
         xrefs = os.path.join(BIOBTREE_DIR, "patent_xrefs.tsv"),
         families = os.path.join(BIOBTREE_DIR, "patent_families.tsv"),
@@ -341,8 +457,7 @@ rule patents_prepare_biobtree:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=8192,
-        runtime=120
+        mem_mb=8192
     shell:
         """
         echo "==================== BIOBTREE PREP STARTED: $(date) ====================" > {log}
@@ -361,27 +476,34 @@ rule patents_prepare_biobtree:
         """
 
 # Completion marker for Qdrant dependency
+# Note: processed_chunks.json is read directly in shell, not as Snakemake input
 rule patents_processing_complete:
     input:
-        text_index = os.path.join(TEXT_DIR, "patents_text.index"),
+        indices = aggregate_patent_chunk_indices,
         compounds_index = os.path.join(COMPOUNDS_DIR, "compounds.index")
     output:
         done = os.path.join(PROCESSED_DIR, ".processing_complete")
     params:
+        processed_dir = TEXT_DIR,
+        state_file = os.path.join(STATE_DIR, "processed_chunks.json"),
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "patents_processing_complete.log")
     shell:
         """
+        # Count actual index files created
+        INDEX_COUNT=$(find {params.processed_dir} -name "*.index" 2>/dev/null | wc -l)
+
         echo "Patents FAISS processing complete" > {output.done}
-        echo "Text index: {input.text_index}" >> {output.done}
+        echo "Processed chunk files: $INDEX_COUNT" >> {output.done}
+        echo "Index files from input: $(echo {input.indices} | wc -w)" >> {output.done}
         echo "Compounds index: {input.compounds_index}" >> {output.done}
         echo "Completed at: $(date)" >> {output.done}
 
-        # Verify files exist and are not empty
-        if [ ! -s {input.text_index} ]; then
-            echo "ERROR: Text index file is empty or missing!" | tee -a {output.done}
+        if [ "$INDEX_COUNT" -eq 0 ]; then
+            echo "ERROR: No index files were created!" | tee -a {output.done}
             exit 1
         fi
 
+        # Verify compounds index exists and is not empty
         if [ ! -s {input.compounds_index} ]; then
             echo "ERROR: Compounds index file is empty or missing!" | tee -a {output.done}
             exit 1

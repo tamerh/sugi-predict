@@ -4,25 +4,82 @@ Unified Patents Data Download and Preparation
 
 Orchestrates the complete patent data pipeline:
 1. Download SureChEMBL data
-2. Extract US patent IDs
-3. Download USPTO data (if enabled)
-4. Parse USPTO XML files (if enabled)
+2. Chunk patents.parquet for parallel processing
+3. Extract US patent IDs (optional)
+4. Download USPTO data (if enabled)
+5. Parse USPTO XML files (if enabled)
 
 This single script manages the entire download/preparation phase.
 """
 
 import os
 import sys
+import json
 import argparse
 import subprocess
+import pandas as pd
+import psutil
 from pathlib import Path
 from datetime import datetime
 
 
 def log(message: str) -> None:
-    """Print message with timestamp."""
+    """Print message with timestamp and memory usage."""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{timestamp}] {message}", flush=True)
+    memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+    print(f"[{timestamp}] [MEM: {memory_mb:.1f}MB] {message}", flush=True)
+
+
+def write_processed_chunks_json(output_path: str, chunk_files: list, no_changes: bool = False):
+    """
+    Write processed_chunks.json (single source of truth for tracking).
+
+    IMPORTANT: Preserves existing chunk metadata (like qdrant_inserted, vectors_count)
+    and only updates/adds new chunks.
+    """
+    # Read existing state to preserve metadata
+    existing_chunks = {}
+    if os.path.exists(output_path):
+        try:
+            with open(output_path, 'r') as f:
+                existing_state = json.load(f)
+            existing_chunks = existing_state.get('chunks', {})
+            log(f"Preserving metadata for {len(existing_chunks)} existing chunks")
+        except Exception as e:
+            log(f"WARNING: Could not read existing state: {e}")
+
+    # Start with ALL existing chunks to preserve everything
+    chunks_dict = existing_chunks.copy()
+
+    # Update/add chunks from chunk_files
+    for chunk_info in chunk_files:
+        chunk_filename = chunk_info['filename']
+
+        if chunk_filename in chunks_dict:
+            # Chunk exists - preserve all existing metadata
+            # Only update the fields we know about
+            chunks_dict[chunk_filename]['num_patents'] = chunk_info['num_patents']
+            chunks_dict[chunk_filename]['size_mb'] = chunk_info['size_mb']
+            if 'status' not in chunks_dict[chunk_filename]:
+                chunks_dict[chunk_filename]['status'] = 'ready_to_process'
+        else:
+            # New chunk - create fresh entry
+            chunks_dict[chunk_filename] = {
+                'status': 'ready_to_process',
+                'num_patents': chunk_info['num_patents'],
+                'size_mb': chunk_info['size_mb']
+            }
+
+    processed_chunks = {
+        'last_update': datetime.now().isoformat(),
+        'no_changes': no_changes,
+        'chunks': chunks_dict
+    }
+
+    with open(output_path, 'w') as f:
+        json.dump(processed_chunks, f, indent=2)
+
+    log(f"Written processed_chunks.json: {output_path}")
 
 
 def run_script(script_path, args, description):
@@ -72,6 +129,14 @@ def main():
                        help='Limit number of USPTO files to process (test mode)')
     parser.add_argument('--uspto-test-mode', action='store_true',
                        help='Test mode for USPTO')
+
+    # Chunking options
+    parser.add_argument('--chunk-size', type=int, default=0,
+                       help='Patents per chunk (0 = no chunking)')
+    parser.add_argument('--processed-chunks-output', required=True,
+                       help='Path to processed_chunks.json state file')
+    parser.add_argument('--limit', type=int,
+                       help='Limit total patents (test mode)')
 
     args = parser.parse_args()
 
@@ -183,6 +248,103 @@ def main():
         log("="*60)
 
     # ========================================================================
+    # STEP 3: Chunk patents.parquet for parallel processing
+    # ========================================================================
+    log("\n" + "="*60)
+    log("STEP 3: Chunk Patents for Parallel Processing")
+    log("="*60)
+
+    # Determine chunking strategy
+    # state_dir is at: {base_dir}/state/patents
+    # We want: {base_dir}/raw_data/patents/chunked
+    base_dir = Path(args.state_dir).parent.parent
+    raw_chunked_dir = base_dir / "raw_data" / "patents" / "chunked"
+    raw_chunked_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.chunk_size > 0:
+        # Chunked output - use STREAMING to avoid loading entire file into memory
+        log(f"Chunking enabled: {args.chunk_size} patents per chunk")
+        log(f"Reading patents from: {patents_file}")
+
+        import pyarrow.parquet as pq
+
+        # Open parquet file for streaming
+        parquet_file = pq.ParquetFile(patents_file)
+        total_patents = parquet_file.metadata.num_rows
+        log(f"Total patents: {total_patents:,}")
+
+        # Apply limit if specified (test mode)
+        if args.limit and args.limit < total_patents:
+            log(f"Applying limit: {args.limit:,} patents")
+            total_patents = args.limit
+
+        num_chunks = (total_patents + args.chunk_size - 1) // args.chunk_size
+        log(f"Will create {num_chunks} chunks using streaming")
+
+        chunk_files = []
+        patents_processed = 0
+        chunk_idx = 0
+
+        # Stream through parquet file in batches
+        for batch in parquet_file.iter_batches(batch_size=args.chunk_size):
+            # Convert batch to pandas
+            batch_df = batch.to_pandas()
+
+            # Handle limit
+            if args.limit and patents_processed + len(batch_df) > args.limit:
+                remaining = args.limit - patents_processed
+                batch_df = batch_df.head(remaining)
+
+            if len(batch_df) == 0:
+                break
+
+            # Save chunk
+            chunk_filename = f"patents_chunk_{chunk_idx+1:04d}.parquet"
+            chunk_path = raw_chunked_dir / chunk_filename
+
+            batch_df.to_parquet(chunk_path, index=False)
+
+            chunk_size_mb = chunk_path.stat().st_size / 1024 / 1024
+            chunk_files.append({
+                'filename': chunk_filename,
+                'num_patents': len(batch_df),
+                'size_mb': round(chunk_size_mb, 2)
+            })
+
+            patents_processed += len(batch_df)
+            chunk_idx += 1
+
+            log(f"  Created chunk {chunk_idx}/{num_chunks}: {chunk_filename} ({len(batch_df):,} patents, {chunk_size_mb:.1f}MB)")
+
+            # Stop if we've hit the limit
+            if args.limit and patents_processed >= args.limit:
+                break
+
+        # Write processed_chunks.json
+        write_processed_chunks_json(args.processed_chunks_output, chunk_files, no_changes=False)
+        log(f"✓ Created {len(chunk_files)} chunks in {raw_chunked_dir}")
+        log(f"✓ Total patents chunked: {patents_processed:,}")
+
+    else:
+        # No chunking - create single-file entry in processed_chunks.json
+        log("Chunking disabled (chunk_size=0)")
+
+        # Get total count without loading into memory
+        import pyarrow.parquet as pq
+        parquet_file = pq.ParquetFile(patents_file)
+        total_patents = parquet_file.metadata.num_rows
+        log(f"Total patents: {total_patents:,}")
+
+        # Still write state file for consistency
+        patents_size_mb = patents_file.stat().st_size / 1024 / 1024
+        single_file_info = [{
+            'filename': 'patents.parquet',
+            'num_patents': total_patents,
+            'size_mb': round(patents_size_mb, 2)
+        }]
+        write_processed_chunks_json(args.processed_chunks_output, single_file_info, no_changes=False)
+
+    # ========================================================================
     # COMPLETE
     # ========================================================================
     log("\n" + "="*60)
@@ -193,6 +355,10 @@ def main():
 
     if args.enable_uspto:
         log(f"USPTO historical data: {uspto_parquet_file}")
+
+    if args.chunk_size > 0:
+        log(f"Chunks directory: {raw_chunked_dir}")
+        log(f"State file: {args.processed_chunks_output}")
 
     log("\nAll data ready for processing!")
 

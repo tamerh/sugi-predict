@@ -54,7 +54,6 @@ pubmed:
 
     # Snakemake job resources
     memory_mb: 8192
-    runtime_hours: 8
 
   # Debug settings
   debug_mode: false         # Set to true to download/process limited files
@@ -122,7 +121,6 @@ clinical_trials:
 
     # Snakemake job resources
     memory_mb: 8192
-    runtime_hours: 4
 
 # Patents Module Configuration
 patents:
@@ -139,10 +137,15 @@ patents:
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"  # Transformer model
   vector_dimension: 768         # Output dimension for TEXT embeddings
 
+  # Chunking strategy for parallel processing (PRODUCTION)
+  patents_per_chunk: 1000000    # 1M patents per chunk (~43 chunks for 43M patents)
+                                # Each chunk: ~1M patents × 2-3KB text ≈ 2-3GB memory
+                                # Allows parallel processing with 16GB per job
+
   # Processing settings for text
   batch_size: 10000             # Patents per batch for text processing
   encode_batch_size: 128        # Batch size for model encoding (128 optimal for CPU, 256 for GPU)
-  num_workers: 1                # Number of CPU workers
+  num_workers: 1                # Number of CPU threads for PyTorch (intra-op parallelism, 2-4x speedup)
   max_chunk_length: 500         # Maximum text chunk length
   min_text_length: 50           # Minimum text length for inclusion
 
@@ -157,10 +160,8 @@ patents:
   uspto_historical_json_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto"  # USPTO-Chem historical JSON directory (2001-2025)
 
   # Job resources - PRODUCTION
-  download_memory_mb: 16384     # 16GB for downloading SureChEMBL files
-  download_runtime: 240         # 4 hours
-  process_memory_mb: 20480      # 20GB for text processing (increased for USPTO enrichment)
-  process_runtime: 480          # 8 hours
+  download_memory_mb: 65536     # 64GB for downloading SureChEMBL files
+  process_memory_mb: 32768      # 32GB for text processing (increased for full 43M patents + USPTO enrichment)
 
   # Release management
   cleanup_old: true             # Cleanup old releases after processing
@@ -194,7 +195,6 @@ patents:
 
     # Snakemake job resources
     memory_mb: 8192
-    runtime_hours: 8
 
   # Test mode settings (set via test_config.yaml)
   test_mode: false
@@ -217,7 +217,6 @@ qdrant:
   # Server settings (for auto-start via Snakemake)
   server:
     memory_mb: 131072      # 128GB for server
-    runtime_hours: 48      # 2 days
 
   # Connection settings
   connection:

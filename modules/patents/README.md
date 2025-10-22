@@ -86,6 +86,12 @@ fields.parquet (1.7KB)
 - Gap: ~90% of US patents are pre-2001 → cannot be enriched
 - **This is expected**, not a bug
 
+**Enrichment Distribution** (Production Run):
+- Chunks with 2001+ patents: 4-6% enrichment rate (20K-35K patents enriched per 1M chunk)
+- Chunks with pre-2001 patents: 0% enrichment (no matches in USPTO data)
+- Total enriched: ~490K US patents out of 9.4M (~5.2% overall)
+- **Uneven distribution is normal** - depends on temporal overlap with USPTO dataset
+
 **Testing Enrichment**:
 
 To test with guaranteed matches, uncomment in `config/test_overrides.yaml`:

@@ -24,7 +24,6 @@ pubmed:
   # Qdrant insertion overrides
   qdrant:
     memory_mb: 4096            # 4GB (vs 8GB production)
-    runtime_hours: 1           # 1 hour (vs 8 hours production)
 
 # Clinical Trials test overrides
 clinical_trials:
@@ -51,7 +50,6 @@ clinical_trials:
   # Qdrant insertion overrides
   qdrant:
     memory_mb: 4096            # 4GB (vs 8GB production)
-    runtime_hours: 1           # 1 hour (vs 4 hours production)
 
 # Patents test overrides
 patents:
@@ -62,6 +60,9 @@ patents:
   test_patent_ids_file: "tests/fixtures/patents/test_patent_ids_with_uspto.txt"  # Filter by specific patent IDs (for testing enrichment)
   test_limit_files: 4                # Limit number of files to download in test mode
   max_mapping_rows: 10000000         # Scan only first 10M rows of mapping file (vs all 1.5B in production)
+
+  # Chunking strategy for testing
+  patents_per_chunk: 100       # 100 patents per chunk for testing (vs 1M production)
 
   # USPTO test settings (NEW!)
   enable_uspto: true                 # Test USPTO integration
@@ -75,14 +76,11 @@ patents:
 
   # Reduced resources for testing
   download_memory_mb: 8192     # 8GB (vs 16GB production)
-  download_runtime: 60         # 1 hour (vs 4 hours production)
   process_memory_mb: 12288     # 12GB for USPTO enrichment (vs 20GB production)
-  process_runtime: 120         # 2 hours (vs 8 hours production)
 
   # Qdrant insertion overrides
   qdrant:
     memory_mb: 4096            # 4GB (vs 8GB production)
-    runtime_hours: 1           # 1 hour (vs 4 hours production)
 
 # Qdrant test overrides
 qdrant:
@@ -93,7 +91,6 @@ qdrant:
   batch_size: 100              # Small batches (vs 500 production)
   server:
     memory_mb: 16384           # 16GB (vs 128GB production)
-    runtime_hours: 4           # 4 hours (vs 48 hours production)
 
 # Cluster test overrides
 cluster:

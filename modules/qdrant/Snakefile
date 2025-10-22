@@ -139,8 +139,7 @@ rule insert_pubmed_to_qdrant:
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_pubmed_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["pubmed"]["qdrant"]["memory_mb"],
-        runtime = 604800  # 1 week
+        mem_mb = config["pubmed"]["qdrant"]["memory_mb"]
     conda:
         config["conda_env"]
     log:
@@ -240,8 +239,7 @@ rule insert_clinical_trials_to_qdrant:
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_clinical_trials_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"],
-        runtime = 604800  # 1 week
+        mem_mb = config["clinical_trials"]["qdrant"]["memory_mb"]
     conda:
         config["conda_env"]
     log:
@@ -352,8 +350,7 @@ rule insert_patents_text_to_qdrant:
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_patents_text_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["patents"]["qdrant"]["memory_mb"],
-        runtime = 604800  # 1 week
+        mem_mb = config["patents"]["qdrant"]["memory_mb"]
     conda:
         config["conda_env"]
     log:
@@ -447,8 +444,7 @@ rule insert_patents_compounds_to_qdrant:
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_patents_compounds_to_qdrant_cluster.log")
     resources:
-        mem_mb = config["patents"]["qdrant"]["memory_mb"],
-        runtime = 604800  # 1 week
+        mem_mb = config["patents"]["qdrant"]["memory_mb"]
     conda:
         config["conda_env"]
     log:
