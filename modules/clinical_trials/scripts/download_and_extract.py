@@ -389,6 +389,9 @@ class AACTTextExtractor:
                             include_eligibility: bool = True,
                             include_interventions: bool = True,
                             include_conditions: bool = True,
+                            include_sponsors: bool = True,
+                            include_facilities: bool = True,
+                            include_study_arms: bool = True,
                             min_summary_length: int = 50,
                             exclude_withdrawn: bool = True,
                             nct_ids_file: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -514,6 +517,62 @@ class AACTTextExtractor:
                         if condition_name and condition_name != 'nan':
                             conditions_dict[nct_id].append(condition_name)
 
+        # Process sponsors (one-to-many)
+        sponsors_dict = {}
+        if include_sponsors:
+            sponsors = self.load_table('sponsors')
+            if sponsors is not None:
+                sponsors = sponsors[sponsors['nct_id'].isin(kept_nct_ids)]
+                log_with_timestamp(f"Processing sponsors for {len(sponsors):,} sponsor entries")
+                for nct_id, group in sponsors.groupby('nct_id'):
+                    sponsors_dict[nct_id] = []
+                    for _, row in group.iterrows():
+                        sponsor_name = str(row.get('name', ''))
+                        if sponsor_name and sponsor_name != 'nan':
+                            sponsors_dict[nct_id].append({
+                                'name': sponsor_name,
+                                'agency_class': str(row.get('agency_class', '')),
+                                'role': str(row.get('lead_or_collaborator', ''))
+                            })
+
+        # Process facilities/locations (one-to-many)
+        facilities_dict = {}
+        if include_facilities:
+            facilities = self.load_table('facilities')
+            if facilities is not None:
+                facilities = facilities[facilities['nct_id'].isin(kept_nct_ids)]
+                log_with_timestamp(f"Processing facilities for {len(facilities):,} facility entries")
+                for nct_id, group in facilities.groupby('nct_id'):
+                    facilities_dict[nct_id] = []
+                    for _, row in group.iterrows():
+                        facility_name = str(row.get('name', ''))
+                        if facility_name and facility_name != 'nan':
+                            facilities_dict[nct_id].append({
+                                'name': facility_name,
+                                'city': str(row.get('city', '')),
+                                'state': str(row.get('state', '')),
+                                'country': str(row.get('country', '')),
+                                'status': str(row.get('status', ''))
+                            })
+
+        # Process study arms/groups (one-to-many)
+        study_arms_dict = {}
+        if include_study_arms:
+            design_groups = self.load_table('design_groups')
+            if design_groups is not None:
+                design_groups = design_groups[design_groups['nct_id'].isin(kept_nct_ids)]
+                log_with_timestamp(f"Processing study arms for {len(design_groups):,} arm entries")
+                for nct_id, group in design_groups.groupby('nct_id'):
+                    study_arms_dict[nct_id] = []
+                    for _, row in group.iterrows():
+                        arm_title = str(row.get('title', ''))
+                        if arm_title and arm_title != 'nan':
+                            study_arms_dict[nct_id].append({
+                                'title': arm_title,
+                                'type': str(row.get('group_type', '')),
+                                'description': str(row.get('description', ''))
+                            })
+
         # Convert to list of dicts
         log_with_timestamp("Converting to final format...")
         extracted_studies = []
@@ -556,6 +615,21 @@ class AACTTextExtractor:
             else:
                 study_data['conditions'] = []
 
+            if nct_id in sponsors_dict:
+                study_data['sponsors'] = sponsors_dict[nct_id]
+            else:
+                study_data['sponsors'] = []
+
+            if nct_id in facilities_dict:
+                study_data['facilities'] = facilities_dict[nct_id]
+            else:
+                study_data['facilities'] = []
+
+            if nct_id in study_arms_dict:
+                study_data['study_arms'] = study_arms_dict[nct_id]
+            else:
+                study_data['study_arms'] = []
+
             extracted_studies.append(study_data)
 
         log_with_timestamp(f"Extraction complete: {len(extracted_studies):,} studies")
@@ -579,6 +653,9 @@ def main():
     parser.add_argument("--include-eligibility", action="store_true", default=True)
     parser.add_argument("--include-interventions", action="store_true", default=True)
     parser.add_argument("--include-conditions", action="store_true", default=True)
+    parser.add_argument("--include-sponsors", action="store_true", default=True)
+    parser.add_argument("--include-facilities", action="store_true", default=True)
+    parser.add_argument("--include-study-arms", action="store_true", default=True)
     parser.add_argument("--exclude-withdrawn", action="store_true", default=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--nct-ids-file")
@@ -645,6 +722,9 @@ def main():
             include_eligibility=args.include_eligibility,
             include_interventions=args.include_interventions,
             include_conditions=args.include_conditions,
+            include_sponsors=args.include_sponsors,
+            include_facilities=args.include_facilities,
+            include_study_arms=args.include_study_arms,
             min_summary_length=args.min_summary_length,
             exclude_withdrawn=args.exclude_withdrawn,
             nct_ids_file=args.nct_ids_file

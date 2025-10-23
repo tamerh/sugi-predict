@@ -175,6 +175,9 @@ checkpoint clinical_trials_download_and_extract:
             ("--include-eligibility " if ct_config.get("include_eligibility", True) else "") +
             ("--include-interventions " if ct_config.get("include_interventions", True) else "") +
             ("--include-conditions " if ct_config.get("include_conditions", True) else "") +
+            ("--include-sponsors " if ct_config.get("include_sponsors", True) else "") +
+            ("--include-facilities " if ct_config.get("include_facilities", True) else "") +
+            ("--include-study-arms " if ct_config.get("include_study_arms", True) else "") +
             ("--exclude-withdrawn " if ct_config.get("exclude_withdrawn", True) else "")
         ),
         limit_flag = f"--limit {ct_config['test_trials_limit']}" if ct_config.get("test_mode", False) else "",

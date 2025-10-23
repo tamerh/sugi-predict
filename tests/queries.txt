@@ -14,6 +14,16 @@
 
 “Are there studies evaluating robotic rehabilitation methods for stroke recovery?”
 
-“What are the common exclusion criteria in head and neck cancer trials?”
+"What are the common exclusion criteria in head and neck cancer trials?"
 
-“Find studies investigating remote monitoring or telehealth interventions in cardiology.”
+"Find studies investigating remote monitoring or telehealth interventions in cardiology."
+
+"Which trials are funded by the National Cancer Institute?"
+
+"Show studies conducted in Boston or New York."
+
+"Find industry-sponsored clinical trials for cardiovascular diseases."
+
+"Which trials have both experimental and placebo control arms?"
+
+"List international multi-country clinical trials."

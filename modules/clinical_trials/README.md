@@ -37,8 +37,27 @@ Optional: Merge chunks → Single master index (for analysis/export)
 
 ### Test Run
 ```bash
-# Process small sample (100 trials → 2 chunks)
+# Process small sample (400 trials → 8 chunks)
+./bioyoda.sh test --modules clinical_trials
+
+# Or manually with test config
 ./bioyoda.sh run clinical_trials --config config/test_config.yaml --local
+```
+
+**Test Reference Data**: The test suite uses a fixed set of 400 trials (controlled by `test_trials_limit: 400` in `config/test_overrides.yaml`). These 400 trials are deterministic (always the same first 400 from AACT) and serve as reference data for:
+- Query validation in `tests/validate_queries.py`
+- Reference fixtures in `tests/fixtures/clinical_trials/sample_trials.json` (all 400 trials)
+- Tier 1 field coverage validation (sponsors, facilities, study_arms)
+
+To update test reference fixtures after code changes:
+```bash
+# 1. Run test to generate new data
+./bioyoda.sh test --modules clinical_trials
+
+# 2. Update fixtures from test_out
+python3 tests/update_clinical_trials_fixtures.py
+
+# Result: tests/fixtures/clinical_trials/sample_trials.json updated with all 400 trials
 ```
 
 ### Optional: Merge Chunks
@@ -300,15 +319,15 @@ clinical_trials:
 ```
 → **Result**: 1 job × 1 GPU = Maximum batch efficiency
 
-**Test Mode** (`config/test_config.yaml`):
+**Test Mode** (`config/test_overrides.yaml`):
 ```yaml
 clinical_trials:
   test_mode: true
-  test_trials_limit: 100       # Only 100 trials
+  test_trials_limit: 400       # 400 trials (deterministic reference set)
   enable_chunking: true
-  trials_per_chunk: 50         # Very small chunks
+  trials_per_chunk: 50         # Small chunks for testing
 ```
-→ **Result**: 2 chunks for testing
+→ **Result**: 8 chunks for testing (fixtures in `tests/fixtures/clinical_trials/`)
 
 ### Resource Settings
 
@@ -370,19 +389,28 @@ Each trial generates multiple chunks. Metadata format per chunk:
     "phase": "Phase 3",
     "study_type": "Interventional",
     "conditions": ["Diabetes"],
-    "interventions": [{"intervention_type": "Drug", "name": "Drug A"}]
+    "interventions": [{"intervention_type": "Drug", "name": "Drug A"}],
+    "sponsors": [{"name": "NIH", "agency_class": "NIH", "role": "lead"}],
+    "facilities": [{"name": "Hospital", "city": "Boston", "state": "MA", "country": "USA", "status": "RECRUITING"}],
+    "study_arms": [{"title": "Experimental", "type": "EXPERIMENTAL", "description": "..."}]
   }
 }
 ```
 
+**Tier 1 Fields** (added for enhanced filtering):
+- **sponsors**: Funding organizations with agency class and role
+- **facilities**: Study locations with geographic details
+- **study_arms**: Treatment groups and study design
+
 ## Performance
 
-### Test Mode (100 trials)
-- Chunks created: 2 (50 trials each)
-- Text chunks: ~500
+### Test Mode (400 trials)
+- Chunks created: 8 (50 trials each)
+- Text chunks: ~2000
 - Runtime: 10-20 minutes
 - Memory: 8GB per chunk job
-- **Parallel**: 2 jobs can run simultaneously
+- **Parallel**: 8 jobs can run simultaneously
+- **Reference**: All 400 trials saved in `tests/fixtures/clinical_trials/sample_trials.json`
 
 ### CPU Production Mode (554K trials)
 - Chunks created: ~25 (20K trials each)

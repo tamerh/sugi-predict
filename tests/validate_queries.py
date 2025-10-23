@@ -248,6 +248,95 @@ class QueryValidator:
             print(f"   {Colors.RED}✗{Colors.NC} Error: {e}")
             return False
 
+    def check_tier1_coverage(self) -> None:
+        """Check Tier 1 field coverage in clinical trials results"""
+        print("\n" + "="*80)
+        print("TIER 1 FIELD COVERAGE CHECK (Clinical Trials)")
+        print("="*80)
+        print("\nChecking for sponsors, facilities, and study_arms in results...")
+
+        # Run a simple query to get sample results
+        try:
+            response = requests.post(
+                f"{self.api_url}/search",
+                json={
+                    "query": "clinical trials",
+                    "collections": ["clinical_trials"],
+                    "limit": 20
+                },
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                print(f"{Colors.YELLOW}⚠{Colors.NC} Could not fetch results for coverage check")
+                return
+
+            results = response.json().get('results', [])
+            if not results:
+                print(f"{Colors.YELLOW}⚠{Colors.NC} No results to check")
+                return
+
+            # Count field coverage
+            total = len(results)
+            with_sponsors = 0
+            with_facilities = 0
+            with_study_arms = 0
+            with_conditions = 0
+            with_interventions = 0
+
+            for result in results:
+                payload = result.get('payload', {})
+
+                if payload.get('sponsors') and len(payload['sponsors']) > 0:
+                    with_sponsors += 1
+                if payload.get('facilities') and len(payload['facilities']) > 0:
+                    with_facilities += 1
+                if payload.get('study_arms') and len(payload['study_arms']) > 0:
+                    with_study_arms += 1
+                if payload.get('conditions') and len(payload['conditions']) > 0:
+                    with_conditions += 1
+                if payload.get('interventions') and len(payload['interventions']) > 0:
+                    with_interventions += 1
+
+            # Print coverage stats
+            print(f"\nSample size: {total} results")
+            print(f"\nField Coverage:")
+            print(f"  Sponsors:      {with_sponsors}/{total} ({with_sponsors/total*100:.1f}%)")
+            print(f"  Facilities:    {with_facilities}/{total} ({with_facilities/total*100:.1f}%)")
+            print(f"  Study Arms:    {with_study_arms}/{total} ({with_study_arms/total*100:.1f}%)")
+            print(f"  Conditions:    {with_conditions}/{total} ({with_conditions/total*100:.1f}%)")
+            print(f"  Interventions: {with_interventions}/{total} ({with_interventions/total*100:.1f}%)")
+
+            # Show a sample result with all fields
+            if self.verbose:
+                print(f"\nSample result with Tier 1 fields:")
+                for result in results:
+                    payload = result.get('payload', {})
+                    if (payload.get('sponsors') and payload.get('facilities') and
+                        payload.get('study_arms')):
+                        print(f"  NCT ID: {payload.get('nct_id', 'N/A')}")
+                        print(f"  Title: {payload.get('brief_title', 'N/A')[:60]}")
+                        print(f"  Sponsors: {len(payload.get('sponsors', []))}")
+                        print(f"  Facilities: {len(payload.get('facilities', []))}")
+                        print(f"  Study Arms: {len(payload.get('study_arms', []))}")
+                        break
+
+            # Check if Tier 1 fields are present
+            tier1_ok = with_sponsors > 0 and with_facilities > 0 and with_study_arms > 0
+            if tier1_ok:
+                print(f"\n{Colors.GREEN}✓{Colors.NC} Tier 1 fields (sponsors, facilities, study_arms) are present!")
+            else:
+                print(f"\n{Colors.RED}✗{Colors.NC} Some Tier 1 fields are missing!")
+                if with_sponsors == 0:
+                    print(f"  Missing: sponsors")
+                if with_facilities == 0:
+                    print(f"  Missing: facilities")
+                if with_study_arms == 0:
+                    print(f"  Missing: study_arms")
+
+        except Exception as e:
+            print(f"{Colors.YELLOW}⚠{Colors.NC} Error checking Tier 1 coverage: {e}")
+
     def validate_rag_query(self, question: str, index: int) -> Optional[bool]:
         """
         Validate a single RAG query
@@ -386,6 +475,9 @@ class QueryValidator:
         else:
             print(f" {Colors.RED}✗{Colors.NC}")
         print(f"{'='*80}")
+
+        # Check Tier 1 field coverage
+        self.check_tier1_coverage()
 
         return all_passed
 
