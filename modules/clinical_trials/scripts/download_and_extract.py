@@ -392,6 +392,7 @@ class AACTTextExtractor:
                             include_sponsors: bool = True,
                             include_facilities: bool = True,
                             include_study_arms: bool = True,
+                            include_publications: bool = True,
                             min_summary_length: int = 50,
                             exclude_withdrawn: bool = True,
                             nct_ids_file: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -573,6 +574,27 @@ class AACTTextExtractor:
                                 'description': str(row.get('description', ''))
                             })
 
+        # Process publications/references (one-to-many)
+        publications_dict = {}
+        if include_publications:
+            study_references = self.load_table('study_references')
+            if study_references is not None:
+                study_references = study_references[study_references['nct_id'].isin(kept_nct_ids)]
+                log_with_timestamp(f"Processing publications for {len(study_references):,} reference entries")
+                for nct_id, group in study_references.groupby('nct_id'):
+                    publications_dict[nct_id] = []
+                    for _, row in group.iterrows():
+                        pmid_raw = row.get('pmid', '')
+                        # Convert to string and clean up (remove .0 from floats)
+                        pmid = str(pmid_raw).replace('.0', '') if pd.notna(pmid_raw) else ''
+                        # Only include references with valid PMIDs
+                        if pmid and pmid != 'nan' and pmid != '':
+                            publications_dict[nct_id].append({
+                                'pmid': pmid,
+                                'reference_type': str(row.get('reference_type', '')),
+                                'citation': str(row.get('citation', ''))
+                            })
+
         # Convert to list of dicts
         log_with_timestamp("Converting to final format...")
         extracted_studies = []
@@ -630,6 +652,11 @@ class AACTTextExtractor:
             else:
                 study_data['study_arms'] = []
 
+            if nct_id in publications_dict:
+                study_data['publications'] = publications_dict[nct_id]
+            else:
+                study_data['publications'] = []
+
             extracted_studies.append(study_data)
 
         log_with_timestamp(f"Extraction complete: {len(extracted_studies):,} studies")
@@ -656,6 +683,7 @@ def main():
     parser.add_argument("--include-sponsors", action="store_true", default=True)
     parser.add_argument("--include-facilities", action="store_true", default=True)
     parser.add_argument("--include-study-arms", action="store_true", default=True)
+    parser.add_argument("--include-publications", action="store_true", default=True)
     parser.add_argument("--exclude-withdrawn", action="store_true", default=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--nct-ids-file")
@@ -725,6 +753,7 @@ def main():
             include_sponsors=args.include_sponsors,
             include_facilities=args.include_facilities,
             include_study_arms=args.include_study_arms,
+            include_publications=args.include_publications,
             min_summary_length=args.min_summary_length,
             exclude_withdrawn=args.exclude_withdrawn,
             nct_ids_file=args.nct_ids_file

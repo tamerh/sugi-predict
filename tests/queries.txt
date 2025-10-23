@@ -27,3 +27,9 @@
 "Which trials have both experimental and placebo control arms?"
 
 "List international multi-country clinical trials."
+
+"Find trials with published results in PubMed."
+
+"Show trials with recent publications from 2020 onwards."
+
+"Which completed trials have been peer-reviewed and published?"

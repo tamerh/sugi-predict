@@ -249,11 +249,11 @@ class QueryValidator:
             return False
 
     def check_tier1_coverage(self) -> None:
-        """Check Tier 1 field coverage in clinical trials results"""
+        """Check Tier 1+ field coverage in clinical trials results (Tier 1 + Publications)"""
         print("\n" + "="*80)
-        print("TIER 1 FIELD COVERAGE CHECK (Clinical Trials)")
+        print("FIELD COVERAGE CHECK (Clinical Trials)")
         print("="*80)
-        print("\nChecking for sponsors, facilities, and study_arms in results...")
+        print("\nChecking for Tier 1 (sponsors, facilities, study_arms) + Publications...")
 
         # Run a simple query to get sample results
         try:
@@ -283,6 +283,7 @@ class QueryValidator:
             with_study_arms = 0
             with_conditions = 0
             with_interventions = 0
+            with_publications = 0
 
             for result in results:
                 payload = result.get('payload', {})
@@ -297,6 +298,8 @@ class QueryValidator:
                     with_conditions += 1
                 if payload.get('interventions') and len(payload['interventions']) > 0:
                     with_interventions += 1
+                if payload.get('publications') and len(payload['publications']) > 0:
+                    with_publications += 1
 
             # Print coverage stats
             print(f"\nSample size: {total} results")
@@ -306,6 +309,7 @@ class QueryValidator:
             print(f"  Study Arms:    {with_study_arms}/{total} ({with_study_arms/total*100:.1f}%)")
             print(f"  Conditions:    {with_conditions}/{total} ({with_conditions/total*100:.1f}%)")
             print(f"  Interventions: {with_interventions}/{total} ({with_interventions/total*100:.1f}%)")
+            print(f"  Publications:  {with_publications}/{total} ({with_publications/total*100:.1f}%)")
 
             # Show a sample result with all fields
             if self.verbose:
@@ -321,18 +325,26 @@ class QueryValidator:
                         print(f"  Study Arms: {len(payload.get('study_arms', []))}")
                         break
 
-            # Check if Tier 1 fields are present
+            # Check if fields are present
             tier1_ok = with_sponsors > 0 and with_facilities > 0 and with_study_arms > 0
-            if tier1_ok:
-                print(f"\n{Colors.GREEN}✓{Colors.NC} Tier 1 fields (sponsors, facilities, study_arms) are present!")
+            publications_ok = with_publications > 0
+
+            if tier1_ok and publications_ok:
+                print(f"\n{Colors.GREEN}✓{Colors.NC} All fields (Tier 1 + Publications) are present!")
+            elif tier1_ok:
+                print(f"\n{Colors.GREEN}✓{Colors.NC} Tier 1 fields present!")
+                if not publications_ok:
+                    print(f"  {Colors.YELLOW}⚠{Colors.NC} Publications field present but no data in sample")
             else:
-                print(f"\n{Colors.RED}✗{Colors.NC} Some Tier 1 fields are missing!")
+                print(f"\n{Colors.RED}✗{Colors.NC} Some fields are missing!")
                 if with_sponsors == 0:
                     print(f"  Missing: sponsors")
                 if with_facilities == 0:
                     print(f"  Missing: facilities")
                 if with_study_arms == 0:
                     print(f"  Missing: study_arms")
+                if with_publications == 0:
+                    print(f"  Missing: publications")
 
         except Exception as e:
             print(f"{Colors.YELLOW}⚠{Colors.NC} Error checking Tier 1 coverage: {e}")

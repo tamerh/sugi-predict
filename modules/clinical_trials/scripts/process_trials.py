@@ -120,7 +120,8 @@ class TrialTextProcessor:
                 'interventions': trial.get('interventions', []),
                 'sponsors': trial.get('sponsors', []),
                 'facilities': trial.get('facilities', []),
-                'study_arms': trial.get('study_arms', [])
+                'study_arms': trial.get('study_arms', []),
+                'publications': trial.get('publications', [])
             })
 
         # Detailed description chunks
@@ -142,7 +143,8 @@ class TrialTextProcessor:
                         'interventions': trial.get('interventions', []),
                         'sponsors': trial.get('sponsors', []),
                         'facilities': trial.get('facilities', []),
-                        'study_arms': trial.get('study_arms', [])
+                        'study_arms': trial.get('study_arms', []),
+                        'publications': trial.get('publications', [])
                     })
 
         # Primary outcomes
