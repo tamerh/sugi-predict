@@ -388,6 +388,7 @@ class AACTTextExtractor:
                             include_outcomes: bool = True,
                             include_eligibility: bool = True,
                             include_interventions: bool = True,
+                            include_conditions: bool = True,
                             min_summary_length: int = 50,
                             exclude_withdrawn: bool = True,
                             nct_ids_file: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -499,6 +500,20 @@ class AACTTextExtractor:
                             'description': str(row.get('description', ''))
                         })
 
+        # Process conditions/diseases (one-to-many)
+        conditions_dict = {}
+        if include_conditions:
+            conditions = self.load_table('conditions')
+            if conditions is not None:
+                conditions = conditions[conditions['nct_id'].isin(kept_nct_ids)]
+                log_with_timestamp(f"Processing conditions for {len(conditions):,} condition entries")
+                for nct_id, group in conditions.groupby('nct_id'):
+                    conditions_dict[nct_id] = []
+                    for _, row in group.iterrows():
+                        condition_name = str(row.get('name', ''))
+                        if condition_name and condition_name != 'nan':
+                            conditions_dict[nct_id].append(condition_name)
+
         # Convert to list of dicts
         log_with_timestamp("Converting to final format...")
         extracted_studies = []
@@ -536,6 +551,11 @@ class AACTTextExtractor:
             if nct_id in interventions_dict:
                 study_data['interventions'] = interventions_dict[nct_id]
 
+            if nct_id in conditions_dict:
+                study_data['conditions'] = conditions_dict[nct_id]
+            else:
+                study_data['conditions'] = []
+
             extracted_studies.append(study_data)
 
         log_with_timestamp(f"Extraction complete: {len(extracted_studies):,} studies")
@@ -558,6 +578,7 @@ def main():
     parser.add_argument("--include-outcomes", action="store_true", default=True)
     parser.add_argument("--include-eligibility", action="store_true", default=True)
     parser.add_argument("--include-interventions", action="store_true", default=True)
+    parser.add_argument("--include-conditions", action="store_true", default=True)
     parser.add_argument("--exclude-withdrawn", action="store_true", default=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--nct-ids-file")
@@ -623,6 +644,7 @@ def main():
             include_outcomes=args.include_outcomes,
             include_eligibility=args.include_eligibility,
             include_interventions=args.include_interventions,
+            include_conditions=args.include_conditions,
             min_summary_length=args.min_summary_length,
             exclude_withdrawn=args.exclude_withdrawn,
             nct_ids_file=args.nct_ids_file

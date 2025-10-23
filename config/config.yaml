@@ -85,6 +85,7 @@ clinical_trials:
   include_eligibility: true
   include_interventions: true
   exclude_withdrawn: true
+  include_conditions: true
 
   # Job resources - PRODUCTION
   download_memory_mb: 16384    # 16GB for download + extraction
