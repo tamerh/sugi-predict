@@ -61,6 +61,8 @@ def analyze_and_update_fixtures():
         'with_study_arms': 0,
         'with_conditions': 0,
         'with_interventions': 0,
+        'with_publications': 0,
+        'with_adverse_events': 0,
     }
 
     sponsor_names = Counter()
@@ -68,6 +70,7 @@ def analyze_and_update_fixtures():
     facility_cities = Counter()
     facility_countries = Counter()
     arm_types = Counter()
+    common_adverse_events = Counter()
 
     for trial in all_trials:
         if trial.get('sponsors') and len(trial['sponsors']) > 0:
@@ -93,13 +96,28 @@ def analyze_and_update_fixtures():
         if trial.get('interventions') and len(trial['interventions']) > 0:
             stats['with_interventions'] += 1
 
+        if trial.get('publications') and len(trial['publications']) > 0:
+            stats['with_publications'] += 1
+
+        # Check adverse events
+        ae_summary = trial.get('adverse_events_summary', {})
+        if ae_summary.get('has_events', False):
+            stats['with_adverse_events'] += 1
+            # Collect common adverse event terms
+            for event in ae_summary.get('common_events', []):
+                term = event.get('term', '')
+                if term:
+                    common_adverse_events[term] += 1
+
     # Print statistics
     print(f"\nField Coverage:")
-    print(f"  Sponsors:      {stats['with_sponsors']}/{stats['total']} ({stats['with_sponsors']/stats['total']*100:.1f}%)")
-    print(f"  Facilities:    {stats['with_facilities']}/{stats['total']} ({stats['with_facilities']/stats['total']*100:.1f}%)")
-    print(f"  Study Arms:    {stats['with_study_arms']}/{stats['total']} ({stats['with_study_arms']/stats['total']*100:.1f}%)")
-    print(f"  Conditions:    {stats['with_conditions']}/{stats['total']} ({stats['with_conditions']/stats['total']*100:.1f}%)")
-    print(f"  Interventions: {stats['with_interventions']}/{stats['total']} ({stats['with_interventions']/stats['total']*100:.1f}%)")
+    print(f"  Sponsors:        {stats['with_sponsors']}/{stats['total']} ({stats['with_sponsors']/stats['total']*100:.1f}%)")
+    print(f"  Facilities:      {stats['with_facilities']}/{stats['total']} ({stats['with_facilities']/stats['total']*100:.1f}%)")
+    print(f"  Study Arms:      {stats['with_study_arms']}/{stats['total']} ({stats['with_study_arms']/stats['total']*100:.1f}%)")
+    print(f"  Conditions:      {stats['with_conditions']}/{stats['total']} ({stats['with_conditions']/stats['total']*100:.1f}%)")
+    print(f"  Interventions:   {stats['with_interventions']}/{stats['total']} ({stats['with_interventions']/stats['total']*100:.1f}%)")
+    print(f"  Publications:    {stats['with_publications']}/{stats['total']} ({stats['with_publications']/stats['total']*100:.1f}%)")
+    print(f"  Adverse Events:  {stats['with_adverse_events']}/{stats['total']} ({stats['with_adverse_events']/stats['total']*100:.1f}%)")
 
     print(f"\nTop 10 Sponsors:")
     for sponsor, count in sponsor_names.most_common(10):
@@ -120,6 +138,11 @@ def analyze_and_update_fixtures():
     print(f"\nStudy Arm Types:")
     for arm_type, count in arm_types.most_common():
         print(f"  {count:3d}x {arm_type}")
+
+    if common_adverse_events:
+        print(f"\nTop 10 Adverse Events:")
+        for event, count in common_adverse_events.most_common(10):
+            print(f"  {count:3d}x {event}")
 
     # Find good examples for queries
     print("\n" + "=" * 80)
@@ -179,6 +202,49 @@ def analyze_and_update_fixtures():
         print(f"   Countries: {len(countries)} ({', '.join(list(countries)[:3])})")
         print(f"   Query: \"Find multi-country clinical trials\"")
 
+    # Example 6: Trial with adverse events data
+    ae_trials = [t for t in all_trials if t.get('adverse_events_summary', {}).get('has_events', False)]
+    if ae_trials:
+        trial = ae_trials[0]
+        ae_summary = trial['adverse_events_summary']
+        print(f"\n6. Trial with Adverse Events Data:")
+        print(f"   NCT: {trial['nct_id']}")
+        print(f"   Title: {trial['brief_title'][:70]}")
+        print(f"   Serious events: {ae_summary.get('serious_events_count', 0)}")
+        print(f"   Other events: {ae_summary.get('other_events_count', 0)}")
+        common_events = ae_summary.get('common_events', [])
+        if common_events:
+            top_event = common_events[0]
+            print(f"   Top event: {top_event.get('term', '')} ({top_event.get('percentage', 0)}%)")
+        print(f"   Query: \"Find trials with safety data and low serious event rates\"")
+
+    # Example 7: Trial with specific adverse event
+    if common_adverse_events:
+        top_ae = common_adverse_events.most_common(1)[0][0]
+        ae_specific_trials = [t for t in all_trials
+                             if any(e.get('term', '') == top_ae
+                                   for e in t.get('adverse_events_summary', {}).get('common_events', []))]
+        if ae_specific_trials:
+            trial = ae_specific_trials[0]
+            print(f"\n7. Trial with Specific Adverse Event:")
+            print(f"   NCT: {trial['nct_id']}")
+            print(f"   Title: {trial['brief_title'][:70]}")
+            print(f"   Common event: {top_ae}")
+            print(f"   Query: \"Which trials report {top_ae} as a common side effect?\"")
+
+    # Example 8: Trial with publications and adverse events
+    pub_ae_trials = [t for t in all_trials
+                     if t.get('publications') and len(t['publications']) > 0
+                     and t.get('adverse_events_summary', {}).get('has_events', False)]
+    if pub_ae_trials:
+        trial = pub_ae_trials[0]
+        print(f"\n8. Trial with Publications AND Safety Data:")
+        print(f"   NCT: {trial['nct_id']}")
+        print(f"   Title: {trial['brief_title'][:70]}")
+        print(f"   Publications: {len(trial['publications'])}")
+        print(f"   Has adverse events: Yes")
+        print(f"   Query: \"Find completed trials with published results and safety data\"")
+
     # Save updated fixtures
     print("\n" + "=" * 80)
     print("UPDATING FIXTURES")
@@ -210,7 +276,8 @@ def analyze_and_update_fixtures():
             'sponsor_classes': dict(sponsor_classes),
             'top_cities': dict(facility_cities.most_common(20)),
             'top_countries': dict(facility_countries.most_common(10)),
-            'arm_types': dict(arm_types)
+            'arm_types': dict(arm_types),
+            'common_adverse_events': dict(common_adverse_events.most_common(20))
         }, f, indent=2)
     print(f"✓ Created: {stats_file}")
 

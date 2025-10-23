@@ -33,3 +33,13 @@
 "Show trials with recent publications from 2020 onwards."
 
 "Which completed trials have been peer-reviewed and published?"
+
+"Find trials with safety data and low serious event rates."
+
+"Which trials report nausea as a common side effect?"
+
+"Show completed trials with adverse events data available."
+
+"What are the common side effects in cardiovascular drug trials?"
+
+"Find trials with good safety profiles and minimal adverse events."

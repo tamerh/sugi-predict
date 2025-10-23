@@ -176,7 +176,7 @@ npm config set prefix ~/.npm-global
 
 qlogin -pe smp 2 -q scc -l h_vmem=8G -l h_rt=4:00:00
 
-qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=4:00:00
+qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=168:00:00
 
 qlogin -pe smp 4 -q scc -l h_vmem=128G -l h_rt=4:00:00
 

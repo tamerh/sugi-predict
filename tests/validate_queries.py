@@ -284,6 +284,7 @@ class QueryValidator:
             with_conditions = 0
             with_interventions = 0
             with_publications = 0
+            with_adverse_events = 0
 
             for result in results:
                 payload = result.get('payload', {})
@@ -300,20 +301,25 @@ class QueryValidator:
                     with_interventions += 1
                 if payload.get('publications') and len(payload['publications']) > 0:
                     with_publications += 1
+                # Check adverse events
+                ae_summary = payload.get('adverse_events_summary', {})
+                if ae_summary.get('has_events', False):
+                    with_adverse_events += 1
 
             # Print coverage stats
             print(f"\nSample size: {total} results")
             print(f"\nField Coverage:")
-            print(f"  Sponsors:      {with_sponsors}/{total} ({with_sponsors/total*100:.1f}%)")
-            print(f"  Facilities:    {with_facilities}/{total} ({with_facilities/total*100:.1f}%)")
-            print(f"  Study Arms:    {with_study_arms}/{total} ({with_study_arms/total*100:.1f}%)")
-            print(f"  Conditions:    {with_conditions}/{total} ({with_conditions/total*100:.1f}%)")
-            print(f"  Interventions: {with_interventions}/{total} ({with_interventions/total*100:.1f}%)")
-            print(f"  Publications:  {with_publications}/{total} ({with_publications/total*100:.1f}%)")
+            print(f"  Sponsors:        {with_sponsors}/{total} ({with_sponsors/total*100:.1f}%)")
+            print(f"  Facilities:      {with_facilities}/{total} ({with_facilities/total*100:.1f}%)")
+            print(f"  Study Arms:      {with_study_arms}/{total} ({with_study_arms/total*100:.1f}%)")
+            print(f"  Conditions:      {with_conditions}/{total} ({with_conditions/total*100:.1f}%)")
+            print(f"  Interventions:   {with_interventions}/{total} ({with_interventions/total*100:.1f}%)")
+            print(f"  Publications:    {with_publications}/{total} ({with_publications/total*100:.1f}%)")
+            print(f"  Adverse Events:  {with_adverse_events}/{total} ({with_adverse_events/total*100:.1f}%)")
 
             # Show a sample result with all fields
             if self.verbose:
-                print(f"\nSample result with Tier 1 fields:")
+                print(f"\nSample result with Tier 1+2 fields:")
                 for result in results:
                     payload = result.get('payload', {})
                     if (payload.get('sponsors') and payload.get('facilities') and
@@ -323,18 +329,31 @@ class QueryValidator:
                         print(f"  Sponsors: {len(payload.get('sponsors', []))}")
                         print(f"  Facilities: {len(payload.get('facilities', []))}")
                         print(f"  Study Arms: {len(payload.get('study_arms', []))}")
+                        print(f"  Publications: {len(payload.get('publications', []))}")
+                        ae_summary = payload.get('adverse_events_summary', {})
+                        if ae_summary.get('has_events'):
+                            print(f"  Adverse Events: {ae_summary.get('serious_events_count', 0)} serious, {ae_summary.get('other_events_count', 0)} other")
+                        else:
+                            print(f"  Adverse Events: No data")
                         break
 
             # Check if fields are present
             tier1_ok = with_sponsors > 0 and with_facilities > 0 and with_study_arms > 0
             publications_ok = with_publications > 0
+            adverse_events_ok = with_adverse_events > 0
 
-            if tier1_ok and publications_ok:
-                print(f"\n{Colors.GREEN}✓{Colors.NC} All fields (Tier 1 + Publications) are present!")
+            if tier1_ok and publications_ok and adverse_events_ok:
+                print(f"\n{Colors.GREEN}✓{Colors.NC} All Tier 1 + Tier 2 fields present! (including Adverse Events)")
+            elif tier1_ok and publications_ok:
+                print(f"\n{Colors.GREEN}✓{Colors.NC} Tier 1 + Publications present!")
+                if not adverse_events_ok:
+                    print(f"  {Colors.YELLOW}⚠{Colors.NC} Adverse Events: No data in sample (expected ~11% coverage)")
             elif tier1_ok:
                 print(f"\n{Colors.GREEN}✓{Colors.NC} Tier 1 fields present!")
                 if not publications_ok:
                     print(f"  {Colors.YELLOW}⚠{Colors.NC} Publications field present but no data in sample")
+                if not adverse_events_ok:
+                    print(f"  {Colors.YELLOW}⚠{Colors.NC} Adverse Events: No data in sample (expected ~11% coverage)")
             else:
                 print(f"\n{Colors.RED}✗{Colors.NC} Some fields are missing!")
                 if with_sponsors == 0:

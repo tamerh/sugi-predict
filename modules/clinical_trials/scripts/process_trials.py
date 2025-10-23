@@ -121,7 +121,8 @@ class TrialTextProcessor:
                 'sponsors': trial.get('sponsors', []),
                 'facilities': trial.get('facilities', []),
                 'study_arms': trial.get('study_arms', []),
-                'publications': trial.get('publications', [])
+                'publications': trial.get('publications', []),
+                'adverse_events_summary': trial.get('adverse_events_summary', {'has_events': False})
             })
 
         # Detailed description chunks
@@ -144,7 +145,8 @@ class TrialTextProcessor:
                         'sponsors': trial.get('sponsors', []),
                         'facilities': trial.get('facilities', []),
                         'study_arms': trial.get('study_arms', []),
-                        'publications': trial.get('publications', [])
+                        'publications': trial.get('publications', []),
+                        'adverse_events_summary': trial.get('adverse_events_summary', {'has_events': False})
                     })
 
         # Primary outcomes
@@ -166,7 +168,8 @@ class TrialTextProcessor:
                     'interventions': trial.get('interventions', []),
                     'sponsors': trial.get('sponsors', []),
                     'facilities': trial.get('facilities', []),
-                    'study_arms': trial.get('study_arms', [])
+                    'study_arms': trial.get('study_arms', []),
+                    'adverse_events_summary': trial.get('adverse_events_summary', {'has_events': False})
                 })
 
         # Secondary outcomes
@@ -188,7 +191,8 @@ class TrialTextProcessor:
                     'interventions': trial.get('interventions', []),
                     'sponsors': trial.get('sponsors', []),
                     'facilities': trial.get('facilities', []),
-                    'study_arms': trial.get('study_arms', [])
+                    'study_arms': trial.get('study_arms', []),
+                    'adverse_events_summary': trial.get('adverse_events_summary', {'has_events': False})
                 })
 
         # Eligibility criteria
@@ -237,7 +241,8 @@ class TrialTextProcessor:
                             'interventions': trial.get('interventions', []),
                             'sponsors': trial.get('sponsors', []),
                             'facilities': trial.get('facilities', []),
-                            'study_arms': trial.get('study_arms', [])
+                            'study_arms': trial.get('study_arms', []),
+                            'adverse_events_summary': trial.get('adverse_events_summary', {'has_events': False})
                         })
 
         return chunks

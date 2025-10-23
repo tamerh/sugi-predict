@@ -383,6 +383,72 @@ class AACTTextExtractor:
             log_with_timestamp(f"ERROR: Failed to load table {table_name}: {e}")
             return None
 
+    def extract_adverse_events_summary(self, nct_id: str, events_df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Extract summary adverse events data for a trial.
+
+        Returns lightweight summary suitable for filtering/RAG.
+        Includes counts, top common events, and affected organ systems.
+        """
+        trial_events = events_df[events_df['nct_id'] == nct_id]
+
+        if len(trial_events) == 0:
+            return {
+                'has_events': False,
+                'serious_events_count': 0,
+                'other_events_count': 0
+            }
+
+        # Count by type
+        serious = trial_events[trial_events['event_type'] == 'serious']
+        other = trial_events[trial_events['event_type'] == 'other']
+
+        # Get unique event terms (not counts per group, just unique events)
+        serious_terms = set(serious['adverse_event_term'].dropna())
+        other_terms = set(other['adverse_event_term'].dropna())
+
+        # Calculate total subjects at risk (max across groups)
+        total_at_risk = trial_events['subjects_at_risk'].max()
+        if pd.isna(total_at_risk):
+            total_at_risk = 0
+
+        # Get most common events (top 5 by subjects affected)
+        # Group by event term and sum subjects affected across groups
+        event_counts = trial_events.groupby('adverse_event_term').agg({
+            'subjects_affected': 'sum',
+            'organ_system': 'first'  # Get organ system for each event
+        }).reset_index()
+
+        # Sort by subjects affected and get top 5
+        top_events = event_counts.nlargest(5, 'subjects_affected')
+
+        common_events = []
+        for _, row in top_events.iterrows():
+            term = row['adverse_event_term']
+            count = row['subjects_affected']
+            organ_sys = row['organ_system']
+
+            if pd.notna(term) and pd.notna(count):
+                percentage = round(float(count) / total_at_risk * 100, 1) if total_at_risk > 0 else 0
+                common_events.append({
+                    'term': str(term),
+                    'organ_system': str(organ_sys) if pd.notna(organ_sys) else '',
+                    'subjects_affected': int(count),
+                    'percentage': percentage
+                })
+
+        # Get affected organ systems (unique, limited to 10)
+        organ_systems = [str(os) for os in trial_events['organ_system'].dropna().unique()[:10]]
+
+        return {
+            'has_events': True,
+            'serious_events_count': len(serious_terms),
+            'other_events_count': len(other_terms),
+            'total_subjects_at_risk': int(total_at_risk),
+            'common_events': common_events,
+            'organ_systems_affected': organ_systems
+        }
+
     def extract_studies_text(self, limit: Optional[int] = None,
                             include_detailed_description: bool = True,
                             include_outcomes: bool = True,
@@ -393,6 +459,7 @@ class AACTTextExtractor:
                             include_facilities: bool = True,
                             include_study_arms: bool = True,
                             include_publications: bool = True,
+                            include_adverse_events: bool = True,
                             min_summary_length: int = 50,
                             exclude_withdrawn: bool = True,
                             nct_ids_file: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -595,6 +662,27 @@ class AACTTextExtractor:
                                 'citation': str(row.get('citation', ''))
                             })
 
+        # Process adverse events (summary extraction)
+        adverse_events_dict = {}
+        if include_adverse_events:
+            reported_events = self.load_table('reported_events')
+            if reported_events is not None:
+                # Filter to only kept trials
+                reported_events = reported_events[reported_events['nct_id'].isin(kept_nct_ids)]
+                log_with_timestamp(f"Processing adverse events for {len(reported_events):,} event records")
+
+                # Get unique trials with events
+                trials_with_events = reported_events['nct_id'].unique()
+                log_with_timestamp(f"Found {len(trials_with_events):,} trials with adverse events data")
+
+                # Extract summary for each trial
+                for nct_id in trials_with_events:
+                    adverse_events_dict[nct_id] = self.extract_adverse_events_summary(
+                        nct_id, reported_events
+                    )
+
+                log_with_timestamp(f"Extracted adverse events summaries for {len(adverse_events_dict):,} trials")
+
         # Convert to list of dicts
         log_with_timestamp("Converting to final format...")
         extracted_studies = []
@@ -657,6 +745,15 @@ class AACTTextExtractor:
             else:
                 study_data['publications'] = []
 
+            if nct_id in adverse_events_dict:
+                study_data['adverse_events_summary'] = adverse_events_dict[nct_id]
+            else:
+                study_data['adverse_events_summary'] = {
+                    'has_events': False,
+                    'serious_events_count': 0,
+                    'other_events_count': 0
+                }
+
             extracted_studies.append(study_data)
 
         log_with_timestamp(f"Extraction complete: {len(extracted_studies):,} studies")
@@ -684,6 +781,7 @@ def main():
     parser.add_argument("--include-facilities", action="store_true", default=True)
     parser.add_argument("--include-study-arms", action="store_true", default=True)
     parser.add_argument("--include-publications", action="store_true", default=True)
+    parser.add_argument("--include-adverse-events", action="store_true", default=True)
     parser.add_argument("--exclude-withdrawn", action="store_true", default=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--nct-ids-file")
@@ -754,6 +852,7 @@ def main():
             include_facilities=args.include_facilities,
             include_study_arms=args.include_study_arms,
             include_publications=args.include_publications,
+            include_adverse_events=args.include_adverse_events,
             min_summary_length=args.min_summary_length,
             exclude_withdrawn=args.exclude_withdrawn,
             nct_ids_file=args.nct_ids_file
