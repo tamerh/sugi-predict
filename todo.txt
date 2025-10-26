@@ -1,0 +1,21 @@
+
+biobtree model organisms version......
+in biobtree instead of map.filter query syntax....much better one is maybe...
+>> uniprot >> string >> hgnc.......and then giant filter page for each one......
+
+drug discovery......
+
+
+maybe something like compounds related processing require large processing you are looking.....
+
+
+some other thing in cluster....
+Based on the research, the most time-consuming computational tasks are:
+
+Data Janitor Work: Reformatting, cleaning, and standardizing metadata from dozens of different experiments so it can be analyzed together.
+
+Image Processing: Manually measuring or analyzing thousands of microscopy images.
+
+Molecular Dynamics (MD) / Docking: Setting up and running complex simulations like GROMACS or AutoDock.
+
+NGS Pipeline Execution: Wrestling with command-line tools (like SAMtools, BEDtools) to run a standard RNA-seq or variant calling pipeline.

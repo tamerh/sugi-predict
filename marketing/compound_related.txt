@@ -1,0 +1,1 @@
+compound analysis require high cpu could be used as a seperate thing? or further analysis

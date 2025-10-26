@@ -133,10 +133,14 @@ def main():
     # Chunking options
     parser.add_argument('--chunk-size', type=int, default=0,
                        help='Patents per chunk (0 = no chunking)')
+    parser.add_argument('--compounds-chunk-size', type=int, default=1000000,
+                       help='Compounds per chunk (default: 1M)')
     parser.add_argument('--processed-chunks-output', required=True,
                        help='Path to processed_chunks.json state file')
     parser.add_argument('--limit', type=int,
                        help='Limit total patents (test mode)')
+    parser.add_argument('--compounds-limit', type=int,
+                       help='Limit total compounds (test mode)')
 
     args = parser.parse_args()
 
@@ -378,6 +382,111 @@ def main():
             'size_mb': round(patents_size_mb, 2)
         }]
         write_processed_chunks_json(args.processed_chunks_output, single_file_info, no_changes=False)
+
+    # ========================================================================
+    # STEP 4: Chunk compounds.parquet for parallel processing
+    # ========================================================================
+    log("\n" + "="*60)
+    log("STEP 4: Chunk Compounds for Parallel Processing")
+    log("="*60)
+
+    compounds_file = latest_release / 'compounds.parquet'
+    if not compounds_file.exists():
+        log(f"WARNING: Compounds file not found: {compounds_file}")
+        log("Skipping compound chunking...")
+    else:
+        # Output directory for compound chunks
+        compounds_chunked_dir = base_dir / "raw_data" / "patents" / "chunked_compounds"
+        compounds_chunked_dir.mkdir(parents=True, exist_ok=True)
+
+        compounds_chunk_size = args.compounds_chunk_size
+        compounds_state_file = Path(args.state_dir) / "processed_compounds_chunks.json"
+
+        # Check if chunks already exist
+        existing_chunks = list(compounds_chunked_dir.glob("compounds_chunk_*.parquet"))
+
+        if existing_chunks and compounds_state_file.exists():
+            log(f"Compound chunks already exist ({len(existing_chunks)} chunks)")
+            log("Skipping compound chunking...")
+        else:
+            log(f"Chunking compounds: {compounds_chunk_size:,} compounds per chunk")
+
+            import pyarrow.parquet as pq
+
+            # Open parquet file for streaming
+            compounds_parquet = pq.ParquetFile(compounds_file)
+            total_compounds = compounds_parquet.metadata.num_rows
+            log(f"Total compounds: {total_compounds:,}")
+
+            # Apply limit if specified (test mode)
+            if args.compounds_limit and args.compounds_limit < total_compounds:
+                log(f"Applying limit: {args.compounds_limit:,} compounds")
+                total_compounds = args.compounds_limit
+
+            num_chunks = (total_compounds + compounds_chunk_size - 1) // compounds_chunk_size
+            log(f"Will create {num_chunks} chunks using streaming")
+
+            chunk_files = []
+            compounds_processed = 0
+            chunk_idx = 0
+
+            # Stream through parquet file in batches
+            for batch in compounds_parquet.iter_batches(batch_size=compounds_chunk_size):
+                # Convert batch to pandas
+                batch_df = batch.to_pandas()
+
+                # Handle limit
+                if args.compounds_limit and compounds_processed + len(batch_df) > args.compounds_limit:
+                    remaining = args.compounds_limit - compounds_processed
+                    batch_df = batch_df.head(remaining)
+
+                if len(batch_df) == 0:
+                    break
+
+                # Save chunk
+                chunk_filename = f"compounds_chunk_{chunk_idx+1:04d}.parquet"
+                chunk_path = compounds_chunked_dir / chunk_filename
+
+                batch_df.to_parquet(chunk_path, index=False)
+
+                chunk_size_mb = chunk_path.stat().st_size / 1024 / 1024
+                chunk_files.append({
+                    'filename': chunk_filename,
+                    'num_compounds': len(batch_df),
+                    'size_mb': round(chunk_size_mb, 2)
+                })
+
+                compounds_processed += len(batch_df)
+                chunk_idx += 1
+
+                log(f"  Created chunk {chunk_idx}/{num_chunks}: {chunk_filename} "
+                    f"({len(batch_df):,} compounds, {chunk_size_mb:.1f}MB)")
+
+                # Stop if we've hit the limit
+                if args.compounds_limit and compounds_processed >= args.compounds_limit:
+                    break
+
+            # Write processed_compounds_chunks.json (matching patents pattern)
+            chunks_dict = {}
+            for chunk_info in chunk_files:
+                chunks_dict[chunk_info['filename']] = {
+                    'status': 'ready_to_process',
+                    'num_compounds': chunk_info['num_compounds'],
+                    'size_mb': chunk_info['size_mb']
+                }
+
+            state = {
+                'chunking_complete': True,
+                'total_chunks': len(chunk_files),
+                'chunks': chunks_dict
+            }
+
+            with open(compounds_state_file, 'w') as f:
+                json.dump(state, f, indent=2)
+
+            log(f"✓ Created {len(chunk_files)} compound chunks in {compounds_chunked_dir}")
+            log(f"✓ Total compounds chunked: {compounds_processed:,}")
+            log(f"✓ State file: {compounds_state_file}")
 
     # ========================================================================
     # COMPLETE

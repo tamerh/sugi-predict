@@ -52,6 +52,10 @@ os.makedirs(BIOBTREE_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(STATE_DIR, exist_ok=True)
 
+# Chunked compounds directory (matching chunked patents pattern)
+COMPOUNDS_CHUNKED_DIR = os.path.join(BASE_DIR, "raw_data", "patents", "chunked_compounds")
+os.makedirs(COMPOUNDS_CHUNKED_DIR, exist_ok=True)
+
 # Helper function to get latest release directory
 def get_latest_release():
     """Get the latest release directory from raw data."""
@@ -146,6 +150,52 @@ def aggregate_patent_chunk_indices(wildcards):
     sys.stderr.flush()
     return indices
 
+# Helper function to aggregate compound chunk indices after checkpoint
+def aggregate_compound_chunk_indices(wildcards):
+    """
+    Aggregate all processed compound chunk index files after checkpoint completes.
+    Similar to aggregate_patent_chunk_indices but for compounds.
+    """
+    # Wait for checkpoint to complete
+    checkpoints.patents_download_checkpoint.get()
+
+    import sys
+    import json
+
+    # Load processed_compounds_chunks.json from STATE_DIR
+    state_file = os.path.join(STATE_DIR, "processed_compounds_chunks.json")
+
+    if not os.path.exists(state_file):
+        sys.stderr.write(f"[COMPOUNDS AGGREGATION] WARNING: processed_compounds_chunks.json not found at {state_file}\n")
+        sys.stderr.write(f"[COMPOUNDS AGGREGATION] Compounds chunking may not have been enabled or completed\n")
+        sys.stderr.flush()
+        return []
+
+    with open(state_file, 'r') as f:
+        data = json.load(f)
+
+    sys.stderr.write(f"[COMPOUNDS AGGREGATION] Loaded processed_compounds_chunks.json\n")
+    sys.stderr.flush()
+
+    # Get chunks that need processing
+    chunks_dict = data.get('chunks', {})
+    if not chunks_dict:
+        sys.stderr.write(f"[COMPOUNDS AGGREGATION] No chunks found\n")
+        sys.stderr.flush()
+        return []
+
+    indices = []
+    for chunk_filename, chunk_info in chunks_dict.items():
+        # Convert .parquet to .index (chunks are parquet, processed indices are .index)
+        chunk_index_name = chunk_filename.replace('.parquet', '.index')
+        chunk_index_path = os.path.join(COMPOUNDS_DIR, chunk_index_name)
+        indices.append(chunk_index_path)
+        sys.stderr.write(f"[COMPOUNDS AGGREGATION]   -> {chunk_index_path}\n")
+
+    sys.stderr.write(f"[COMPOUNDS AGGREGATION] Total compound chunks to process: {len(indices)}\n")
+    sys.stderr.flush()
+    return indices
+
 # Unified download rule - handles both SureChEMBL and USPTO (if enabled)
 # CHECKPOINT: Creates processed_chunks.json as side effect (NOT as Snakemake output)
 # Similar to clinical_trials: only done_marker is output
@@ -168,7 +218,9 @@ checkpoint patents_download_checkpoint:
         uspto_test_flag = "--uspto-test-mode" if patents_config.get("test_mode", False) else "",
         # Chunking options
         chunk_size = patents_config.get("patents_per_chunk", 0),
+        compounds_chunk_size = patents_config.get("compounds_per_chunk", 1000000),
         limit = patents_config.get("test_limit_patents", 0) if patents_config.get("test_mode", False) else 0,
+        compounds_limit = patents_config.get("test_limit_compounds", 0) if patents_config.get("test_mode", False) else 0,
         state_file = os.path.join(STATE_DIR, "processed_chunks.json"),
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "patents_download.log")
     log:
@@ -194,8 +246,10 @@ checkpoint patents_download_checkpoint:
             {params.uspto_limit_flag} \
             {params.uspto_test_flag} \
             --chunk-size {params.chunk_size} \
+            --compounds-chunk-size {params.compounds_chunk_size} \
             --processed-chunks-output {params.state_file} \
             --limit {params.limit} \
+            --compounds-limit {params.compounds_limit} \
             >> {log} 2>&1
 
         EXIT_CODE=$?
@@ -247,7 +301,7 @@ rule patents_all:
     input:
         checkpoint_done = os.path.join(STATE_DIR, ".download_complete"),
         indices = aggregate_patent_chunk_indices,
-        compounds_index = os.path.join(COMPOUNDS_DIR, "compounds.index")
+        compounds_indices = aggregate_compound_chunk_indices  # Changed to chunked processing
 
 # Rule 2a: Process individual patent chunk (text embeddings with USPTO enrichment)
 rule patents_process_chunk:
@@ -392,44 +446,44 @@ rule patents_process_text:
         echo "==================== PROCESS TEXT COMPLETED: $(date) ====================" >> {log}
         """
 
-# Rule 3: Process compounds for chemical fingerprints
-rule patents_process_compounds:
+# Rule 3: Process individual compound chunk (chemical fingerprints)
+# Similar to patents_process_chunk but for compounds
+rule patents_process_compounds_chunk:
+    input:
+        chunk_file = os.path.join(COMPOUNDS_CHUNKED_DIR, "{chunk_name}.parquet")
     output:
-        index = os.path.join(COMPOUNDS_DIR, "compounds.index"),
-        metadata = os.path.join(COMPOUNDS_DIR, "compounds.json")
+        index = os.path.join(COMPOUNDS_DIR, "{chunk_name}.index"),
+        metadata = os.path.join(COMPOUNDS_DIR, "{chunk_name}.json")
     params:
         script = os.path.join(MODULE_SCRIPTS, "process_compounds.py"),
-        compounds_file = lambda wildcards, input: get_downloaded_release_files(wildcards)['compounds'],
         fingerprint_bits = patents_config.get("fingerprint_bits", 2048),
         radius = patents_config.get("morgan_radius", 2),
         processing_batch_size = patents_config.get("processing_batch_size", 100000),
-        limit_flag = f"--limit {patents_config.get('test_limit_compounds', 1000)}" if patents_config.get("test_mode", False) else "",
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "patents_process_compounds.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", f"patents_process_compounds_chunk_{{chunk_name}}.log")
     log:
-        os.path.join(LOG_DIR, f"process_compounds_{RUN_TIMESTAMP}.log")
+        os.path.join(LOG_DIR, f"process_compounds_chunk_{{chunk_name}}_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=patents_config.get("process_memory_mb", 16384)
+        mem_mb=16384  # Only 16GB per chunk! (vs 256GB+ for all compounds)
     shell:
         """
-        echo "==================== PROCESS COMPOUNDS STARTED: $(date) ====================" > {log}
+        echo "==================== PROCESS COMPOUNDS CHUNK {wildcards.chunk_name} STARTED: $(date) ====================" > {log}
 
         python {params.script} \
-            --input {params.compounds_file} \
+            --input {input.chunk_file} \
             --output-index {output.index} \
             --output-metadata {output.metadata} \
             --fingerprint-bits {params.fingerprint_bits} \
             --radius {params.radius} \
             --processing-batch-size {params.processing_batch_size} \
-            {params.limit_flag} \
             >> {log} 2>&1
 
         EXIT_CODE=$?
 
         if [ $EXIT_CODE -ne 0 ]; then
-            echo "ERROR: Compound processing failed with exit code $EXIT_CODE" >> {log}
+            echo "ERROR: Compound chunk processing failed with exit code $EXIT_CODE" >> {log}
             exit 1
         fi
 
@@ -437,7 +491,7 @@ rule patents_process_compounds:
         FP_COUNT=$(python -c "import json; data = json.load(open('{output.metadata}')); print(len(data))" 2>/dev/null || echo "0")
         echo "Fingerprints generated: $FP_COUNT" >> {log}
 
-        echo "==================== PROCESS COMPOUNDS COMPLETED: $(date) ====================" >> {log}
+        echo "==================== PROCESS COMPOUNDS CHUNK {wildcards.chunk_name} COMPLETED: $(date) ====================" >> {log}
         """
 
 # Optional: Prepare biobtree cross-reference data

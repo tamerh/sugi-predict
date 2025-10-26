@@ -360,10 +360,25 @@ class CompoundsFAISSProcessor:
             return None
 
         try:
-            # Use binary index for fingerprints (Hamming distance)
+            # Ensure array is C-contiguous and float32 without creating a copy if possible
+            if fingerprints.dtype != np.float32:
+                log_with_timestamp("Converting fingerprints to float32...")
+                fingerprints = fingerprints.astype(np.float32)
+
+            if not fingerprints.flags['C_CONTIGUOUS']:
+                log_with_timestamp("Making array C-contiguous...")
+                fingerprints = np.ascontiguousarray(fingerprints)
+
+            log_with_timestamp(f"Fingerprints ready: dtype={fingerprints.dtype}, shape={fingerprints.shape}, C-contiguous={fingerprints.flags['C_CONTIGUOUS']}")
+
+            # Use simple flat index (no training needed)
             # For Morgan fingerprints, we use L2 distance on bit vectors
+            log_with_timestamp(f"Creating FAISS IndexFlatL2...")
             index = faiss.IndexFlatL2(self.fingerprint_bits)
-            index.add(fingerprints.astype(np.float32))
+
+            log_with_timestamp(f"Adding {len(fingerprints)} vectors to index...")
+            index.add(fingerprints)
+
             log_with_timestamp(f"FAISS index created: {index.ntotal} vectors")
             return index
 
@@ -470,13 +485,39 @@ Examples:
         # NOTE: Patent-compound mappings are handled by biobtree, not stored in FAISS metadata
         # This script only creates fingerprint indices for chemical similarity search
 
-        # Process compounds in batches (true streaming)
+        # Process compounds in batches (pre-allocated array approach)
         log_with_timestamp("=== Step 3: Processing compounds in batches ===")
-        all_fingerprints = []
+
+        # First pass: Count total compounds to determine array size
+        log_with_timestamp("Counting total compounds to process...")
+        if args.limit:
+            total_compounds = args.limit
+        else:
+            import pyarrow.parquet as pq
+            parquet_file_obj = pq.ParquetFile(args.input)
+            total_compounds = parquet_file_obj.metadata.num_rows
+
+        log_with_timestamp(f"Total compounds to process: {total_compounds:,}")
+
+        # Pre-allocate the final array ONCE (avoids fragmentation)
+        # We'll allocate for all compounds, then trim to actual valid count at the end
+        estimated_memory_gb = (total_compounds * args.fingerprint_bits * 4) / 1024**3
+        log_with_timestamp(f"Estimated memory needed: {estimated_memory_gb:.2f} GB")
+        log_with_timestamp(f"Pre-allocating final array ({total_compounds} x {args.fingerprint_bits})...")
+
+        try:
+            final_fingerprints = np.zeros((total_compounds, args.fingerprint_bits), dtype=np.float32)
+            log_with_timestamp(f"Successfully allocated {estimated_memory_gb:.2f} GB array")
+        except Exception as e:
+            log_with_timestamp(f"ERROR: Failed to allocate final array: {e}")
+            log_with_timestamp(f"You need at least {estimated_memory_gb:.2f} GB of available RAM")
+            return 1
+
         all_metadata = []
-        total_processed = 0
+        offset = 0  # Current position in final array
         batch_num = 0
 
+        # Second pass: Process compounds and fill the pre-allocated array
         for compounds_batch in processor.iter_compounds_from_parquet(
             args.input,
             limit=args.limit,
@@ -485,26 +526,35 @@ Examples:
             batch_num += 1
             log_with_timestamp(f"Processing batch {batch_num} with {len(compounds_batch):,} compounds")
 
-            # Process this batch
+            # Process this batch (generates smaller temporary array)
             fingerprints, metadata = processor.compound_processor.process_compounds_batch(compounds_batch)
 
             if len(fingerprints) > 0:
-                all_fingerprints.append(fingerprints)
+                # Copy directly into pre-allocated array (no append/vstack needed!)
+                batch_size = len(fingerprints)
+                final_fingerprints[offset:offset + batch_size] = fingerprints
                 all_metadata.extend(metadata)
-                total_processed += len(fingerprints)
+                offset += batch_size
 
-            log_with_timestamp(f"Batch {batch_num} complete. Total processed so far: {total_processed:,}")
+                log_with_timestamp(f"Copied {batch_size:,} fingerprints to final array at offset {offset - batch_size:,}")
 
-            # Force garbage collection after each batch
+            log_with_timestamp(f"Batch {batch_num} complete. Total processed so far: {offset:,}")
+
+            # Force garbage collection after each batch to free temporary arrays
             import gc
+            del fingerprints
+            del metadata
             gc.collect()
 
-        if len(all_fingerprints) == 0:
+        if offset == 0:
             log_with_timestamp("ERROR: No fingerprints generated from compounds")
             return 1
 
-        log_with_timestamp(f"=== Merging {len(all_fingerprints)} batches of fingerprints ===")
-        final_fingerprints = np.vstack(all_fingerprints)
+        # Trim array to actual valid count (remove unfilled rows)
+        if offset < total_compounds:
+            log_with_timestamp(f"Trimming array from {total_compounds:,} to {offset:,} valid compounds")
+            final_fingerprints = final_fingerprints[:offset]
+
         log_with_timestamp(f"Final fingerprints shape: {final_fingerprints.shape}")
 
         # Create FAISS index

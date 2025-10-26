@@ -64,6 +64,8 @@ patents:
   # Chunking strategy for testing
   patents_per_chunk: 100       # 100 patents per chunk for testing (vs 1M production)
 
+  compounds_per_chunk: 100      # 100 compounds per chunk for testing (vs 1M production in production)
+
   # USPTO test settings (NEW!)
   enable_uspto: true                 # Test USPTO integration
   uspto_historical_json_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto"  # Use same historical JSON for testing

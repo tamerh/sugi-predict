@@ -153,6 +153,9 @@ patents:
   fingerprint_bits: 2048        # Output dimension for CHEMICAL fingerprints (2048-bit vectors)
   morgan_radius: 2              # Morgan fingerprint radius (2 = ECFP4, diameter 4)
 
+  # Compound chunking strategy for parallel processing (PRODUCTION)
+  compounds_per_chunk: 500000  # 1M compounds per chunk (~31 chunks for 30.8M compounds)
+
   # USPTO INTEGRATION (NEW!) - Enriches US patents with full text
   # Adds abstracts, claims, descriptions to US patents (SureChEMBL only has titles)
   enable_uspto: true            # Enable USPTO enrichment (false = SureChEMBL title-only)
@@ -161,6 +164,7 @@ patents:
   # Job resources - PRODUCTION
   download_memory_mb: 65536     # 64GB for downloading SureChEMBL files
   process_memory_mb: 32768      # 32GB for text processing (increased for full 43M patents + USPTO enrichment)
+  process_compounds_memory_mb: 32768  # 32GB for compounds processing (30M compounds × 2048-bit fingerprints)
 
   # Release management
   cleanup_old: true             # Cleanup old releases after processing

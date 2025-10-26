@@ -193,7 +193,7 @@ Qdrant Subcommands:
     start                     Start Qdrant server (local or cluster)
     stop                      Stop Qdrant server
     status                    Check Qdrant server status and collections
-    insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, or all)
+    insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, patents, or all)
     stop-insert <dataset>     Stop a running insertion job
 
 API Subcommands:
@@ -272,6 +272,7 @@ Examples:
     # 3. Insert data when ready (can be done days later)
     $0 qdrant insert pubmed --cluster --jobs 10 --bg
     $0 qdrant insert clinical_trials --cluster --jobs 10 --bg
+    $0 qdrant insert patents --cluster --jobs 10 --bg
     $0 qdrant insert all --cluster --jobs 20 --bg
 
     # Use CUDA 11.4 nodes for insertion
@@ -1245,9 +1246,12 @@ qdrant_insert() {
         log_error "No dataset specified for insertion"
         echo ""
         echo "Available datasets:"
-        echo "  pubmed           - Insert PubMed data"
-        echo "  clinical_trials  - Insert Clinical Trials data"
-        echo "  all              - Insert all datasets"
+        echo "  pubmed             - Insert PubMed data"
+        echo "  clinical_trials    - Insert Clinical Trials data"
+        echo "  patents            - Insert Patents data (both text and compounds)"
+        echo "  patents_text       - Insert Patents text only"
+        echo "  patents_compounds  - Insert Patents compounds only"
+        echo "  all                - Insert all datasets"
         exit 1
     fi
 
@@ -1393,6 +1397,15 @@ qdrant_insert() {
         clinical_trials)
             snakemake_cmd="${snakemake_cmd} -- insert_clinical_trials"
             ;;
+        patents)
+            snakemake_cmd="${snakemake_cmd} -- insert_patents"
+            ;;
+        patents_text)
+            snakemake_cmd="${snakemake_cmd} -- insert_patents_text"
+            ;;
+        patents_compounds)
+            snakemake_cmd="${snakemake_cmd} -- insert_patents_compounds"
+            ;;
         all)
             snakemake_cmd="${snakemake_cmd} -- insert_all"
             ;;
@@ -1489,9 +1502,12 @@ qdrant_stop_insert() {
         log_error "No dataset specified"
         echo ""
         echo "Available datasets:"
-        echo "  pubmed           - Stop PubMed insertion"
-        echo "  clinical_trials  - Stop Clinical Trials insertion"
-        echo "  all              - Stop all insertions"
+        echo "  pubmed             - Stop PubMed insertion"
+        echo "  clinical_trials    - Stop Clinical Trials insertion"
+        echo "  patents            - Stop Patents insertion"
+        echo "  patents_text       - Stop Patents text insertion"
+        echo "  patents_compounds  - Stop Patents compounds insertion"
+        echo "  all                - Stop all insertions"
         exit 1
     fi
 
