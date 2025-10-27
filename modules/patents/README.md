@@ -102,28 +102,93 @@ patents:
 
 This file contains 100 patent IDs (2001+ US patents) that match USPTO data, giving ~100% enrichment.
 
-## Pipeline Steps
+## Download Flow
 
-### 1. Download Data
+The pipeline automatically handles both SureChEMBL and USPTO data:
 
-Downloads latest SureChEMBL release:
+### How It Works
 
-```bash
-./bioyoda.sh run patents --cluster
+**1. Fetch Latest Release from Remote**
+```
+Script checks: https://ftp.ebi.ac.uk/pub/databases/chembl/SureChEMBL/bulk_data/
+Parses directory listing → Finds latest release (e.g., "2025-10-15")
 ```
 
-Script: `modules/patents/scripts/download_and_prepare_patents.py`
+**2. Check Local Files**
+```
+If release exists locally AND all 4 files present → Skip download
+If missing or incomplete → Download from FTP
+```
 
-Output:
+**3. USPTO Enrichment (Optional)**
+```
+If enable_uspto=true:
+  - Check if uspto_historical.parquet exists
+  - If not: Convert pre-downloaded JSON files → parquet (one-time)
+  - If yes: Skip conversion
+```
+
+**4. Create Chunks**
+```
+Split large files into chunks for parallel processing:
+- patents.parquet → patents_chunk_0001.parquet, etc.
+- compounds.parquet → compounds_chunk_0001.parquet, etc.
+```
+
+### Manual Setup Required (One-Time)
+
+**USPTO Historical Data**: Must be downloaded manually before first run:
+```bash
+# Download USPTO-Chem JSON files (~3,400 files, 2001-2025)
+# Source: https://eloyfelix.github.io/uspto-chem/
+# Place at: snapshots/raw_data/patents/historical_uspto/*.json
+```
+
+After manual download, pipeline automatically converts JSON → parquet on first run.
+
+### Running the Pipeline
+
+```bash
+# Full pipeline (downloads + processing)
+./bioyoda.sh run patents --cluster
+
+# Update mode (skips if already downloaded)
+./bioyoda.sh run patents --cluster --mode update
+```
+
+**What happens:**
+1. ✅ **Automatic**: Downloads latest SureChEMBL release (skips if exists)
+2. ✅ **Automatic**: Converts USPTO JSON to parquet (skips if exists)
+3. ✅ **Automatic**: Creates chunks for parallel processing
+4. ✅ **Automatic**: Processes chunks → FAISS indices
+
+**Output:**
 ```
 raw_data/patents/surechembl/2025-10-01/
 ├── compounds.parquet
 ├── patents.parquet
 ├── patent_compound_map.parquet
 └── fields.parquet
+
+raw_data/patents/historical_uspto/
+└── uspto_historical.parquet    # Auto-generated from JSON
+
+raw_data/patents/chunked/
+├── patents_chunk_0001.parquet
+├── patents_chunk_0002.parquet
+└── ...
+
+raw_data/patents/chunked_compounds/
+├── compounds_chunk_0001.parquet
+├── compounds_chunk_0002.parquet
+└── ...
 ```
 
-### 2. Process Patent Text
+## Processing Steps
+
+After download completes, the pipeline processes data in parallel:
+
+### 1. Process Patent Text
 
 Generates semantic embeddings for text search:
 
@@ -158,7 +223,7 @@ data/processed/patents/text/
 }
 ```
 
-### 3. Process Compounds
+### 2. Process Compounds
 
 Generates chemical fingerprints for structure search:
 
@@ -190,7 +255,7 @@ data/processed/patents/compounds/
 }
 ```
 
-### 4. Convert to Biobtree JSON
+### 3. Convert to Biobtree JSON
 
 Converts parquet files to JSON format for biobtree ingestion:
 

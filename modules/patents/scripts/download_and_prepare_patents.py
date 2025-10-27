@@ -113,10 +113,8 @@ def main():
                        help='State directory for tracking and intermediate files')
 
     # SureChEMBL options
-    parser.add_argument('--surechembl-tracking-file', required=True,
-                       help='Tracking file for SureChEMBL downloads')
     parser.add_argument('--surechembl-update-mode', action='store_true',
-                       help='Update mode for SureChEMBL')
+                       help='Update mode for SureChEMBL (skip if already exists)')
     parser.add_argument('--surechembl-limit-files', type=int,
                        help='Limit number of SureChEMBL files (test mode)')
 
@@ -159,8 +157,7 @@ def main():
     log("="*60)
 
     surechembl_args = [
-        '--raw-dir', args.surechembl_raw_dir,
-        '--tracking-file', args.surechembl_tracking_file
+        '--raw-dir', args.surechembl_raw_dir
     ]
 
     if args.surechembl_update_mode:

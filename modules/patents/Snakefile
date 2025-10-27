@@ -41,7 +41,6 @@ patents_config["text_dir"] = TEXT_DIR
 patents_config["compounds_dir"] = COMPOUNDS_DIR
 patents_config["biobtree_dir"] = BIOBTREE_DIR
 patents_config["log_dir"] = LOG_DIR
-patents_config["state_file"] = os.path.join(STATE_DIR, "processed_files.json")
 
 # Create directories
 os.makedirs(RAW_DIR, exist_ok=True)
@@ -207,7 +206,6 @@ checkpoint patents_download_checkpoint:
         surechembl_raw_dir = RAW_DIR,
         uspto_raw_dir = USPTO_RAW_DIR,
         state_dir = STATE_DIR,
-        tracking_file = os.path.join(STATE_DIR, "processed_files.json"),
         # SureChEMBL options
         update_flag = "--surechembl-update-mode" if UPDATE_MODE == "update" else "",
         limit_flag = f"--surechembl-limit-files {patents_config.get('test_limit_files', 4)}" if patents_config.get("test_mode", False) else "",
@@ -238,7 +236,6 @@ checkpoint patents_download_checkpoint:
             --surechembl-raw-dir {params.surechembl_raw_dir} \
             --uspto-raw-dir {params.uspto_raw_dir} \
             --state-dir {params.state_dir} \
-            --surechembl-tracking-file {params.tracking_file} \
             {params.update_flag} \
             {params.limit_flag} \
             {params.enable_uspto} \

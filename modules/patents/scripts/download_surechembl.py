@@ -3,7 +3,7 @@
 SureChEMBL Data Downloader
 
 Downloads SureChEMBL Parquet files from EMBL-EBI FTP server.
-Supports bi-weekly updates with version tracking and incremental downloads.
+Automatically fetches latest release from remote FTP and skips download if files already exist.
 
 Data Source: https://ftp.ebi.ac.uk/pub/databases/chembl/SureChEMBL/bulk_data/
 
@@ -17,9 +17,8 @@ Usage:
     # Download latest release
     python download_surechembl.py --raw-dir out/raw_data/patents/surechembl
 
-    # Update mode (download only if new release available)
-    python download_surechembl.py --raw-dir out/raw_data/patents/surechembl \\
-        --update-mode --tracking-file out/state/patents/processed_files.json
+    # Update mode (skip download if release already exists on disk)
+    python download_surechembl.py --raw-dir out/raw_data/patents/surechembl --update-mode
 
     # Test mode with debug
     python download_surechembl.py --raw-dir test_out/raw_data/patents/surechembl \\
@@ -333,9 +332,7 @@ Examples:
     parser.add_argument('--release', default=None,
                        help='Specific release to download (e.g., "2025-10-15"). Default: latest')
     parser.add_argument('--update-mode', action='store_true',
-                       help='Update mode: download only if new release available')
-    parser.add_argument('--tracking-file', default=None,
-                       help='Path to tracking JSON file (for update mode)')
+                       help='Update mode: skip download if release already exists on disk')
     parser.add_argument('--debug', action='store_true',
                        help='Debug mode: enable verbose logging')
     parser.add_argument('--limit-files', type=int, default=None,
@@ -363,38 +360,14 @@ Examples:
                 return 1
             log(f"Latest release: {release_version}")
 
-        # Update mode: check if we already have this release
+        # Update mode: check if we already have this release on disk
         if args.update_mode:
-            if not args.tracking_file:
-                log("ERROR: --tracking-file required when using --update-mode")
-                return 1
-
-            # Check if release already downloaded and processed
             if downloader.check_existing_release(release_version):
-                log(f"Release {release_version} already downloaded")
-
-                # Check tracking file to see if processed
-                if os.path.exists(args.tracking_file):
-                    try:
-                        # Import tracking module
-                        sys.path.insert(0, os.path.dirname(__file__))
-                        from tracking import PatentsFileTracker
-
-                        tracker = PatentsFileTracker(args.tracking_file)
-                        current = tracker.get_current_release()
-
-                        if current == release_version:
-                            log(f"Release {release_version} already processed")
-                            log("UPDATE MODE: No new release available, skipping download")
-                            return 0
-                        else:
-                            log(f"Current tracked release: {current}")
-                            log(f"Proceeding with download of {release_version}")
-
-                    except Exception as e:
-                        log(f"Warning: Could not check tracking file: {e}")
+                log(f"Release {release_version} already exists on disk")
+                log("UPDATE MODE: Skipping download")
+                return 0
             else:
-                log(f"Release {release_version} not fully downloaded, proceeding...")
+                log(f"Release {release_version} not found locally, proceeding with download...")
 
         # Download the release
         success = downloader.download_release(
@@ -407,19 +380,7 @@ Examples:
             log("ERROR: Download failed")
             return 1
 
-        # Update tracking file if provided
-        if args.tracking_file:
-            try:
-                sys.path.insert(0, os.path.dirname(__file__))
-                from tracking import PatentsFileTracker
-
-                tracker = PatentsFileTracker(args.tracking_file)
-                tracker.set_current_release(release_version)
-                log(f"\nUpdated tracking file: {args.tracking_file}")
-                log(f"Current release: {release_version}")
-
-            except Exception as e:
-                log(f"WARNING: Could not update tracking file: {e}")
+        log(f"\nSuccessfully downloaded release: {release_version}")
 
         # Cleanup old releases if requested
         if args.cleanup_old:

@@ -330,10 +330,10 @@ rule insert_patents_text_to_qdrant:
     """
     Insert Patents Text FAISS files to Qdrant collection.
     Creates a separate collection for patent text embeddings (S-BioBERT, 768-dim).
+    Note: Patents uses chunk-based processing, not release-based tracking.
     """
     input:
-        connection_info = CONNECTION_INFO,
-        tracking_file = PATENTS_TRACKING_FILE if os.path.exists(PATENTS_TRACKING_FILE) else []
+        connection_info = CONNECTION_INFO
     output:
         done = f"{QDRANT_STORAGE}/collections/patents_text.done"
     params:
@@ -346,7 +346,8 @@ rule insert_patents_text_to_qdrant:
         default_segment_number = config["patents"]["qdrant"]["default_segment_number"],
         prefer_grpc = config["patents"]["qdrant"].get("prefer_grpc", False),
         faiss_dir = PATENTS_TEXT_FAISS_DIR,
-        tracking_file = PATENTS_TRACKING_FILE,
+        vector_size = config["patents"]["vector_dimension"],  # 768 for S-BioBERT embeddings
+        chunk_tracking_file = os.path.join(STATE_DIR, "patents", "processed_chunks.json"),
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_patents_text_to_qdrant_cluster.log")
     resources:
@@ -383,11 +384,11 @@ rule insert_patents_text_to_qdrant:
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting insertion (detailed logs: {log})"
 
-        # Build tracking flag if exists
-        TRACKING_FLAG=""
-        if [ -f {params.tracking_file} ]; then
-            TRACKING_FLAG="--tracking-file {params.tracking_file}"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using tracking file for incremental updates" >> {log}
+        # Build chunk tracking flag if available
+        CHUNK_TRACKING_FLAG=""
+        if [ -f {params.chunk_tracking_file} ]; then
+            CHUNK_TRACKING_FLAG="--chunk-tracking-file {params.chunk_tracking_file}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using chunk tracking file: {params.chunk_tracking_file}" >> {log}
         fi
 
         # Build gRPC flag if enabled
@@ -402,12 +403,13 @@ rule insert_patents_text_to_qdrant:
             --collection {params.collection} \
             --qdrant-url $QDRANT_URL \
             --batch-size {params.batch_size} \
+            --vector-size {params.vector_size} \
             --hnsw-m {params.hnsw_m} \
             --hnsw-ef-construct {params.hnsw_ef_construct} \
             --indexing-threshold {params.indexing_threshold} \
             --max-segment-size {params.max_segment_size} \
             --default-segment-number {params.default_segment_number} \
-            $TRACKING_FLAG \
+            $CHUNK_TRACKING_FLAG \
             $GRPC_FLAG \
             >> {log} 2>&1
 
@@ -424,10 +426,10 @@ rule insert_patents_compounds_to_qdrant:
     """
     Insert Patents Compounds FAISS files to Qdrant collection.
     Creates a separate collection for chemical fingerprints (Morgan, 2048-bit).
+    Note: Patents uses chunk-based processing, not release-based tracking.
     """
     input:
-        connection_info = CONNECTION_INFO,
-        tracking_file = PATENTS_TRACKING_FILE if os.path.exists(PATENTS_TRACKING_FILE) else []
+        connection_info = CONNECTION_INFO
     output:
         done = f"{QDRANT_STORAGE}/collections/patents_compounds.done"
     params:
@@ -440,7 +442,8 @@ rule insert_patents_compounds_to_qdrant:
         default_segment_number = config["patents"]["qdrant"]["default_segment_number"],
         prefer_grpc = config["patents"]["qdrant"].get("prefer_grpc", False),
         faiss_dir = PATENTS_COMPOUNDS_FAISS_DIR,
-        tracking_file = PATENTS_TRACKING_FILE,
+        vector_size = config["patents"]["fingerprint_bits"],  # 2048 for Morgan fingerprints
+        chunk_tracking_file = os.path.join(STATE_DIR, "patents", "processed_compounds_chunks.json"),
         script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_patents_compounds_to_qdrant_cluster.log")
     resources:
@@ -477,11 +480,11 @@ rule insert_patents_compounds_to_qdrant:
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting insertion (detailed logs: {log})"
 
-        # Build tracking flag if exists
-        TRACKING_FLAG=""
-        if [ -f {params.tracking_file} ]; then
-            TRACKING_FLAG="--tracking-file {params.tracking_file}"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using tracking file for incremental updates" >> {log}
+        # Build chunk tracking flag if available
+        CHUNK_TRACKING_FLAG=""
+        if [ -f {params.chunk_tracking_file} ]; then
+            CHUNK_TRACKING_FLAG="--chunk-tracking-file {params.chunk_tracking_file}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using chunk tracking file: {params.chunk_tracking_file}" >> {log}
         fi
 
         # Build gRPC flag if enabled
@@ -496,13 +499,13 @@ rule insert_patents_compounds_to_qdrant:
             --collection {params.collection} \
             --qdrant-url $QDRANT_URL \
             --batch-size {params.batch_size} \
-            --vector-size 2048 \
+            --vector-size {params.vector_size} \
             --hnsw-m {params.hnsw_m} \
             --hnsw-ef-construct {params.hnsw_ef_construct} \
             --indexing-threshold {params.indexing_threshold} \
             --max-segment-size {params.max_segment_size} \
             --default-segment-number {params.default_segment_number} \
-            $TRACKING_FLAG \
+            $CHUNK_TRACKING_FLAG \
             $GRPC_FLAG \
             >> {log} 2>&1
 
