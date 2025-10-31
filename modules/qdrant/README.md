@@ -467,6 +467,349 @@ tail -f out/logs/qdrant/insert_pubmed.log
 
 The insert script now includes automatic retry logic with exponential backoff, but persistent errors require server restart.
 
+### On-Disk HNSW and cgroups Panic (Singularity/SGE Environment)
+
+**CRITICAL ISSUE** for large high-dimensional collections in HPC environments.
+
+#### Problem Description
+
+When using `hnsw_on_disk: true` for collections with high-dimensional vectors (e.g., 2048-dim), Qdrant's optimizer crashes with a cgroups-related panic:
+
+```
+ERROR: Optimization task panicked: called `Result::unwrap()` on an `Err` value:
+Error { kind: ReadFailed("/sys/fs/cgroup/system.slice/sgeexecd.SCC.service/memory.high"),
+cause: Some(Os { code: 2, kind: NotFound, message: "No such file or directory" }) }
+```
+
+**Root Cause:**
+- Qdrant tries to read cgroup memory limits to manage memory during optimization
+- In Singularity containers running under SGE, cgroup paths are different/unavailable
+- The Rust cgroups library (cgroups-rs) used by Qdrant panics when it can't read these files
+- This causes the entire optimizer thread to crash
+
+#### When This Occurs
+
+This issue appears when:
+1. Using **`hnsw_on_disk: true`** in collection config
+2. Collection reaches **indexing_threshold** and optimizer starts
+3. Running in **Singularity container** on **SGE/HPC cluster**
+4. Especially with **large collections** (30M+ points) and **high-dimensional vectors** (2048-dim)
+
+#### Symptoms
+
+```bash
+# Collection status
+Status: red
+Optimizer: {'error': 'Service internal error: Optimization task panicked: ...'}
+Indexed: 0 / 30,000,000  (stuck at 0%)
+
+# Server logs show
+2025-10-30T06:18:11.844330Z ERROR qdrant::startup: Panic occurred in file
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cgroups-rs-0.3.4/src/memory.rs
+at line 587: called `Result::unwrap()` on an `Err` value
+
+# Memory behavior
+- Memory jumps from ~15GB to ~27GB when optimizer starts
+- Then stays stable (optimizer crashed)
+- CPU usage minimal (~1-2%, not doing work)
+```
+
+#### Why On-Disk HNSW Needs cgroups
+
+On-disk HNSW storage requires careful memory management:
+- HNSW graph building is memory-intensive
+- Qdrant needs to know available memory to avoid OOM
+- It queries cgroups to get memory limits
+- Without this info, it can't safely manage on-disk operations
+
+#### Solutions & Workarounds
+
+**Option 1: Use In-Memory HNSW with Reduced Parameters** (Temporary Workaround)
+
+For collections that would benefit from on_disk but hit this issue:
+
+```yaml
+# In config.yaml - patents compounds example
+patents:
+  qdrant:
+    compounds_hnsw_m: 16                  # Instead of 32 (50% less memory)
+    compounds_hnsw_ef_construct: 128      # Instead of 256 (50% less memory)
+    compounds_hnsw_on_disk: false         # Use in-memory
+    compounds_indexing_threshold: 30000000
+```
+
+**Memory impact:**
+- m=32, ef=256: ~140-210GB during indexing (OOM on 128GB server)
+- m=16, ef=128: ~70-80GB during indexing (fits in 128GB)
+- Trade-off: Slightly lower search quality (~5-10% recall reduction)
+
+**Option 2: Newer Qdrant Version** (Needs Testing)
+
+The cgroups panic might be fixed in newer Qdrant versions (> 1.15.4):
+- Check Qdrant releases for cgroups-related fixes
+- Build/download newer Singularity container
+- Test with sample collection before production use
+
+**Option 3: Patch Qdrant Container** (Advanced)
+
+Modify the Qdrant binary to handle cgroups errors gracefully:
+- Fork Qdrant source
+- Patch cgroups detection to return defaults on failure
+- Build custom container with patch
+- Requires Rust knowledge and testing
+
+**Option 4: Mock cgroup Files** (Experimental)
+
+Create fake cgroup files that Qdrant can read:
+```bash
+# In Singularity startup script
+mkdir -p /sys/fs/cgroup/system.slice/sgeexecd.SCC.service/
+echo "max" > /sys/fs/cgroup/system.slice/sgeexecd.SCC.service/memory.high
+# Bind-mount when starting container
+```
+**Warning:** Untested, may cause other issues.
+
+#### Recommended Approach (As of Oct 2025)
+
+For **large high-dimensional collections** (e.g., patents_compounds with 2048-dim, 30M+ points):
+
+1. **Try reduced HNSW parameters first** (Option 1)
+   - Quick to implement
+   - Known to work
+   - Acceptable quality trade-off for most use cases
+
+2. **Monitor Qdrant releases** for cgroups fix
+   - Subscribe to Qdrant GitHub releases
+   - Test new versions when available
+
+3. **Consider splitting collections** if quality is critical
+   - Multiple smaller collections instead of one large one
+   - Each can use higher quality settings without OOM
+
+#### Related Issues
+
+- Qdrant GitHub: Search for "cgroups" and "Singularity" issues
+- Related to: Memory detection in containerized HPC environments
+- Affects: Optimization operations (indexing, segment merging)
+- Does NOT affect: Data insertion, search operations, in-memory HNSW
+
+#### Testing On-Disk HNSW
+
+Before deploying on_disk HNSW in production:
+
+```bash
+# 1. Create test collection with small dataset
+curl -X PUT http://localhost:6333/collections/test_ondisk \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "vectors": {"size": 2048, "distance": "Cosine"},
+    "hnsw_config": {"on_disk": true, "m": 32, "ef_construct": 256},
+    "optimizer_config": {"indexing_threshold": 1000}
+  }'
+
+# 2. Insert 2000 test points
+# (Use insert script with small dataset)
+
+# 3. Monitor for cgroups panic
+tail -f logs/qdrant/server.log | grep -i "panic\|cgroup"
+
+# 4. Check if indexing completes
+curl http://localhost:6333/collections/test_ondisk
+# Look for: status=green, indexed_vectors_count > 0
+```
+
+If test succeeds, on_disk should work. If it panics, use workaround (Option 1).
+
+#### Mock cgroups Workaround - Implementation Results (Oct 2025)
+
+**Option 4 was successfully implemented and tested.** Here are the findings:
+
+**✅ SUCCESS: Mock cgroups fixed the panic**
+
+The workaround creates fake cgroup files with realistic memory values and bind-mounts them into the Singularity container:
+
+```bash
+# Create mock cgroup directory
+MOCK_DIR="/tmp/qdrant_mock_cgroups_$$"
+mkdir -p "$MOCK_DIR"
+
+# Write realistic values for 128GB system
+echo "128849018880" > "$MOCK_DIR/memory.max"      # 120GB limit
+echo "118111600640" > "$MOCK_DIR/memory.high"     # 110GB soft limit
+echo "21474836480" > "$MOCK_DIR/memory.current"   # 20GB current usage
+
+# Bind-mount into container
+singularity run --bind "$MOCK_DIR:/sys/fs/cgroup/system.slice/sgeexecd.SCC.service" ...
+```
+
+**Result:** Qdrant successfully reads mock cgroups and reports `free: 107374182400` (100GB). No more cgroups panic!
+
+**❌ NEW ISSUE DISCOVERED: Virtual Memory Limit**
+
+The optimizer then fails with:
+```
+ERROR: Optimization error: Out of memory, free: 107374182400, IO Error: Cannot allocate memory (os error 12)
+VSZ: 524,656,320 KB (500GB) - already at limit!
+Virtual memory limit: 536,870,912 KB (512GB) - hard limit from SGE/Singularity
+```
+
+**Root cause:** Even though on-disk HNSW uses mmap (low RSS), mmap still counts against VSZ (virtual memory). With 30M points × 2048-dim, the mmap allocations push VSZ beyond the 512GB limit imposed by the SGE job scheduler.
+
+**Troubleshooting Steps Performed:**
+
+1. **Verify mock cgroups are read:**
+   ```bash
+   # After optimizer starts, check logs - should show "free: 107374182400" not "free: 0"
+   grep "Out of memory" logs/qdrant/server.log
+   ```
+
+2. **Trigger indexing manually if needed:**
+   ```bash
+   # Lower indexing_threshold to trigger optimizer
+   curl -X PATCH http://localhost:6333/collections/patents_compounds \
+     -H 'Content-Type: application/json' \
+     -d '{"optimizers_config": {"indexing_threshold": 1000000}}'
+
+   # Or nudge the threshold slightly
+   curl -X PATCH http://localhost:6333/collections/patents_compounds \
+     -H 'Content-Type: application/json' \
+     -d '{"optimizers_config": {"indexing_threshold": 1000001}}'
+
+   # Wait 2-3 minutes, then check status
+   curl http://localhost:6333/collections/patents_compounds | \
+     python3 -c "import sys,json; d=json.load(sys.stdin)['result']; \
+     print(f\"Status: {d['status']}, Indexed: {d['indexed_vectors_count']}\")"
+   ```
+
+3. **Monitor memory usage:**
+   ```bash
+   # Check both RSS (actual) and VSZ (virtual) memory
+   ps aux | grep '[q]drant' | awk '{print "RSS: "$6/1024" MB, VSZ: "$5/1024" MB"}'
+
+   # Check system limits
+   cat /proc/$(pgrep qdrant)/limits | grep "Max address space"
+   ```
+
+**Conclusion:**
+
+Mock cgroups workaround **WORKS** for fixing the cgroups panic. However, on-disk HNSW may still fail due to:
+- **Virtual memory limits** imposed by job schedulers (SGE/SLURM)
+- **Data size**: Large collections (30M+ points) with high dimensions (2048) require >512GB VSZ
+- **Environment**: Singularity containers inherit host VSZ limits
+
+**When to use mock cgroups:**
+- ✅ Nodes with high virtual memory limits (>1TB VSZ available)
+- ✅ Smaller collections that fit within VSZ constraints
+- ✅ Testing if cgroups is the only blocker
+
+**When to use Option 1 instead:**
+- ❌ Standard HPC nodes with 512GB VSZ limit
+- ❌ Large high-dimensional collections (30M+ × 2048-dim)
+- ❌ Need reliable production deployment
+
+**Implementation:** Mock cgroups support is available in `./bioyoda.sh qdrant start` with `--mock-cgroups` flag (enabled by default on Singularity). See script documentation for details.
+
+#### ✅ SUCCESSFUL DEPLOYMENT: scc2 with Unlimited Virtual Memory (Oct 2025)
+
+**THE SOLUTION THAT WORKED:**
+
+After encountering VSZ limits on scc140 (512GB), we discovered that **scc2 node has unlimited virtual memory**. By combining mock cgroups with scc2's unlimited vmem, we successfully indexed the entire patents_compounds collection.
+
+**Final Configuration:**
+```yaml
+# config.yaml - patents_compounds (PRODUCTION)
+patents:
+  qdrant:
+    compounds_hnsw_m: 32                      # Full quality (not reduced)
+    compounds_hnsw_ef_construct: 256          # Full quality (not reduced)
+    compounds_hnsw_on_disk: true              # ON-DISK HNSW - works on scc2!
+    compounds_hnsw_max_indexing_threads: 8    # CPU thread limiting (prevents cluster overload)
+    compounds_indexing_threshold: 30000000    # 30M points - delay indexing until all data loaded
+    compounds_max_segment_size: 20000000      # 20M points per segment
+```
+
+**Deployment Steps:**
+
+1. **Transfer data to scc2** (249 GB):
+   ```bash
+   rsync -avh --progress /localscratch/tgur/qdrant_scc140_20251029/ \
+     scc2:/localscratch/tgur/qdrant_scc140_20251029/
+   ```
+
+2. **Start Qdrant on scc2** with mock cgroups:
+   ```bash
+   # SSH to scc2 first
+   ssh scc2
+
+   # Start Qdrant with mock cgroups (automatic in bioyoda.sh)
+   ./bioyoda.sh qdrant start --mode local --memory 128000
+   ```
+
+3. **Monitor indexing progress:**
+   ```bash
+   curl -s "http://scc2:6333/collections/patents_compounds" | \
+     python3 -c "import sys, json; d=json.load(sys.stdin)['result']; \
+     print(f'Status: {d[\"status\"]}, Indexed: {d[\"indexed_vectors_count\"]:,} / {d[\"points_count\"]:,}')"
+   ```
+
+**Results:**
+- ✅ **30,802,486 vectors** fully indexed (100%)
+- ✅ **Status: GREEN** - production ready
+- ✅ **VSZ usage:** ~600-800 GB (no limit on scc2!)
+- ✅ **RSS usage:** ~30-50 GB (actual physical RAM - low due to on-disk)
+- ✅ **CPU usage:** Limited to 8 threads (prevents cluster overload)
+- ✅ **Segments:** 14 optimized segments
+- ✅ **Indexing time:** ~8-12 hours for full 30.8M dataset
+
+**Key Success Factors:**
+
+1. **Mock cgroups workaround** - Fixes Singularity cgroups panic
+2. **scc2 unlimited vmem** - No 512GB VSZ limit (critical for mmap)
+3. **On-disk HNSW** - Enables indexing 2048-dim vectors without OOM
+4. **Thread limiting** - Configured via `max_indexing_threads: 8` to prevent CPU overload
+5. **Local scratch storage** - Fast disk I/O for mmap operations
+
+**Checking Virtual Memory Limits on Different Nodes:**
+
+```bash
+# Interactive session (no SGE) on scc140
+ulimit -v
+# Output: 536870912 (512 GB)
+
+# qlogin session (with SGE) on scc140
+qlogin -l hostname=scc140
+ulimit -v
+# Output: 1048576 (1 GB!) - too low!
+
+# Interactive session on scc2
+ssh scc2
+ulimit -v
+# Output: unlimited - perfect for on-disk HNSW!
+```
+
+**When to Use This Approach:**
+
+✅ **Use scc2 + mock cgroups for:**
+- Large high-dimensional collections (30M+ points, 2048-dim)
+- On-disk HNSW requirements (>512GB VSZ needed)
+- Production deployments needing full HNSW quality (m=32, ef_construct=256)
+
+❌ **Don't use on scc140 because:**
+- 512GB VSZ limit (interactive) or 1GB (qlogin)
+- Will fail with "Cannot allocate memory" when mmap hits limit
+- Need Option 1 (reduced parameters, in-memory) instead
+
+**Production Recommendation:**
+
+For **patents_compounds** and similar large collections:
+1. Deploy on **scc2** (unlimited vmem)
+2. Use **on-disk HNSW** (handles 2048-dim efficiently)
+3. Set **max_indexing_threads: 8** (prevents CPU overload)
+4. Monitor with `curl` commands (check status, indexed count)
+5. Wait for **GREEN** status before production queries
+
+This configuration successfully indexed 30.8M chemical fingerprints and is now serving production chemical similarity searches.
+
 ## Performance
 
 ### Test Mode

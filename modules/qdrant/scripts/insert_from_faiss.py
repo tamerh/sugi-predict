@@ -189,6 +189,8 @@ def upsert_with_retry(client: QdrantClient, collection_name: str, points: list,
 def create_collection_if_needed(client: QdrantClient, collection_name: str,
                                  vector_size: int = 768, enable_quantization: bool = True,
                                  hnsw_m: int = 16, hnsw_ef_construct: int = 100,
+                                 hnsw_on_disk: bool = False,
+                                 hnsw_max_indexing_threads: int = 0,
                                  max_segment_size: int = 2_000_000,
                                  default_segment_number: int = 2,
                                  indexing_threshold: int = 1_000_000) -> None:
@@ -201,6 +203,8 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
         enable_quantization: Enable scalar quantization (default: True, recommended for large collections)
         hnsw_m: HNSW m parameter (graph connectivity, default: 16)
         hnsw_ef_construct: HNSW ef_construct parameter (build quality, default: 100)
+        hnsw_on_disk: Store HNSW index on disk (default: False, set True to reduce RAM usage)
+        hnsw_max_indexing_threads: Limit CPU threads during HNSW index building (default: 0 = unlimited, 8 recommended to prevent cluster overload)
         max_segment_size: Maximum segment size in points (default: 2_000_000)
         default_segment_number: Default number of segments (default: 2, set to 0 for dynamic)
         indexing_threshold: Minimum points before indexing starts (default: 1_000_000, higher = fewer segments)
@@ -248,7 +252,7 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
         else:
             log_with_timestamp(f"  ⚠ Quantization DISABLED")
 
-        log_with_timestamp(f"  HNSW config: m={hnsw_m}, ef_construct={hnsw_ef_construct}")
+        log_with_timestamp(f"  HNSW config: m={hnsw_m}, ef_construct={hnsw_ef_construct}, on_disk={hnsw_on_disk}, max_indexing_threads={hnsw_max_indexing_threads}")
         log_with_timestamp(f"  Segment config: default_segment_number={default_segment_number}, max_segment_size={max_segment_size:,} points")
         log_with_timestamp(f"  Indexing threshold: {indexing_threshold:,} points (higher = fewer segments during bulk insert)")
 
@@ -262,7 +266,9 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
             hnsw_config=models.HnswConfigDiff(
                 m=hnsw_m,
                 ef_construct=hnsw_ef_construct,
-                full_scan_threshold=10000
+                full_scan_threshold=10000,
+                max_indexing_threads=hnsw_max_indexing_threads if hnsw_max_indexing_threads > 0 else None,
+                on_disk=hnsw_on_disk
             ),
             optimizers_config=models.OptimizersConfigDiff(
                 deleted_threshold=0.2,
@@ -464,6 +470,8 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                       chunk_tracking_file: str = None,
                       update_mode: bool = False,
                       hnsw_m: int = 16, hnsw_ef_construct: int = 100,
+                      hnsw_on_disk: bool = False,
+                      hnsw_max_indexing_threads: int = 0,
                       max_segment_size: int = 2_000_000,
                       default_segment_number: int = 2,
                       indexing_threshold: int = 1_000_000,
@@ -666,6 +674,8 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                                 enable_quantization=enable_quantization,
                                 hnsw_m=hnsw_m,
                                 hnsw_ef_construct=hnsw_ef_construct,
+                                hnsw_on_disk=hnsw_on_disk,
+                                hnsw_max_indexing_threads=hnsw_max_indexing_threads,
                                 max_segment_size=max_segment_size,
                                 default_segment_number=default_segment_number,
                                 indexing_threshold=indexing_threshold)
@@ -1006,6 +1016,18 @@ def main():
         help='HNSW ef_construct parameter (index build quality, default: 100)'
     )
     parser.add_argument(
+        '--hnsw-on-disk',
+        action='store_true',
+        default=False,
+        help='Store HNSW index on disk to reduce RAM usage (slower queries but lower memory)'
+    )
+    parser.add_argument(
+        '--hnsw-max-indexing-threads',
+        type=int,
+        default=0,
+        help='Limit CPU threads during HNSW index building (default: 0 = unlimited, 8 recommended to prevent cluster overload)'
+    )
+    parser.add_argument(
         '--max-segment-size',
         type=int,
         default=2_000_000,
@@ -1063,6 +1085,8 @@ def main():
             update_mode=args.update_mode,
             hnsw_m=args.hnsw_m,
             hnsw_ef_construct=args.hnsw_ef_construct,
+            hnsw_on_disk=args.hnsw_on_disk,
+            hnsw_max_indexing_threads=args.hnsw_max_indexing_threads,
             max_segment_size=args.max_segment_size,
             default_segment_number=args.default_segment_number,
             indexing_threshold=args.indexing_threshold,

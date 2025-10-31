@@ -42,6 +42,7 @@ pubmed:
     # HNSW parameters (optimized from benchmark: m=32, ef_construct=256)
     hnsw_m: 32                      # Graph connectivity (32 = balanced performance)
     hnsw_ef_construct: 256          # Index build quality (256 = balanced)
+    hnsw_max_indexing_threads: 8    # Limit CPU during HNSW index building
 
     # Segment optimization (critical for performance!)
     indexing_threshold: 3000000     # 3M points - start HNSW indexing (reduces segments)
@@ -110,6 +111,7 @@ clinical_trials:
     # HNSW parameters (same as PubMed - optimized from benchmark)
     hnsw_m: 32                      # Graph connectivity (32 = balanced performance)
     hnsw_ef_construct: 256          # Index build quality (256 = balanced)
+    hnsw_max_indexing_threads: 8    # Limit CPU during HNSW index building
 
     # Segment optimization (adjusted for smaller ~500K dataset)
     indexing_threshold: 1000000     # 1M points - start HNSW indexing
@@ -171,33 +173,46 @@ patents:
   keep_releases: 2              # Keep latest 2 releases
 
   # Qdrant insertion settings
+  # NOTE: Separate configs for text and compounds collections (different dimensions and requirements)
   qdrant:
-    # Text collection (patent descriptions) - 768-dimensional S-BioBERT embeddings
+    # ==========================================================================
+    # TEXT COLLECTION (patents_text) - 768-dim S-BioBERT embeddings
+    # ==========================================================================
     text_collection_name: "patents_text"
 
-    # Compounds collection (chemical fingerprints) - 2048-bit Morgan/ECFP4 fingerprints
+    # HNSW parameters for text (768-dim, working well with in-memory HNSW)
+    text_hnsw_m: 32                           # Graph connectivity
+    text_hnsw_ef_construct: 256               # Index build quality
+    text_hnsw_on_disk: false                  # In-memory HNSW (768-dim is manageable)
+    text_hnsw_max_indexing_threads: 8         # Limit CPU during HNSW index building
+
+    # Segment optimization for text (~38M points)
+    text_indexing_threshold: 3000000     # 3M points - start HNSW indexing
+    text_max_segment_size: 35000000      # 35M points - max segment size
+    text_default_segment_number: 0       # Let Qdrant decide
+
+    # ==========================================================================
+    # COMPOUNDS COLLECTION (patents_compounds) - 2048-dim Morgan fingerprints
+    # ==========================================================================
     compounds_collection_name: "patents_compounds"
 
-    # NOTE: These are TWO separate collections with different vector dimensions:
-    # - patents_text: 768-dim (neural network embeddings for semantic search)
-    # - patents_compounds: 2048-dim (RDKit fingerprints for structure similarity)
-    # They CANNOT be mixed or searched together - use separate queries for each
+    # HNSW parameters for compounds (2048-dim, needs on-disk to avoid OOM!)
+    compounds_hnsw_m: 32                      # Graph connectivity (same quality as text)
+    compounds_hnsw_ef_construct: 256          # Index build quality (same quality as text)
+    compounds_hnsw_on_disk: true              # ON-DISK HNSW - critical for 2048-dim to avoid OOM!
+    compounds_hnsw_max_indexing_threads: 8    # Limit CPU during HNSW index building (prevents cluster overload)
 
-    # HNSW parameters (same as PubMed - optimized from benchmark)
-    hnsw_m: 32                      # Graph connectivity (32 = balanced performance)
-    hnsw_ef_construct: 256          # Index build quality (256 = balanced)
+    # Segment optimization for compounds (~34M points)
+    compounds_indexing_threshold: 30000000  # 30M points - delay indexing
+    compounds_max_segment_size: 20000000    # 20M points - max segment size
+    compounds_default_segment_number: 0     # Let Qdrant decide
 
-    # Segment optimization (adjusted for ~17M patents text + 20M compounds)
-    indexing_threshold: 3000000     # 3M points - start HNSW indexing
-    max_segment_size: 20000000      # 20M points - max segment size
-    default_segment_number: 0       # Let Qdrant decide segment count
-
-    # Insertion settings
-    batch_size: 500                 # Batch size for insertion (balanced for NFS)
-    prefer_grpc: true               # Use gRPC for 20-30% faster bulk inserts
-
-    # Snakemake job resources
-    memory_mb: 8192
+    # ==========================================================================
+    # SHARED SETTINGS (both collections)
+    # ==========================================================================
+    batch_size: 500                      # Batch size for insertion (balanced for NFS)
+    prefer_grpc: true                    # Use gRPC for 20-30% faster bulk inserts
+    memory_mb: 8192                      # Snakemake job resources
 
   # Test mode settings (set via test_config.yaml)
   test_mode: false

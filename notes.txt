@@ -2,7 +2,9 @@
 
 nohup python3 modules/patents/scripts/process_uspto_json.py       --input-dir /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto       --filter-ids test_out/raw_data/patents/surechembl/2025-10-01/us_patent_ids.txt       --output /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto/uspto_historical.parquet  > /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/logs/patents/process_uspto_json_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 
-nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_def/def generate > logs/generate.log 2>&1  &
+nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_def generate > logs/generate_def.log 2>&1  &
+
+nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_def build > logs/build.log 2>&1  &
 
 
 patents data for text....
@@ -180,7 +182,8 @@ qlogin -pe smp 2 -q scc -l h_vmem=8G -l h_rt=4:00:00
 
 qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=168:00:00
 
-qlogin -pe smp 4 -q scc -l h_vmem=128G -l h_rt=999:00:00
+
+qlogin -pe smp 2 -q scc -l h_vmem=512G -l h_rt=444:00:00
 
 
 qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=168:00:00

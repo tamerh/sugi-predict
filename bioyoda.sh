@@ -1004,6 +1004,68 @@ stop() {
 # Qdrant Management Functions
 ##############################################################################
 
+qdrant_restart() {
+    # Restart Qdrant with existing storage directory
+    # Usage: qdrant_restart [storage_path]
+    #   If storage_path not provided, auto-detects latest for current hostname
+
+    local storage_path="$1"
+    local scratch_base
+    local config_path="${pipeline_dir}/config/config.yaml"
+
+    # Get scratch_base from config
+    scratch_base=$(grep -A20 "^qdrant:" "${config_path}" | grep "local_scratch_base:" | sed 's/.*local_scratch_base:\s*//' | sed 's/#.*//' | xargs)
+
+    # Auto-detect if no path provided
+    if [[ -z "$storage_path" ]]; then
+        if [[ -z "$scratch_base" ]]; then
+            log_error "Cannot auto-detect: local_scratch_base not configured"
+            log_error "Please provide storage path explicitly"
+            log_error "Example: $0 qdrant restart /localscratch/tgur/qdrant_scc140_20251030"
+            exit 1
+        fi
+
+        local hostname_val=$(hostname)
+        local latest_dir=$(ls -dt ${scratch_base}/qdrant_${hostname_val}_* 2>/dev/null | head -1)
+
+        if [[ -z "$latest_dir" ]]; then
+            log_error "No existing storage found at ${scratch_base}/qdrant_${hostname_val}_*"
+            log_error "Please provide storage path explicitly"
+            exit 1
+        fi
+
+        storage_path="$latest_dir"
+        log_info "Auto-detected latest storage: $storage_path"
+
+        # Ask for confirmation
+        read -p "Restart with this storage? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Cancelled by user"
+            exit 0
+        fi
+    fi
+
+    # Validate path exists
+    if [[ ! -d "$storage_path" ]]; then
+        log_error "Storage directory not found: $storage_path"
+        exit 1
+    fi
+
+    log_info "Restarting Qdrant with existing storage: $storage_path"
+
+    # Stop current instance if running
+    log_info "Stopping current Qdrant instance (if any)..."
+    qdrant_stop || true
+
+    # Give it a moment to clean up
+    sleep 2
+
+    # Start with existing storage
+    log_info "Starting Qdrant with existing storage..."
+    qdrant_start --out-dir "$storage_path"
+}
+
 qdrant() {
     if [[ $# -eq 0 ]]; then
         log_error "No qdrant subcommand specified"
@@ -1011,6 +1073,7 @@ qdrant() {
         echo "Available subcommands:"
         echo "  start       - Start Qdrant server (local or cluster)"
         echo "  stop        - Stop Qdrant server"
+        echo "  restart     - Restart Qdrant with existing storage"
         echo "  status      - Check Qdrant server status"
         echo "  insert      - Insert data to Qdrant (pubmed, clinical_trials, or all)"
         echo "  stop-insert - Stop a running insertion job"
@@ -1033,6 +1096,9 @@ qdrant() {
             ;;
         stop)
             qdrant_stop "$@"
+            ;;
+        restart)
+            qdrant_restart "$@"
             ;;
         status)
             qdrant_status "$@"
@@ -1057,6 +1123,8 @@ qdrant_start() {
     local memory_mb=32000
     local use_test_config=false
     local custom_config=""
+    local mock_cgroups="auto"  # auto-detect by default
+    local out_dir=""            # existing storage directory to use
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -1085,6 +1153,18 @@ qdrant_start() {
                 use_test_config=true
                 shift
                 ;;
+            --mock-cgroups)
+                mock_cgroups="true"
+                shift
+                ;;
+            --no-mock-cgroups)
+                mock_cgroups="false"
+                shift
+                ;;
+            --out-dir)
+                out_dir="$2"
+                shift 2
+                ;;
             *)
                 log_error "Unknown argument: $1"
                 exit 1
@@ -1101,6 +1181,36 @@ qdrant_start() {
         merge_test_config
         active_config="config/test_config.yaml"
         log_info "Using test configuration: config/test_config.yaml"
+    fi
+
+    # Validate out_dir if provided
+    if [[ -n "$out_dir" ]]; then
+        # Make absolute path if relative
+        if [[ ! "$out_dir" = /* ]]; then
+            out_dir="$(pwd)/$out_dir"
+        fi
+
+        # Check if directory exists
+        if [[ ! -d "$out_dir" ]]; then
+            log_error "Output directory does not exist: $out_dir"
+            exit 1
+        fi
+
+        # Check if it has the expected structure (storage/ and snapshots/ subdirs)
+        # Allow either direct path to parent or path with /storage subdirectory
+        if [[ -d "$out_dir/storage" ]] && [[ -d "$out_dir/snapshots" ]]; then
+            # Good: has storage/ and snapshots/ subdirectories
+            log_info "Using existing Qdrant storage: $out_dir"
+        elif [[ -d "$out_dir" ]] && [[ "$(basename $out_dir)" == "storage" ]]; then
+            # User provided path ending in /storage, adjust to parent
+            out_dir="$(dirname $out_dir)"
+            log_info "Adjusted path to parent directory: $out_dir"
+        else
+            log_error "Invalid Qdrant directory structure: $out_dir"
+            log_error "Expected: storage/ and snapshots/ subdirectories"
+            log_error "Contents: $(ls -la $out_dir 2>/dev/null | head -10 || echo 'Cannot list directory')"
+            exit 1
+        fi
     fi
 
     log_info "Starting Qdrant server (mode=${mode}, queue=${queue})"
@@ -1130,6 +1240,25 @@ qdrant_start() {
     fi
 
     # Call start_server.sh directly (mode auto-detected based on scratch_base)
+    # Pass mock_cgroups setting
+    local mock_cgroups_flag=""
+    if [[ "$mock_cgroups" == "true" ]]; then
+        mock_cgroups_flag="--mock-cgroups"
+        log_info "Mock cgroups enabled (fixes cgroups panic in Singularity/SGE)"
+    elif [[ "$mock_cgroups" == "false" ]]; then
+        mock_cgroups_flag="--no-mock-cgroups"
+        log_info "Mock cgroups disabled"
+    else
+        # auto mode - let start_server.sh decide based on environment
+        log_info "Mock cgroups: auto-detect (enabled for Singularity, disabled for Docker)"
+    fi
+
+    # Build command with optional out-dir parameter
+    local out_dir_flag=""
+    if [[ -n "$out_dir" ]]; then
+        out_dir_flag="--out-dir ${out_dir}"
+    fi
+
     bash modules/qdrant/scripts/start_server.sh \
         --container modules/qdrant/setup/singularity/qdrant.sif \
         --config config/qdrant_config.yaml \
@@ -1141,7 +1270,9 @@ qdrant_start() {
         --connection-info ${base_dir}/data/qdrant/connection_info.txt \
         --log ${base_dir}/logs/qdrant/server_${timestamp}.log \
         --queue ${queue} \
-        --scratch-base "${scratch_base}"
+        --scratch-base "${scratch_base}" \
+        ${mock_cgroups_flag} \
+        ${out_dir_flag}
 
     if [[ $? -eq 0 ]]; then
         log_success "Qdrant server started successfully"

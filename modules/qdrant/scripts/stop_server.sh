@@ -59,6 +59,18 @@ if [ -f "$PID_FILE" ]; then
     fi
 
     rm -f "$PID_FILE"
+
+    # Clean up mock cgroups directory if it exists
+    MOCK_CGROUPS_PATH_FILE="${STORAGE}/mock_cgroups.path"
+    if [ -f "$MOCK_CGROUPS_PATH_FILE" ]; then
+        MOCK_CGROUPS_DIR=$(cat "$MOCK_CGROUPS_PATH_FILE")
+        if [ -d "$MOCK_CGROUPS_DIR" ]; then
+            echo "Cleaning up mock cgroups directory: $MOCK_CGROUPS_DIR"
+            rm -rf "$MOCK_CGROUPS_DIR"
+            echo -e "${GREEN}✓ Mock cgroups directory cleaned up${NC}"
+        fi
+        rm -f "$MOCK_CGROUPS_PATH_FILE"
+    fi
 fi
 
 # Check for cluster job

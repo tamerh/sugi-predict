@@ -201,6 +201,12 @@ tail -f logs/bioyoda_pubmed_main.log
 # Start server on GPU cluster node
 ./bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
 
+# Start with existing storage directory (restart from previous session)
+./bioyoda.sh qdrant start --out-dir /localscratch/tgur/qdrant_scc140_20251029
+
+# Restart with existing storage (convenience command with auto-detection)
+./bioyoda.sh qdrant restart [storage_path]
+
 # Check status
 ./bioyoda.sh qdrant status
 
@@ -453,6 +459,26 @@ python modules/pubmed/scripts/tracking.py --tracking-file out/state/pubmed/proce
 # Visit http://localhost:8000/docs for API documentation
 ```
 
+### Workflow 5: Resume from Existing Storage
+
+```bash
+# Scenario: Server crashed or session ended, data exists on localscratch
+
+# 1. Check available storage directories
+ls -lhd /localscratch/$USER/qdrant_*
+
+# 2. Restart with existing data (auto-detects latest for current host)
+./bioyoda.sh qdrant restart
+
+# 3. Or specify exact storage path
+./bioyoda.sh qdrant restart /localscratch/tgur/qdrant_scc140_20251029
+
+# 4. Verify collections are loaded
+./bioyoda.sh qdrant status
+
+# Server is now running with all previous data intact
+```
+
 ## Documentation
 
 - **This File**: Overview and quick start
@@ -496,7 +522,10 @@ tail -f logs/qdrant/insert_pubmed.log
 # Stop a running insertion
 ./bioyoda.sh qdrant stop-insert pubmed
 
-# Restart server
+# Restart server (preserves existing data)
+./bioyoda.sh qdrant restart
+
+# Or manually stop and start
 ./bioyoda.sh qdrant stop
 ./bioyoda.sh qdrant start
 

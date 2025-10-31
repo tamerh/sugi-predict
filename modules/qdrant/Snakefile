@@ -130,6 +130,7 @@ rule insert_pubmed_to_qdrant:
         batch_size = config["pubmed"]["qdrant"]["batch_size"],
         hnsw_m = config["pubmed"]["qdrant"]["hnsw_m"],
         hnsw_ef_construct = config["pubmed"]["qdrant"]["hnsw_ef_construct"],
+        hnsw_max_indexing_threads = config["pubmed"]["qdrant"]["hnsw_max_indexing_threads"],
         indexing_threshold = config["pubmed"]["qdrant"]["indexing_threshold"],
         max_segment_size = config["pubmed"]["qdrant"]["max_segment_size"],
         default_segment_number = config["pubmed"]["qdrant"]["default_segment_number"],
@@ -194,6 +195,7 @@ echo "==================== RUN STARTED: $(date) ====================" > {log}
             --batch-size {params.batch_size} \
             --hnsw-m {params.hnsw_m} \
             --hnsw-ef-construct {params.hnsw_ef_construct} \
+            --hnsw-max-indexing-threads {params.hnsw_max_indexing_threads} \
             --indexing-threshold {params.indexing_threshold} \
             --max-segment-size {params.max_segment_size} \
             --default-segment-number {params.default_segment_number} \
@@ -229,6 +231,7 @@ rule insert_clinical_trials_to_qdrant:
         batch_size = config["clinical_trials"]["qdrant"]["batch_size"],
         hnsw_m = config["clinical_trials"]["qdrant"]["hnsw_m"],
         hnsw_ef_construct = config["clinical_trials"]["qdrant"]["hnsw_ef_construct"],
+        hnsw_max_indexing_threads = config["clinical_trials"]["qdrant"]["hnsw_max_indexing_threads"],
         indexing_threshold = config["clinical_trials"]["qdrant"]["indexing_threshold"],
         max_segment_size = config["clinical_trials"]["qdrant"]["max_segment_size"],
         default_segment_number = config["clinical_trials"]["qdrant"]["default_segment_number"],
@@ -308,6 +311,7 @@ echo "==================== RUN STARTED: $(date) ====================" > {log}
             --batch-size {params.batch_size} \
             --hnsw-m {params.hnsw_m} \
             --hnsw-ef-construct {params.hnsw_ef_construct} \
+            --hnsw-max-indexing-threads {params.hnsw_max_indexing_threads} \
             --indexing-threshold {params.indexing_threshold} \
             --max-segment-size {params.max_segment_size} \
             --default-segment-number {params.default_segment_number} \
@@ -339,11 +343,13 @@ rule insert_patents_text_to_qdrant:
     params:
         collection = config["patents"]["qdrant"]["text_collection_name"],
         batch_size = config["patents"]["qdrant"]["batch_size"],
-        hnsw_m = config["patents"]["qdrant"]["hnsw_m"],
-        hnsw_ef_construct = config["patents"]["qdrant"]["hnsw_ef_construct"],
-        indexing_threshold = config["patents"]["qdrant"]["indexing_threshold"],
-        max_segment_size = config["patents"]["qdrant"]["max_segment_size"],
-        default_segment_number = config["patents"]["qdrant"]["default_segment_number"],
+        hnsw_m = config["patents"]["qdrant"]["text_hnsw_m"],
+        hnsw_ef_construct = config["patents"]["qdrant"]["text_hnsw_ef_construct"],
+        hnsw_on_disk = config["patents"]["qdrant"]["text_hnsw_on_disk"],
+        hnsw_max_indexing_threads = config["patents"]["qdrant"]["text_hnsw_max_indexing_threads"],
+        indexing_threshold = config["patents"]["qdrant"]["text_indexing_threshold"],
+        max_segment_size = config["patents"]["qdrant"]["text_max_segment_size"],
+        default_segment_number = config["patents"]["qdrant"]["text_default_segment_number"],
         prefer_grpc = config["patents"]["qdrant"].get("prefer_grpc", False),
         faiss_dir = PATENTS_TEXT_FAISS_DIR,
         vector_size = config["patents"]["vector_dimension"],  # 768 for S-BioBERT embeddings
@@ -398,6 +404,13 @@ rule insert_patents_text_to_qdrant:
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] gRPC protocol enabled" >> {log}
         fi
 
+        # Build HNSW on-disk flag if enabled
+        HNSW_ON_DISK_FLAG=""
+        if [ "{params.hnsw_on_disk}" = "True" ]; then
+            HNSW_ON_DISK_FLAG="--hnsw-on-disk"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] HNSW on-disk storage enabled (reduces RAM usage)" >> {log}
+        fi
+
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
             --collection {params.collection} \
@@ -406,11 +419,13 @@ rule insert_patents_text_to_qdrant:
             --vector-size {params.vector_size} \
             --hnsw-m {params.hnsw_m} \
             --hnsw-ef-construct {params.hnsw_ef_construct} \
+            --hnsw-max-indexing-threads {params.hnsw_max_indexing_threads} \
             --indexing-threshold {params.indexing_threshold} \
             --max-segment-size {params.max_segment_size} \
             --default-segment-number {params.default_segment_number} \
             $CHUNK_TRACKING_FLAG \
             $GRPC_FLAG \
+            $HNSW_ON_DISK_FLAG \
             >> {log} 2>&1
 
         # Mark as done
@@ -435,11 +450,13 @@ rule insert_patents_compounds_to_qdrant:
     params:
         collection = config["patents"]["qdrant"]["compounds_collection_name"],
         batch_size = config["patents"]["qdrant"]["batch_size"],
-        hnsw_m = config["patents"]["qdrant"]["hnsw_m"],
-        hnsw_ef_construct = config["patents"]["qdrant"]["hnsw_ef_construct"],
-        indexing_threshold = config["patents"]["qdrant"]["indexing_threshold"],
-        max_segment_size = config["patents"]["qdrant"]["max_segment_size"],
-        default_segment_number = config["patents"]["qdrant"]["default_segment_number"],
+        hnsw_m = config["patents"]["qdrant"]["compounds_hnsw_m"],
+        hnsw_ef_construct = config["patents"]["qdrant"]["compounds_hnsw_ef_construct"],
+        hnsw_on_disk = config["patents"]["qdrant"]["compounds_hnsw_on_disk"],
+        hnsw_max_indexing_threads = config["patents"]["qdrant"]["compounds_hnsw_max_indexing_threads"],
+        indexing_threshold = config["patents"]["qdrant"]["compounds_indexing_threshold"],
+        max_segment_size = config["patents"]["qdrant"]["compounds_max_segment_size"],
+        default_segment_number = config["patents"]["qdrant"]["compounds_default_segment_number"],
         prefer_grpc = config["patents"]["qdrant"].get("prefer_grpc", False),
         faiss_dir = PATENTS_COMPOUNDS_FAISS_DIR,
         vector_size = config["patents"]["fingerprint_bits"],  # 2048 for Morgan fingerprints
@@ -494,6 +511,13 @@ rule insert_patents_compounds_to_qdrant:
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] gRPC protocol enabled" >> {log}
         fi
 
+        # Build HNSW on-disk flag if enabled
+        HNSW_ON_DISK_FLAG=""
+        if [ "{params.hnsw_on_disk}" = "True" ]; then
+            HNSW_ON_DISK_FLAG="--hnsw-on-disk"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] HNSW on-disk storage enabled (reduces RAM usage)" >> {log}
+        fi
+
         python {params.script} \
             --faiss-dir {params.faiss_dir} \
             --collection {params.collection} \
@@ -502,11 +526,13 @@ rule insert_patents_compounds_to_qdrant:
             --vector-size {params.vector_size} \
             --hnsw-m {params.hnsw_m} \
             --hnsw-ef-construct {params.hnsw_ef_construct} \
+            --hnsw-max-indexing-threads {params.hnsw_max_indexing_threads} \
             --indexing-threshold {params.indexing_threshold} \
             --max-segment-size {params.max_segment_size} \
             --default-segment-number {params.default_segment_number} \
             $CHUNK_TRACKING_FLAG \
             $GRPC_FLAG \
+            $HNSW_ON_DISK_FLAG \
             >> {log} 2>&1
 
         # Mark as done

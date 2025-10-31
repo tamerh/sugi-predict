@@ -4,6 +4,8 @@ channels:
   - defaults
 dependencies:
   # Go compiler and tools
+  - python=3.12
+  - requests
   - go >=1.20
 
   # Build tools

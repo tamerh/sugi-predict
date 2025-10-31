@@ -21,10 +21,10 @@ storage:
   wal_capacity_mb: 256
   wal_segments_ahead: 2
 
-  # Performance tuning for NFS
+  # Performance tuning for HPC cluster
   performance:
-    max_search_threads: 0  # Use all available cores
-    max_optimization_threads: 8  # Optimized from benchmark (speeds up build by 30-50%)
+    max_search_threads: 0  # Use all cores for search (queries should be fast!)
+    max_optimization_threads: 8  # Limit optimization/indexing threads to prevent overload
 
 # Cluster settings (for future scaling)
 cluster:
@@ -33,8 +33,17 @@ cluster:
 # Logging
 log_level: INFO
 
-# NOTE: Collection-specific settings are now configured per-collection in config.yaml:
-#   - HNSW parameters (m, ef_construct)
+# NOTE: Collection-specific settings are configured per-collection in config.yaml:
+#   - HNSW parameters (m, ef_construct, max_indexing_threads)
+#     * Recommended: max_indexing_threads: 8 (limits CPU during HNSW index building)
 #   - Segment optimization (indexing_threshold, max_segment_size)
+#     * Recommended: max_optimization_threads via API after collection creation
 #   - Insertion settings (batch_size, prefer_grpc)
 # This allows different configurations for different collections (e.g., pubmed vs clinical_trials)
+#
+# IMPORTANT: The max_indexing_threads (HNSW) and max_optimization_threads settings
+# can be adjusted per-collection via API:
+#   curl -X PATCH http://host:6333/collections/{name} -H "Content-Type: application/json" -d '{
+#     "hnsw_config": {"max_indexing_threads": 8},
+#     "optimizers_config": {"max_optimization_threads": 8}
+#   }'
