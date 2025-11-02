@@ -36,9 +36,13 @@ tests/
     ├── pubmed/
     │   ├── test_abstracts.xml.gz           # 50 real PubMed abstracts (68KB)
     │   └── test_abstracts_pmids.txt        # List of PMIDs in fixture
-    └── clinical_trials/
-        ├── test_nct_ids.txt                # 50 NCT IDs for filtering (743B)
-        └── sample_trials.json              # 50 extracted trials (275KB)
+    ├── clinical_trials/
+    │   ├── test_nct_ids.txt                # 50 NCT IDs for filtering (743B)
+    │   └── sample_trials.json              # 50 extracted trials (275KB)
+    └── patents/
+        ├── test_patent_ids_with_uspto.txt  # 100 patent IDs (113 lines with header)
+        ├── patents_text.json               # 100 patent text entries (184KB)
+        └── compounds.json                  # 1000 compound entries (249KB)
 ```
 
 ## Test Modes
@@ -53,11 +57,14 @@ Uses pre-existing fixture data and runs minimal processing:
 
 **Steps:**
 1. Setup test environment (copy fixtures to test_out/)
-2. Run minimal data processing (~1-2 min)
+2. Run minimal data processing for all modules (~1-2 min):
+   - PubMed: 50 abstracts
+   - Clinical Trials: 50 trials
+   - Patents: 100 patents + 1000 compounds
 3. Start Qdrant server
-4. Insert data to Qdrant
+4. Insert data to Qdrant (5 collections total)
 5. Start API server
-6. Validate all queries from queries.txt
+6. Validate queries from queries.txt and queries_pubmed.txt
 7. Cleanup
 
 **Duration:** ~2-3 minutes
@@ -73,11 +80,14 @@ Runs the complete data processing pipeline from scratch:
 
 **Steps:**
 1. Clean test_out/ directory
-2. Run full PubMed and Clinical Trials pipeline (~15-20 min)
+2. Run full pipeline for all modules (~15-20 min):
+   - PubMed processing
+   - Clinical Trials processing
+   - Patents processing (text + compounds)
 3. Start Qdrant server
-4. Insert data to Qdrant
+4. Insert data to Qdrant (5 collections)
 5. Start API server
-6. Validate all queries from queries.txt
+6. Validate queries from queries.txt and queries_pubmed.txt
 7. Cleanup
 
 **Duration:** ~15-20 minutes
@@ -89,9 +99,10 @@ The test suite validates two types of queries:
 
 ### 1. Search Queries
 
-Tests the `/search` endpoint with queries from both files:
+Tests the `/search` endpoint with queries from query files:
 - **Clinical Trials**: `queries.txt` (10 queries testing clinical_trials collection)
 - **PubMed**: `queries_pubmed.txt` (10 queries testing pubmed_abstracts collection)
+- **Patents**: Currently NOT validated (see Patents section below)
 - Verifies API returns results
 - Checks result count > 0
 - Shows top matching documents with scores
@@ -169,6 +180,9 @@ PubMed Search:          10/10 passed
 Total Search:           20/20 passed
 RAG:                    5/5 passed
 
+NOTE: Patents collections are processed but NOT query-validated
+      (patents_text: 100 docs, patents_compounds: 1000 docs)
+
 ================================================================================
 TOTAL: 25/25 passed
 
@@ -220,6 +234,170 @@ To add new test queries:
 - Avoid overly specific queries that won't match any fixture data
 - Test both broad and specific query types
 
+## Patents Testing
+
+### Current Status
+
+The test suite includes patents data processing but **does NOT** include query validation for patents. Here's the current state:
+
+#### ✅ What's Implemented
+
+**Data Processing:**
+- **Fixtures exist**: 100 patent text entries + 1000 compound entries
+- **Test config**: `config/test_config.yaml` includes patents configuration
+- **Pipeline integration**: `./bioyoda.sh test` processes patents data
+- **Qdrant collections**: Both collections are created and populated:
+  - `patents_text` - 100 patent text entries (S-BioBERT 768-dim embeddings)
+  - `patents_compounds` - 1000 compound entries (Morgan/ECFP4 2048-bit fingerprints)
+
+**Test Configuration (`config/test_config.yaml`):**
+```yaml
+patents:
+  test_mode: true
+  test_limit_files: 4
+  test_limit_patents: 500           # Limit patents to process
+  test_limit_compounds: 1000        # Limit compounds to process
+  test_patent_ids_file: "tests/fixtures/patents/test_patent_ids_with_uspto.txt"
+  patents_per_chunk: 100
+  compounds_per_chunk: 100
+  enable_uspto: true                # Enable USPTO enrichment
+```
+
+#### ❌ What's Missing
+
+**Query Validation:**
+- No `queries_patents.txt` file (for patent text search)
+- No `queries_compounds.txt` file (for chemical similarity search)
+- `validate_queries.py` does NOT test patents collections
+- No automated validation of patents search results
+
+#### ⚠️ API Integration Limitations
+
+**patents_text Collection (Semantic Search):**
+- ✅ **CAN be searched via API** `/search` endpoint
+- Uses S-BioBERT model (same as PubMed/Clinical Trials)
+- Supports semantic search for patent concepts/keywords
+- Example query: `"CRISPR gene editing applications"`
+
+**patents_compounds Collection (Chemical Similarity):**
+- ❌ **CANNOT be searched via current API** `/search` endpoint
+- Uses RDKit Morgan fingerprints, NOT a neural network model
+- API's `encode_query()` uses SentenceTransformer (incompatible with chemical fingerprints)
+- Requires direct Qdrant API access or custom chemical search endpoint
+
+### Testing Patents Collections
+
+While automated query validation is not implemented, you can manually test patents collections:
+
+#### Test Patent Text Search (via API)
+
+```bash
+# Example patent text search
+curl -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "CRISPR gene editing",
+    "collections": ["patents_text"],
+    "limit": 5
+  }' | jq
+```
+
+#### Test Chemical Similarity Search (via Qdrant API)
+
+Chemical similarity requires direct Qdrant access with pre-computed Morgan fingerprints:
+
+```python
+#!/usr/bin/env python3
+"""Test chemical similarity search in patents_compounds collection."""
+
+import requests
+from rdkit import Chem
+from rdkit.Chem import AllChem
+
+QDRANT_URL = "http://localhost:6333"
+
+# 1. Get a sample compound vector from the collection
+scroll_response = requests.post(
+    f"{QDRANT_URL}/collections/patents_compounds/points/scroll",
+    json={"limit": 1, "with_vector": True}
+)
+query_vector = scroll_response.json()['result']['points'][0]['vector']
+
+# 2. Search for similar compounds
+search_response = requests.post(
+    f"{QDRANT_URL}/collections/patents_compounds/points/search",
+    json={"vector": query_vector, "limit": 5, "with_payload": True}
+)
+
+# 3. Display results
+for i, result in enumerate(search_response.json()['result'], 1):
+    print(f"{i}. Score: {result['score']:.4f}")
+    print(f"   SureChEMBL ID: {result['payload']['surechembl_id']}")
+    print(f"   SMILES: {result['payload']['smiles'][:60]}...")
+    print()
+```
+
+**Note:** To search by a specific SMILES string, you need to:
+1. Install RDKit (`conda install -c conda-forge rdkit`)
+2. Generate Morgan fingerprint from SMILES
+3. Convert to 2048-bit vector
+4. Search with that vector
+
+### Collections Created During Testing
+
+When you run `./bioyoda.sh test`, the following collections are created:
+
+| Collection | Type | Documents | Vector Dimension | Purpose |
+|------------|------|-----------|------------------|---------|
+| `pubmed_abstracts` | Text | 50 | 768 | PubMed semantic search |
+| `clinical_trials` | Text | 50 | 768 | Clinical trials search |
+| `patents_text` | Text | 100 | 768 | Patent semantic search |
+| `patents_compounds` | Chemical | 1000 | 2048 | Chemical similarity |
+
+**Total: 4 collections, 1,200 documents**
+
+### Fixture Details
+
+**Patent Text Fixture (`fixtures/patents/patents_text.json`):**
+- 100 patent entries (184KB)
+- Fields: `patent_id`, `title`, `abstract`, `text`, `chunk_type`
+- Includes USPTO enrichment (full text for US patents)
+- Suitable for semantic search testing
+
+**Compounds Fixture (`fixtures/patents/compounds.json`):**
+- 1000 compound entries (249KB)
+- Fields: `surechembl_id`, `smiles`, `molecular_weight`, `patent_id`
+- 2048-bit Morgan fingerprints (ECFP4)
+- Suitable for chemical similarity testing
+
+**Patent IDs File (`fixtures/patents/test_patent_ids_with_uspto.txt`):**
+- 100 patent IDs (113 lines with header)
+- Used to filter patents during processing
+- Includes mix of US and international patents
+
+### Future Enhancements
+
+To achieve full patents query validation:
+
+1. **Add Chemical Search API Endpoint:**
+   - Implement `/search/chemical` endpoint with RDKit support
+   - Accept SMILES strings and generate fingerprints on-the-fly
+   - Return similar compounds from patents_compounds collection
+
+2. **Create Query Files:**
+   - `queries_patents.txt` - Semantic queries for patent text
+   - Add to `validate_queries.py` for automated testing
+
+3. **Chemical Query Validation:**
+   - Would require either:
+     - Custom endpoint (option 1 above)
+     - Or separate validation script with RDKit dependency
+
+4. **Patent-Specific Metrics:**
+   - Patent ID format validation
+   - SMILES string validity checks
+   - Molecular weight range checks
+
 ## Configuration
 
 Tests use `config/test_config.yaml` which specifies:
@@ -233,10 +411,22 @@ pubmed:
 
 clinical_trials:
   test_mode: true
-  test_nct_ids_file: "tests2/fixtures/clinical_trials/test_nct_ids.txt"
+  test_nct_ids_file: "tests/fixtures/clinical_trials/test_nct_ids.txt"
 
-embeddings:
-  model: "NeuML/pubmedbert-base-embeddings"  # Must match for consistent results
+patents:
+  test_mode: true
+  test_limit_patents: 500
+  test_limit_compounds: 1000
+  test_patent_ids_file: "tests/fixtures/patents/test_patent_ids_with_uspto.txt"
+  enable_uspto: true
+
+# Model must match what was used during indexing
+pubmed:
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+clinical_trials:
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
+patents:
+  model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"  # For patents_text only
 ```
 
 ## Troubleshooting
@@ -396,6 +586,8 @@ fi
 
 Potential improvements to consider:
 
+- [ ] **Patents query validation** - Add `queries_patents.txt` and test patents_text search
+- [ ] **Chemical search API** - Implement RDKit-based `/search/chemical` endpoint
 - [ ] Add query performance benchmarks (latency, throughput)
 - [ ] Compare results across different embedding models
 - [ ] Add visual diff for result changes between runs

@@ -189,8 +189,6 @@ def upsert_with_retry(client: QdrantClient, collection_name: str, points: list,
 def create_collection_if_needed(client: QdrantClient, collection_name: str,
                                  vector_size: int = 768, enable_quantization: bool = True,
                                  hnsw_m: int = 16, hnsw_ef_construct: int = 100,
-                                 hnsw_on_disk: bool = False,
-                                 hnsw_max_indexing_threads: int = 0,
                                  max_segment_size: int = 2_000_000,
                                  default_segment_number: int = 2,
                                  indexing_threshold: int = 1_000_000) -> None:
@@ -203,39 +201,14 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
         enable_quantization: Enable scalar quantization (default: True, recommended for large collections)
         hnsw_m: HNSW m parameter (graph connectivity, default: 16)
         hnsw_ef_construct: HNSW ef_construct parameter (build quality, default: 100)
-        hnsw_on_disk: Store HNSW index on disk (default: False, set True to reduce RAM usage)
-        hnsw_max_indexing_threads: Limit CPU threads during HNSW index building (default: 0 = unlimited, 8 recommended to prevent cluster overload)
         max_segment_size: Maximum segment size in points (default: 2_000_000)
         default_segment_number: Default number of segments (default: 2, set to 0 for dynamic)
         indexing_threshold: Minimum points before indexing starts (default: 1_000_000, higher = fewer segments)
     """
     try:
-        existing_collection = client.get_collection(collection_name)
-        existing_size = existing_collection.config.params.vectors.size
-
-        if existing_size != vector_size:
-            log_with_timestamp(f"CRITICAL ERROR: Collection '{collection_name}' exists with WRONG dimension!")
-            log_with_timestamp(f"  Expected dimension: {vector_size}")
-            log_with_timestamp(f"  Actual dimension:   {existing_size}")
-            log_with_timestamp(f"")
-            log_with_timestamp(f"This collection was created with the wrong vector dimension.")
-            log_with_timestamp(f"You need to delete and recreate it:")
-            log_with_timestamp(f"")
-            log_with_timestamp(f"  # Delete the collection")
-            log_with_timestamp(f"  curl -X DELETE http://localhost:6333/collections/{collection_name}")
-            log_with_timestamp(f"")
-            log_with_timestamp(f"  # Then re-run insertion")
-            log_with_timestamp(f"  ./bioyoda.sh qdrant insert {collection_name.replace('_', '-')}")
-            log_with_timestamp(f"")
-            raise ValueError(f"Collection dimension mismatch: expected {vector_size}, got {existing_size}")
-        else:
-            log_with_timestamp(f"Collection '{collection_name}' already exists with correct dimension ({vector_size})")
-            return
-    except ValueError:
-        # Re-raise dimension mismatch errors
-        raise
+        client.get_collection(collection_name)
+        log_with_timestamp(f"Collection '{collection_name}' already exists")
     except Exception:
-        # Collection doesn't exist - create it
         log_with_timestamp(f"Creating collection '{collection_name}'...")
 
         # Prepare quantization config if enabled
@@ -252,7 +225,7 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
         else:
             log_with_timestamp(f"  ⚠ Quantization DISABLED")
 
-        log_with_timestamp(f"  HNSW config: m={hnsw_m}, ef_construct={hnsw_ef_construct}, on_disk={hnsw_on_disk}, max_indexing_threads={hnsw_max_indexing_threads}")
+        log_with_timestamp(f"  HNSW config: m={hnsw_m}, ef_construct={hnsw_ef_construct}")
         log_with_timestamp(f"  Segment config: default_segment_number={default_segment_number}, max_segment_size={max_segment_size:,} points")
         log_with_timestamp(f"  Indexing threshold: {indexing_threshold:,} points (higher = fewer segments during bulk insert)")
 
@@ -266,9 +239,7 @@ def create_collection_if_needed(client: QdrantClient, collection_name: str,
             hnsw_config=models.HnswConfigDiff(
                 m=hnsw_m,
                 ef_construct=hnsw_ef_construct,
-                full_scan_threshold=10000,
-                max_indexing_threads=hnsw_max_indexing_threads if hnsw_max_indexing_threads > 0 else None,
-                on_disk=hnsw_on_disk
+                full_scan_threshold=10000
             ),
             optimizers_config=models.OptimizersConfigDiff(
                 deleted_threshold=0.2,
@@ -470,8 +441,6 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                       chunk_tracking_file: str = None,
                       update_mode: bool = False,
                       hnsw_m: int = 16, hnsw_ef_construct: int = 100,
-                      hnsw_on_disk: bool = False,
-                      hnsw_max_indexing_threads: int = 0,
                       max_segment_size: int = 2_000_000,
                       default_segment_number: int = 2,
                       indexing_threshold: int = 1_000_000,
@@ -556,66 +525,34 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
             log_with_timestamp(f"WARNING: Could not load chunk tracking: {e}")
             log_with_timestamp(f"Proceeding without chunk tracking...")
 
-    # Load tracking if provided (PubMed or Patents)
+    # Load PubMed tracking if provided
     if tracking_file:
         try:
-            # Detect if this is patents tracking (check if faiss_dir contains 'patents')
-            is_patents = 'patents' in faiss_dir.lower()
-
+            # Import tracking module (assume it's in pubmed/scripts)
             import importlib.util
-            if is_patents:
-                # Load PatentsFileTracker
+            tracking_module_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(faiss_dir))),
+                "modules", "pubmed", "scripts", "tracking.py"
+            )
+            if not os.path.exists(tracking_module_path):
+                # Try alternative path
                 tracking_module_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(faiss_dir))),
-                    "modules", "patents", "scripts", "tracking.py"
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "pubmed", "scripts", "tracking.py"
                 )
-                if not os.path.exists(tracking_module_path):
-                    # Try alternative path
-                    tracking_module_path = os.path.join(
-                        os.path.dirname(os.path.abspath(__file__)),
-                        "..", "..", "patents", "scripts", "tracking.py"
-                    )
 
-                if os.path.exists(tracking_module_path):
-                    spec = importlib.util.spec_from_file_location("patents_tracking", tracking_module_path)
-                    tracking_module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(tracking_module)
-                    PatentsFileTracker = tracking_module.PatentsFileTracker
+            if os.path.exists(tracking_module_path):
+                spec = importlib.util.spec_from_file_location("tracking", tracking_module_path)
+                tracking_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(tracking_module)
+                PubMedTracker = tracking_module.PubMedTracker
 
-                    tracker = PatentsFileTracker(tracking_file)
-                    # For patents, get files from all releases that are already inserted
-                    for release_version, release_data in tracker.tracking_data.get('releases', {}).items():
-                        for filename, file_data in release_data.get('files', {}).items():
-                            if file_data.get('qdrant_inserted', False):
-                                already_inserted.add(filename)
-                    log_with_timestamp(f"Loaded Patents tracking: {len(already_inserted)} files already inserted to Qdrant")
-                else:
-                    log_with_timestamp(f"WARNING: Could not find patents tracking.py, proceeding without tracking")
+                tracker = PubMedTracker(tracking_file)
+                already_inserted = set(f for f in tracker.tracking_data["files"].keys()
+                                      if tracker.tracking_data["files"][f].get("qdrant_inserted", False))
+                log_with_timestamp(f"Loaded tracking: {len(already_inserted)} files already inserted to Qdrant")
             else:
-                # Load PubMedTracker
-                tracking_module_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(faiss_dir))),
-                    "modules", "pubmed", "scripts", "tracking.py"
-                )
-                if not os.path.exists(tracking_module_path):
-                    # Try alternative path
-                    tracking_module_path = os.path.join(
-                        os.path.dirname(os.path.abspath(__file__)),
-                        "..", "..", "pubmed", "scripts", "tracking.py"
-                    )
-
-                if os.path.exists(tracking_module_path):
-                    spec = importlib.util.spec_from_file_location("tracking", tracking_module_path)
-                    tracking_module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(tracking_module)
-                    PubMedTracker = tracking_module.PubMedTracker
-
-                    tracker = PubMedTracker(tracking_file)
-                    already_inserted = set(f for f in tracker.tracking_data["files"].keys()
-                                          if tracker.tracking_data["files"][f].get("qdrant_inserted", False))
-                    log_with_timestamp(f"Loaded PubMed tracking: {len(already_inserted)} files already inserted to Qdrant")
-                else:
-                    log_with_timestamp(f"WARNING: Could not find tracking.py, proceeding without tracking")
+                log_with_timestamp(f"WARNING: Could not find tracking.py, proceeding without tracking")
         except Exception as e:
             log_with_timestamp(f"WARNING: Could not load tracking: {e}")
             log_with_timestamp(f"Proceeding without tracking...")
@@ -674,8 +611,6 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                                 enable_quantization=enable_quantization,
                                 hnsw_m=hnsw_m,
                                 hnsw_ef_construct=hnsw_ef_construct,
-                                hnsw_on_disk=hnsw_on_disk,
-                                hnsw_max_indexing_threads=hnsw_max_indexing_threads,
                                 max_segment_size=max_segment_size,
                                 default_segment_number=default_segment_number,
                                 indexing_threshold=indexing_threshold)
@@ -689,29 +624,16 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
 
     log_with_timestamp(f"Found {len(index_files)} FAISS files to process")
 
-    # Detect chunk file extension from state file (for chunk tracking)
-    chunk_extension = '.json'  # Default for clinical trials
-    if chunk_tracker:
-        # Check what extension is used in the state file
-        sample_key = next(iter(chunk_tracker.tracking_data.get('chunks', {}).keys()), None)
-        if sample_key:
-            if sample_key.endswith('.parquet'):
-                chunk_extension = '.parquet'  # Patents uses .parquet
-            elif sample_key.endswith('.json'):
-                chunk_extension = '.json'  # Clinical trials uses .json
-            log_with_timestamp(f"Detected chunk extension from state file: {chunk_extension}")
-
     # Filter out already-inserted files if tracking is enabled
     if (tracker or chunk_tracker) and already_inserted:
         original_count = len(index_files)
         filtered_files = []
         for index_path in index_files:
-            # For chunk tracking (clinical trials, patents): use chunk filename
+            # For chunk tracking (clinical trials): use chunk filename directly
             if chunk_tracker:
-                # Convert .index to the appropriate extension (.json or .parquet)
-                # e.g., "trials_chunk_0001.index" → "trials_chunk_0001.json"
-                # or "patents_chunk_0001.index" → "patents_chunk_0001.parquet"
-                chunk_filename = os.path.basename(index_path).replace('.index', chunk_extension)
+                # Extract chunk filename from path (e.g., "trials_chunk_0001.json")
+                # The index file is "trials_chunk_0001.index", we need the .json version
+                chunk_filename = os.path.basename(index_path).replace('.index', '.json')
                 if chunk_filename not in already_inserted:
                     filtered_files.append(index_path)
                 else:
@@ -770,8 +692,6 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
     global_point_id = start_id
     total_inserted = 0
     batch = []
-    consecutive_errors = 0
-    MAX_CONSECUTIVE_ERRORS = 3  # Fail after 3 consecutive errors
 
     # Process each FAISS file sequentially
     for file_idx, index_path in enumerate(index_files, 1):
@@ -853,7 +773,14 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
             # Mark as inserted in tracking if enabled
             if chunk_tracker:
                 try:
-                    # Use the same extension detection as filtering
+                    # Detect chunk extension from tracking data (e.g., .json for clinical trials, .parquet for patents)
+                    chunk_extension = '.json'  # Default
+                    if chunk_tracker.tracking_data.get("chunks"):
+                        # Get extension from first chunk name in tracking data
+                        first_chunk = next(iter(chunk_tracker.tracking_data["chunks"].keys()), None)
+                        if first_chunk:
+                            chunk_extension = os.path.splitext(first_chunk)[1]
+
                     chunk_filename = os.path.basename(index_path).replace('.index', chunk_extension)
                     chunk_tracker.mark_inserted_to_qdrant(chunk_filename)
                     log_with_timestamp(f"  └─ Marked {chunk_filename} as inserted in chunk tracking")
@@ -862,25 +789,10 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
             elif tracker:
                 try:
                     source_file = map_faiss_to_source_file(index_path, faiss_dir)
-
-                    # Check if this is PatentsFileTracker (has get_current_release method)
-                    if hasattr(tracker, 'get_current_release'):
-                        # PatentsFileTracker requires release_version
-                        release_version = tracker.get_current_release()
-                        if release_version:
-                            tracker.mark_inserted_to_qdrant(release_version, source_file)
-                            log_with_timestamp(f"  └─ Marked {source_file} (release: {release_version}) as inserted in tracking")
-                        else:
-                            log_with_timestamp(f"  └─ WARNING: No current release set, skipping tracking update")
-                    else:
-                        # PubMedTracker takes just filename
-                        tracker.mark_inserted_to_qdrant(source_file)
-                        log_with_timestamp(f"  └─ Marked {source_file} as inserted in tracking")
+                    tracker.mark_inserted_to_qdrant(source_file)
+                    log_with_timestamp(f"  └─ Marked {source_file} as inserted in tracking")
                 except Exception as e:
                     log_with_timestamp(f"  └─ WARNING: Could not update tracking: {e}")
-
-            # Reset error counter on successful file processing
-            consecutive_errors = 0
 
             # Clear memory
             del index, vectors, metadata
@@ -898,22 +810,8 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                     log_with_timestamp(f"  └─ Qdrant memory: {memory_used:.1f}MB")
 
         except Exception as e:
-            consecutive_errors += 1
             log_with_timestamp(f"  └─ ERROR: {e}")
-
-            # Check for critical errors that should stop immediately
-            error_msg = str(e)
-            if "dimension error" in error_msg.lower() or "vector dimension" in error_msg.lower():
-                log_with_timestamp(f"  └─ CRITICAL: Vector dimension mismatch detected!")
-                log_with_timestamp(f"  └─ This usually means the collection was created with wrong dimensions.")
-                log_with_timestamp(f"  └─ The collection should have been auto-recreated. If error persists, delete collection manually.")
-                raise
-
-            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                log_with_timestamp(f"  └─ CRITICAL: {consecutive_errors} consecutive errors - stopping insertion!")
-                raise Exception(f"Too many consecutive errors ({consecutive_errors}), aborting")
-
-            log_with_timestamp(f"  └─ Continuing with next file... (consecutive errors: {consecutive_errors}/{MAX_CONSECUTIVE_ERRORS})")
+            log_with_timestamp(f"  └─ Continuing with next file...")
             continue
 
     # Insert final batch
@@ -1016,18 +914,6 @@ def main():
         help='HNSW ef_construct parameter (index build quality, default: 100)'
     )
     parser.add_argument(
-        '--hnsw-on-disk',
-        action='store_true',
-        default=False,
-        help='Store HNSW index on disk to reduce RAM usage (slower queries but lower memory)'
-    )
-    parser.add_argument(
-        '--hnsw-max-indexing-threads',
-        type=int,
-        default=0,
-        help='Limit CPU threads during HNSW index building (default: 0 = unlimited, 8 recommended to prevent cluster overload)'
-    )
-    parser.add_argument(
         '--max-segment-size',
         type=int,
         default=2_000_000,
@@ -1085,8 +971,6 @@ def main():
             update_mode=args.update_mode,
             hnsw_m=args.hnsw_m,
             hnsw_ef_construct=args.hnsw_ef_construct,
-            hnsw_on_disk=args.hnsw_on_disk,
-            hnsw_max_indexing_threads=args.hnsw_max_indexing_threads,
             max_segment_size=args.max_segment_size,
             default_segment_number=args.default_segment_number,
             indexing_threshold=args.indexing_threshold,

@@ -1,0 +1,24 @@
+# Patent text semantic search test queries
+# These queries test the patents_text collection (S-BioBERT embeddings)
+# Format: One query per line (quotes optional)
+
+# Technology/Innovation queries
+CRISPR gene editing applications in biotechnology
+artificial intelligence and machine learning methods
+renewable energy storage systems
+pharmaceutical drug delivery mechanisms
+quantum computing algorithms and architectures
+
+# Medical/Pharmaceutical queries
+cancer treatment compositions and methods
+antibody therapeutics for immune disorders
+mRNA vaccine formulations and delivery
+gene therapy vectors and delivery systems
+diagnostic methods for infectious diseases
+
+# Materials/Chemistry queries
+polymer compositions with enhanced properties
+catalyst systems for chemical synthesis
+battery electrode materials and designs
+nanomaterial synthesis and applications
+biodegradable plastic compositions

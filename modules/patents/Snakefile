@@ -309,6 +309,8 @@ rule patents_process_chunk:
         metadata = os.path.join(TEXT_DIR, "{chunk_name}.json")
     params:
         script = os.path.join(MODULE_SCRIPTS, "process_patents.py"),
+        tracking_script = os.path.join(PROJECT_ROOT, "modules", "clinical_trials", "scripts", "chunk_tracking.py"),
+        chunk_tracking_file = os.path.join(STATE_DIR, "processed_chunks.json"),
         model = patents_config.get("model_name", "pritamdeka/S-BioBERT-snli-multinli-stsb"),
         vector_dim = patents_config.get("vector_dimension", 768),
         encode_batch_size = patents_config.get("encode_batch_size", 128),
@@ -362,6 +364,19 @@ rule patents_process_chunk:
         # Count vectors
         VECTOR_COUNT=$(python -c "import json; data = json.load(open('{output.metadata}')); print(len(data))" 2>/dev/null || echo "0")
         echo "Vectors generated: $VECTOR_COUNT" >> {log}
+
+        # Extract chunk name for tracking (add .parquet extension)
+        CHUNK_NAME="{wildcards.chunk_name}.parquet"
+
+        # Mark chunk as processed in tracking file
+        echo "Marking chunk as processed in tracking file..." >> {log}
+        python {params.tracking_script} \
+            --tracking-file {params.chunk_tracking_file} \
+            mark "$CHUNK_NAME" \
+            --vectors "$VECTOR_COUNT" \
+            >> {log} 2>&1
+
+        echo "Chunk marked as processed in tracking" >> {log}
 
         echo "==================== PROCESS CHUNK {wildcards.chunk_name} COMPLETED: $(date) ====================" >> {log}
         """
@@ -453,6 +468,8 @@ rule patents_process_compounds_chunk:
         metadata = os.path.join(COMPOUNDS_DIR, "{chunk_name}.json")
     params:
         script = os.path.join(MODULE_SCRIPTS, "process_compounds.py"),
+        tracking_script = os.path.join(PROJECT_ROOT, "modules", "clinical_trials", "scripts", "chunk_tracking.py"),
+        chunk_tracking_file = os.path.join(STATE_DIR, "processed_compounds_chunks.json"),
         fingerprint_bits = patents_config.get("fingerprint_bits", 2048),
         radius = patents_config.get("morgan_radius", 2),
         processing_batch_size = patents_config.get("processing_batch_size", 100000),
@@ -487,6 +504,19 @@ rule patents_process_compounds_chunk:
         # Count fingerprints
         FP_COUNT=$(python -c "import json; data = json.load(open('{output.metadata}')); print(len(data))" 2>/dev/null || echo "0")
         echo "Fingerprints generated: $FP_COUNT" >> {log}
+
+        # Extract chunk name for tracking (add .parquet extension)
+        CHUNK_NAME="{wildcards.chunk_name}.parquet"
+
+        # Mark chunk as processed in tracking file
+        echo "Marking compounds chunk as processed in tracking file..." >> {log}
+        python {params.tracking_script} \
+            --tracking-file {params.chunk_tracking_file} \
+            mark "$CHUNK_NAME" \
+            --vectors "$FP_COUNT" \
+            >> {log} 2>&1
+
+        echo "Compounds chunk marked as processed in tracking" >> {log}
 
         echo "==================== PROCESS COMPOUNDS CHUNK {wildcards.chunk_name} COMPLETED: $(date) ====================" >> {log}
         """

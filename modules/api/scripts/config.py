@@ -90,9 +90,11 @@ class APIConfig:
         # Map collection names to their source config sections
         # Collection "pubmed_abstracts" -> config section "pubmed"
         # Collection "clinical_trials" -> config section "clinical_trials"
+        # Collection "patents_text" -> config section "patents"
         collection_to_config = {
             "pubmed_abstracts": "pubmed",
-            "clinical_trials": "clinical_trials"
+            "clinical_trials": "clinical_trials",
+            "patents_text": "patents"
         }
 
         for collection_name, config_key in collection_to_config.items():
