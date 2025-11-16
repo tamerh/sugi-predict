@@ -39,6 +39,8 @@ class QueryValidator:
             'ct_search_failed': 0,
             'pubmed_search_passed': 0,
             'pubmed_search_failed': 0,
+            'protein_search_passed': 0,
+            'protein_search_failed': 0,
             'rag_passed': 0,
             'rag_failed': 0,
             'rag_skipped': 0
@@ -76,10 +78,12 @@ class QueryValidator:
         Load search queries from file
 
         Args:
-            query_type: "clinical_trials" or "pubmed"
+            query_type: "clinical_trials", "pubmed", or "protein_similarity"
         """
         if query_type == "pubmed":
             queries_file = Path(__file__).parent / "queries_pubmed.txt"
+        elif query_type == "protein_similarity":
+            queries_file = Path(__file__).parent / "queries_protein_similarity.txt"
         else:
             queries_file = Path(__file__).parent / "queries.txt"
 
@@ -494,10 +498,39 @@ class QueryValidator:
         else:
             print(f"\n{Colors.YELLOW}No PubMed queries found{Colors.NC}")
 
+        # Test Protein Similarity queries
+        protein_queries = self.load_search_queries("protein_similarity")
+        if protein_queries:
+            print(f"\n{Colors.BLUE}Protein Similarity Queries{Colors.NC} ({len(protein_queries)} queries)")
+            print("-" * 40)
+
+            for i, query in enumerate(protein_queries, 1):
+                if self.validate_search_query(query, i, collections=["protein_similarity_esm2"]):
+                    self.results['protein_search_passed'] += 1
+                else:
+                    self.results['protein_search_failed'] += 1
+
+            # Protein Summary
+            total_protein = self.results['protein_search_passed'] + self.results['protein_search_failed']
+            passed_protein = self.results['protein_search_passed']
+
+            print(f"\n{'-'*40}")
+            print(f"Protein Similarity: {passed_protein}/{total_protein} passed", end="")
+            if passed_protein == total_protein:
+                print(f" {Colors.GREEN}✓{Colors.NC}")
+            else:
+                print(f" {Colors.RED}✗{Colors.NC}")
+                all_passed = False
+            print(f"{'-'*40}")
+        else:
+            print(f"\n{Colors.YELLOW}No protein similarity queries found{Colors.NC}")
+
         # Overall search summary
         total_search = (self.results['ct_search_passed'] + self.results['ct_search_failed'] +
-                       self.results['pubmed_search_passed'] + self.results['pubmed_search_failed'])
-        passed_search = self.results['ct_search_passed'] + self.results['pubmed_search_passed']
+                       self.results['pubmed_search_passed'] + self.results['pubmed_search_failed'] +
+                       self.results['protein_search_passed'] + self.results['protein_search_failed'])
+        passed_search = (self.results['ct_search_passed'] + self.results['pubmed_search_passed'] +
+                        self.results['protein_search_passed'])
 
         print(f"\n{'='*80}")
         print(f"Overall Search Results: {passed_search}/{total_search} passed", end="")
@@ -573,13 +606,17 @@ class QueryValidator:
         # Search breakdown
         ct_total = self.results['ct_search_passed'] + self.results['ct_search_failed']
         pubmed_total = self.results['pubmed_search_passed'] + self.results['pubmed_search_failed']
-        search_total = ct_total + pubmed_total
-        search_passed = self.results['ct_search_passed'] + self.results['pubmed_search_passed']
+        protein_total = self.results['protein_search_passed'] + self.results['protein_search_failed']
+        search_total = ct_total + pubmed_total + protein_total
+        search_passed = (self.results['ct_search_passed'] + self.results['pubmed_search_passed'] +
+                        self.results['protein_search_passed'])
 
         if ct_total > 0:
             print(f"Clinical Trials Search: {self.results['ct_search_passed']}/{ct_total} passed")
         if pubmed_total > 0:
             print(f"PubMed Search:          {self.results['pubmed_search_passed']}/{pubmed_total} passed")
+        if protein_total > 0:
+            print(f"Protein Similarity:     {self.results['protein_search_passed']}/{protein_total} passed")
         if search_total > 0:
             print(f"Total Search:           {search_passed}/{search_total} passed")
 
@@ -594,7 +631,7 @@ class QueryValidator:
         # Overall
         total_passed = search_passed + self.results['rag_passed']
         total_failed = (self.results['ct_search_failed'] + self.results['pubmed_search_failed'] +
-                       self.results['rag_failed'])
+                       self.results['protein_search_failed'] + self.results['rag_failed'])
         total_tests = total_passed + total_failed
 
         print(f"\n{'='*80}")

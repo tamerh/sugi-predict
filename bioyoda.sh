@@ -187,13 +187,15 @@ Commands:
 Dataset Modules:
     pubmed                    PubMed literature processing (FAISS creation)
     clinical_trials           Clinical trials data processing (FAISS creation)
+    patents                   Patents processing (text + compound FAISS creation)
+    protein_similarity_esm2   Protein functional similarity (ESM-2 embeddings)
     all                       Run all dataset modules
 
 Qdrant Subcommands:
     start                     Start Qdrant server (local or cluster)
     stop                      Stop Qdrant server
     status                    Check Qdrant server status and collections
-    insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, patents, or all)
+    insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, patents, protein_similarity_esm2, or all)
     stop-insert <dataset>     Stop a running insertion job
 
 API Subcommands:
@@ -273,6 +275,7 @@ Examples:
     $0 qdrant insert pubmed --cluster --jobs 10 --bg
     $0 qdrant insert clinical_trials --cluster --jobs 10 --bg
     $0 qdrant insert patents --cluster --jobs 10 --bg
+    $0 qdrant insert protein_similarity_esm2 --cluster --jobs 10 --bg
     $0 qdrant insert all --cluster --jobs 20 --bg
 
     # Use CUDA 11.4 nodes for insertion
@@ -929,8 +932,9 @@ stop_qdrant_server() {
 ##############################################################################
 
 stop() {
-    local module="pubmed"
+    local module=""
     local clean=false
+    local use_test_config=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -939,19 +943,36 @@ stop() {
                 clean=true
                 shift
                 ;;
+            --test)
+                use_test_config=true
+                shift
+                ;;
             *)
-                module="$1"
+                if [[ -z "$module" ]]; then
+                    module="$1"
+                fi
                 shift
                 ;;
         esac
     done
 
+    # Default to pubmed if no module specified
+    if [[ -z "$module" ]]; then
+        module="pubmed"
+    fi
+
     log_info "Stopping BioYoda pipeline: module=${module}"
 
-    # Extract base_dir from config to find pid files
-    local base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
-    if [[ -z "$base_dir" ]]; then
-        base_dir="out"  # default fallback
+    # Determine base_dir based on test mode
+    local base_dir
+    if [[ "$use_test_config" == true ]]; then
+        base_dir="test_out"
+    else
+        # Extract base_dir from config to find pid files
+        base_dir=$(grep "^base_dir:" ${config_file} | sed 's/.*: *"\?\([^"]*\)"\?.*/\1/')
+        if [[ -z "$base_dir" ]]; then
+            base_dir="out"  # default fallback
+        fi
     fi
     local pid_dir="${base_dir}/logs/pids"
 
@@ -1377,12 +1398,13 @@ qdrant_insert() {
         log_error "No dataset specified for insertion"
         echo ""
         echo "Available datasets:"
-        echo "  pubmed             - Insert PubMed data"
-        echo "  clinical_trials    - Insert Clinical Trials data"
-        echo "  patents            - Insert Patents data (both text and compounds)"
-        echo "  patents_text       - Insert Patents text only"
-        echo "  patents_compounds  - Insert Patents compounds only"
-        echo "  all                - Insert all datasets"
+        echo "  pubmed                    - Insert PubMed data"
+        echo "  clinical_trials           - Insert Clinical Trials data"
+        echo "  patents                   - Insert Patents data (both text and compounds)"
+        echo "  patents_text              - Insert Patents text only"
+        echo "  patents_compounds         - Insert Patents compounds only"
+        echo "  protein_similarity_esm2   - Insert Protein Embeddings data (ESM-2)"
+        echo "  all                       - Insert all datasets"
         exit 1
     fi
 
@@ -1537,6 +1559,9 @@ qdrant_insert() {
         patents_compounds)
             snakemake_cmd="${snakemake_cmd} -- insert_patents_compounds"
             ;;
+        protein_similarity_esm2)
+            snakemake_cmd="${snakemake_cmd} -- insert_protein_similarity_esm2"
+            ;;
         all)
             snakemake_cmd="${snakemake_cmd} -- insert_all"
             ;;
@@ -1633,12 +1658,13 @@ qdrant_stop_insert() {
         log_error "No dataset specified"
         echo ""
         echo "Available datasets:"
-        echo "  pubmed             - Stop PubMed insertion"
-        echo "  clinical_trials    - Stop Clinical Trials insertion"
-        echo "  patents            - Stop Patents insertion"
-        echo "  patents_text       - Stop Patents text insertion"
-        echo "  patents_compounds  - Stop Patents compounds insertion"
-        echo "  all                - Stop all insertions"
+        echo "  pubmed                    - Stop PubMed insertion"
+        echo "  clinical_trials           - Stop Clinical Trials insertion"
+        echo "  patents                   - Stop Patents insertion"
+        echo "  patents_text              - Stop Patents text insertion"
+        echo "  patents_compounds         - Stop Patents compounds insertion"
+        echo "  protein_similarity_esm2   - Stop Protein Embeddings insertion"
+        echo "  all                       - Stop all insertions"
         exit 1
     fi
 

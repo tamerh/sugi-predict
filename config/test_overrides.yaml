@@ -84,6 +84,25 @@ patents:
   qdrant:
     memory_mb: 4096            # 4GB (vs 8GB production)
 
+# Protein Similarity ESM-2 test overrides
+protein_similarity_esm2:
+  # Test mode settings
+  test_mode: true
+  test_limit_proteins: 60    # Download first 60 proteins from SwissProt
+  test_num_chunks: 3          # Split into 3 chunks (20 proteins each) in test mode
+
+  # Use smaller batch size for testing
+  batch_size: 8                # Small batch (vs 16 production)
+
+  # Reduced resources for testing
+  download_memory_mb: 4096     # 4GB (vs 8GB production)
+  process_memory_mb: 16384     # 16GB (vs 32GB production)
+  merge_memory_mb: 32768       # 32GB (vs 65GB production)
+
+  # Qdrant insertion overrides
+  qdrant:
+    memory_mb: 4096            # 4GB (vs 8GB production)
+
 # Qdrant test overrides
 qdrant:
   # Use NFS storage for testing (not local scratch)

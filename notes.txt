@@ -1,11 +1,37 @@
+ok we added some integration tests recently were you can check tests/xintegration (read all the files) where our aim is both make integration tests but at the same time find good usecases or bugs in a very
+ simple intiutive ways......i have reprocess data with some fixes and now again available at scc2 host....also from the first version of biobtree i have also some good usecase but remember when these were 
+created several dataset werent included in biobtree but still we can use them  get inspiriration and improve our xintegration....remember our aim again like i told in the begining here is those usecases they
+ are in old mapping syntax we can use them with newer syntax /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/web/src/conf/usecases.json
+
+
+ 
+
+Ok here is the thing..we have progressed a lot so far in biobtree project. Just the update your memory 
+read the main README file. Now as for the inital aim of biobtree launch we currently processing 
+model organisms subset of data and we have successfully processed and it is ready queryying. Some information about 
+this can be found in the MODEL.md. Now our aim is to use this system fiercely find diverse usecases or feedback and improvements of 
+system. So we need deeply investigate things. For also give you more context at the moment each dataset has a subset of 
+their reference data, detail of each dataset can be found in tests/datasets/**. So at the end produce all your usecases 
+in tests/usecases/ folder. So for instance usecases can be special by itself and require various queries and mappings 
+so produce them seperately. Also for general improvements produce another document. To start the model organism 
+with this processed data just run the biobtree in the background ./biobtree --out-dir out_model_organisms web. 
+Default port is 9292. Lets start
+
+
 
 
 nohup python3 modules/patents/scripts/process_uspto_json.py       --input-dir /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto       --filter-ids test_out/raw_data/patents/surechembl/2025-10-01/us_patent_ids.txt       --output /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto/uspto_historical.parquet  > /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/logs/patents/process_uspto_json_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 
-nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_def/def generate > logs/generate_def.log 2>&1  &
+nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_organisms2 generate > logs/generatelatest.log 2>&1  &
+
+nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_ref/ensembl_model generate > logs/generate_reference.log 2>&1  &
+
+
+./biobtree --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_organisms web
 
 nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_def build > logs/build.log 2>&1  &
 
+nohup ./biobtree --out-dir out_model_organisms web > logs/web.log 2>&1  &
 
 patents data for text....
 
@@ -178,7 +204,8 @@ qstat -f
 
 npm config set prefix ~/.npm-global
 
-qlogin -pe smp 2 -q scc -l h_vmem=8G -l h_rt=4:00:00
+qlogin -pe smp 2 -q scc -l h_vmem=32G -l h_rt=4:00:00
+
 
 qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=168:00:00
 

@@ -216,6 +216,65 @@ patents:
   test_limit_patents: 100       # Limit patents to process in test mode
   test_limit_compounds: 1000    # Limit compounds to process in test mode
 
+# Protein Similarity ESM-2 Module Configuration
+protein_similarity_esm2:
+  # NOTE: Directories are constructed from base_dir in Snakefile
+
+  # Dataset selection
+  # Options: swissprot (~573K reviewed proteins), trembl (~220M unreviewed), both (complete UniProt), test (500 proteins)
+  dataset: "swissprot"
+
+  # ESM-2 model configuration
+  # Model options:
+  #   - esm2_t30_150M_UR50D: 150M params, 640-dim (fastest, good quality) - CURRENTLY USED
+  #   - esm2_t33_650M_UR50D: 650M params, 1280-dim (balanced, recommended)
+  #   - esm2_t36_3B_UR50D: 3B params, 2560-dim (slowest, best quality)
+  model_name: "esm2_t33_650M_UR50D"
+  vector_dimension: 1280         # Must match model output (t30=640, t33=1280, t36=2560)
+  repr_layer: 33                # Representation layer (30 for t30, 33 for t33, 36 for t36)
+
+  # Processing settings
+  batch_size: 16                # Batch size for embedding generation (GPU: 32-64, CPU: 8-16)
+  max_seq_len: 1024             # Truncate long sequences (ESM-2 max: 1024 residues)
+  device: "auto"                # Device selection: cuda, cpu, or auto (auto detects GPU)
+
+  # Chunking strategy for parallel processing
+  num_chunks: 100               # Number of FASTA chunks for parallel embedding generation (100 chunks ~=5700 proteins/chunk ~=1.5-2hr/chunk on CPU)
+  proteins_per_qdrant_chunk: 50000  # Proteins per FAISS chunk for Qdrant insertion
+
+  # Job resources
+  download_memory_mb: 8192      # 8GB for UniProt download
+  download_runtime: 240         # 4 hours
+  process_memory_mb: 32768      # 32GB for ESM-2 model + embeddings
+  process_runtime: 10080        # 7 days for large datasets
+  merge_memory_mb: 65536        # 64GB for merging all embeddings
+  merge_runtime: 240            # 4 hours
+
+  # Qdrant insertion settings
+  qdrant:
+    collection_name: "protein_similarity_esm2"
+
+    # HNSW parameters (optimized for protein embeddings)
+    hnsw_m: 32                      # Graph connectivity
+    hnsw_ef_construct: 256          # Index build quality
+    hnsw_on_disk: false             # In-memory HNSW (640-dim is manageable)
+
+    # Segment optimization (for ~573K SwissProt proteins)
+    indexing_threshold: 500000      # 500K points - start HNSW indexing
+    max_segment_size: 1000000       # 1M points - max segment size
+    default_segment_number: 0       # Let Qdrant decide
+
+    # Insertion settings
+    batch_size: 500                 # Batch size for insertion
+    prefer_grpc: true               # Use gRPC for faster bulk inserts
+
+    # Snakemake job resources
+    memory_mb: 8192
+
+  # Test mode settings
+  test_mode: false
+  test_limit_proteins: 1000     # Limit proteins in test mode
+
 # Qdrant Module Configuration
 qdrant:
   # NOTE: Directories are constructed from base_dir in Snakefile
@@ -307,6 +366,16 @@ collections:
     vector_type: "fingerprints"
     vector_dimension: 2048
     search_type: "chemical_similarity"
+
+  protein_embeddings:
+    name: "protein_embeddings"
+    description: "Protein functional similarity search (ESM-2 640-dim embeddings) - Search by protein function and structure"
+    primary_fields: ["protein_id", "uniprot_id", "entry_name"]
+    search_fields: ["protein_id"]
+    display_name: "Protein Embeddings (ESM-2)"
+    vector_type: "embeddings"
+    vector_dimension: 640
+    search_type: "functional_similarity"
 
 # Logging
 logging:

@@ -30,6 +30,11 @@ dependencies:
   - pyarrow  # Parquet file reading
   - fastparquet  # Alternative Parquet backend
 
+  # Protein similarity modules dependencies
+  - biopython  # FASTA parsing (ESM-2, DIAMOND)
+  - h5py  # HDF5 file handling (ESM-2 embeddings)
+  - diamond=2.1.14  # Protein sequence alignment (IMPORTANT: v2.1.14 to avoid ZSTD bug)
+
   # API dependencies (modules/api/)
   - fastapi
   - uvicorn

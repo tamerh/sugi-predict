@@ -4,7 +4,7 @@ AI-powered biomedical search system with vector database backend.
 
 ## Overview
 
-BioYoda is a Snakemake-based pipeline for processing biomedical literature and clinical trial data into searchable vector databases. The system processes PubMed abstracts and clinical trial information, creating FAISS indices and Qdrant vector database collections for semantic search.
+BioYoda is a Snakemake-based pipeline for processing biomedical literature, clinical trials, and patent data into searchable vector databases. The system processes PubMed abstracts, clinical trial information, and patent documents with chemical compounds, creating FAISS indices and Qdrant vector database collections for semantic search.
 
 **New Architecture (v0.2.0)**: Data processing and vector database operations are now **fully separated** for maximum flexibility and efficiency.
 
@@ -12,6 +12,14 @@ BioYoda is a Snakemake-based pipeline for processing biomedical literature and c
 
 - **PubMed Processing**: Process 30M+ PubMed abstracts with S-BioBERT embeddings
 - **Clinical Trials**: Integrate ClinicalTrials.gov data (500K+ trials)
+- **Patent Search**: Process 43M+ patents from SureChEMBL with chemical compound search (30M+ compounds)
+  - Semantic text search using S-BioBERT embeddings
+  - Chemical structure search using Morgan fingerprints (2048-bit)
+  - USPTO enrichment for patent abstracts (493K US patents)
+- **Protein Similarity**: ESM-2 protein language model embeddings for similarity search
+  - UniProt SwissProt (570K+ proteins) and TrEMBL (250M+ proteins)
+  - 1280-dimensional embeddings using ESM-2 650M model
+  - Vector-based similarity search for protein homology and function prediction
 - **Incremental Updates**: Smart tracking system for efficient daily updates (PubMed supported)
 - **Vector Database**: Qdrant server with independent insertion workflow and upsert support
 - **Search API**: FastAPI-based REST API for semantic search across collections
@@ -97,8 +105,14 @@ tail -f logs/qdrant/insert_pubmed.log
 │  ↓ Process              ↓ Process                            │
 │  ↓ Create FAISS         ↓ Create FAISS                       │
 │                                                               │
+│  Patents Module (NEW)                                        │
+│  ↓ Download (SureChEMBL + USPTO)                            │
+│  ↓ Process (Text + Compounds)                               │
+│  ↓ Create FAISS (768-dim text + 2048-bit fingerprints)      │
+│                                                               │
 │  Output: data/processed/pubmed/                              │
 │          data/processed/clinical_trials/                     │
+│          data/processed/patents/                             │
 └─────────────────────────────────────────────────────────────┘
                             ↓
                    (Data files ready)
@@ -146,6 +160,14 @@ modules/
 │   ├── Snakefile
 │   ├── README.md
 │   └── scripts/
+├── patents/                # Patents dataset module (SureChEMBL + USPTO)
+│   ├── Snakefile
+│   ├── README.md
+│   └── scripts/
+│       ├── download_and_prepare_patents.py
+│       ├── process_patents.py      # Text embeddings
+│       ├── process_compounds.py    # Chemical fingerprints
+│       └── process_uspto_json.py   # USPTO enrichment
 ├── qdrant/                 # Qdrant operations (separate)
 │   ├── Snakefile           # Standalone insertion workflows
 │   ├── README.md
@@ -182,6 +204,9 @@ modules/
 # Process with CUDA 11.4 nodes (scc116, scc117, scc066)
 ./bioyoda.sh run clinical_trials --cluster --bg --config config/config_gpu.yaml --cuda11.4
 
+# Process Patents (SureChEMBL + USPTO enrichment)
+./bioyoda.sh run patents --cluster --bg --jobs 50
+
 # Process all datasets
 ./bioyoda.sh run all --cluster --bg --jobs 100
 
@@ -213,6 +238,8 @@ tail -f logs/bioyoda_pubmed_main.log
 # Insert data
 ./bioyoda.sh qdrant insert pubmed
 ./bioyoda.sh qdrant insert clinical_trials
+./bioyoda.sh qdrant insert patents_text        # Patent text search
+./bioyoda.sh qdrant insert patents_compounds   # Chemical structure search
 ./bioyoda.sh qdrant insert all
 
 # Insert with cluster resources and GPU acceleration
@@ -224,6 +251,8 @@ tail -f logs/bioyoda_pubmed_main.log
 # Stop a running insertion
 ./bioyoda.sh qdrant stop-insert pubmed
 ./bioyoda.sh qdrant stop-insert clinical_trials
+./bioyoda.sh qdrant stop-insert patents_text
+./bioyoda.sh qdrant stop-insert patents_compounds
 ./bioyoda.sh qdrant stop-insert all
 
 # Stop server
@@ -342,11 +371,13 @@ bioyoda/
 │   ├── Snakefile           # Main data processing workflow
 │   ├── pubmed/             # PubMed module
 │   ├── clinical_trials/    # Clinical Trials module
+│   ├── patents/            # Patents module (SureChEMBL + USPTO)
 │   └── qdrant/             # Qdrant operations (standalone)
 ├── out/                    # Production outputs (configurable via base_dir)
 │   ├── raw_data/           # Downloaded raw data
 │   │   ├── pubmed/
-│   │   └── clinical_trials/
+│   │   ├── clinical_trials/
+│   │   └── patents/
 │   ├── data/               # Generated/processed data
 │   │   ├── processed/      # Per-file FAISS indices
 │   │   ├── merged/         # Merged FAISS indices (optional)
@@ -355,6 +386,7 @@ bioyoda/
 │       ├── cluster/        # SGE job logs
 │       ├── pubmed/
 │       ├── clinical_trials/
+│       ├── patents/
 │       └── qdrant/
 ├── test_out/               # Test outputs (same structure as out/)
 │   └── ...                 # Cleaned at start of each test run
@@ -485,6 +517,7 @@ ls -lhd /localscratch/$USER/qdrant_*
 - **Module READMEs**: Technical details for each module
   - `modules/pubmed/README.md` - PubMed processing details
   - `modules/clinical_trials/README.md` - Clinical trials processing
+  - `modules/patents/README.md` - Patent and compound search (SureChEMBL, USPTO)
   - `modules/qdrant/README.md` - Qdrant operations and architecture
   - `modules/api/README.md` - Search API usage and examples
 - **Configuration**: `config/README.md` - Configuration options

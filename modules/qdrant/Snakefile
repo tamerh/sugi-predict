@@ -50,6 +50,7 @@ PUBMED_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "pubmed")
 CLINICAL_TRIALS_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "clinical_trials")
 PATENTS_TEXT_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "patents", "text")
 PATENTS_COMPOUNDS_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "patents", "compounds")
+PROTEIN_ESM2_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "protein_similarity_esm2", "embeddings")
 
 # Tracking files
 STATE_DIR = os.path.join(BASE_DIR, "state")
@@ -57,6 +58,7 @@ PUBMED_TRACKING_FILE = os.path.join(STATE_DIR, "pubmed", "processed_files.json")
 CLINICAL_TRIALS_TRACKING_FILE = os.path.join(STATE_DIR, "clinical_trials", "processed_files.json")
 PATENTS_TEXT_TRACKING_FILE = os.path.join(STATE_DIR, "patents", "processed_chunks.json")
 PATENTS_COMPOUNDS_TRACKING_FILE = os.path.join(STATE_DIR, "patents", "processed_compounds_chunks.json")
+PROTEIN_ESM2_TRACKING_FILE = os.path.join(STATE_DIR, "protein_similarity_esm2", "processed_chunks.json")
 
 # Ensure directories exist
 os.makedirs(QDRANT_STORAGE, exist_ok=True)
@@ -65,6 +67,7 @@ os.makedirs(QDRANT_LOG_DIR, exist_ok=True)
 os.makedirs(os.path.join(STATE_DIR, "pubmed"), exist_ok=True)
 os.makedirs(os.path.join(STATE_DIR, "clinical_trials"), exist_ok=True)
 os.makedirs(os.path.join(STATE_DIR, "patents"), exist_ok=True)
+os.makedirs(os.path.join(STATE_DIR, "protein_similarity_esm2"), exist_ok=True)
 
 # Local rules
 localrules: insert_all
@@ -79,7 +82,8 @@ rule insert_all:
         f"{QDRANT_STORAGE}/collections/pubmed_abstracts.done",
         f"{QDRANT_STORAGE}/collections/clinical_trials.done",
         f"{QDRANT_STORAGE}/collections/patents_text.done",
-        f"{QDRANT_STORAGE}/collections/patents_compounds.done"
+        f"{QDRANT_STORAGE}/collections/patents_compounds.done",
+        f"{QDRANT_STORAGE}/collections/protein_similarity_esm2.done"
     default_target: True
 
 rule insert_pubmed:
@@ -107,6 +111,11 @@ rule insert_patents:
     input:
         f"{QDRANT_STORAGE}/collections/patents_text.done",
         f"{QDRANT_STORAGE}/collections/patents_compounds.done"
+
+rule insert_protein_similarity_esm2:
+    """Insert only Protein Similarity ESM-2 to Qdrant."""
+    input:
+        f"{QDRANT_STORAGE}/collections/protein_similarity_esm2.done"
 
 # ============================================================================
 # Rule: Insert PubMed to Qdrant
@@ -527,6 +536,111 @@ rule insert_patents_compounds_to_qdrant:
 
         # Mark as done
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Patents Compounds insertion complete" > {output.done}
+        echo "Completed at: $(date)" >> {output.done}
+        """
+
+# ============================================================================
+# Rule: Insert Protein Embeddings (ESM-2) to Qdrant
+# ============================================================================
+
+rule insert_protein_similarity_esm2_to_qdrant:
+    """
+    Insert Protein Similarity ESM-2 FAISS files to Qdrant collection.
+    Creates a collection for protein embeddings (ESM-2, 640-dim).
+    """
+    input:
+        connection_info = CONNECTION_INFO,
+        tracking_file = PROTEIN_ESM2_TRACKING_FILE if os.path.exists(PROTEIN_ESM2_TRACKING_FILE) else []
+    output:
+        done = f"{QDRANT_STORAGE}/collections/protein_similarity_esm2.done"
+    params:
+        collection = config["protein_similarity_esm2"]["qdrant"]["collection_name"],
+        batch_size = config["protein_similarity_esm2"]["qdrant"]["batch_size"],
+        vector_dim = config["protein_similarity_esm2"]["vector_dimension"],
+        hnsw_m = config["protein_similarity_esm2"]["qdrant"]["hnsw_m"],
+        hnsw_ef_construct = config["protein_similarity_esm2"]["qdrant"]["hnsw_ef_construct"],
+        indexing_threshold = config["protein_similarity_esm2"]["qdrant"]["indexing_threshold"],
+        max_segment_size = config["protein_similarity_esm2"]["qdrant"]["max_segment_size"],
+        default_segment_number = config["protein_similarity_esm2"]["qdrant"]["default_segment_number"],
+        prefer_grpc = config["protein_similarity_esm2"]["qdrant"].get("prefer_grpc", False),
+        faiss_dir = PROTEIN_ESM2_FAISS_DIR,
+        tracking_file = PROTEIN_ESM2_TRACKING_FILE,
+        chunk_tracking_file = PROTEIN_ESM2_TRACKING_FILE,
+        script = f"{QDRANT_SCRIPTS}/insert_from_faiss.py",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "insert_protein_similarity_esm2_to_qdrant_cluster.log")
+    resources:
+        mem_mb = config["protein_similarity_esm2"]["qdrant"].get("memory_mb", 8192)
+    conda:
+        config["conda_env"]
+    log:
+        f"{QDRANT_LOG_DIR}/insert_protein_similarity_esm2_{RUN_TIMESTAMP}.log"
+    shell:
+        """
+        echo "==================== RUN STARTED: $(date) ====================" > {log}
+
+        # Check if connection info exists
+        if [ ! -f {input.connection_info} ]; then
+            echo "ERROR: Connection info not found at {input.connection_info}" | tee -a {log}
+            echo "Please start Qdrant server first: ./bioyoda.sh qdrant start" | tee -a {log}
+            exit 1
+        fi
+
+        # Source connection info
+        source {input.connection_info}
+
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Inserting Protein Similarity ESM-2 to Qdrant..." >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Qdrant URL: $QDRANT_URL" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Collection: {params.collection}" >> {log}
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAISS dir: {params.faiss_dir}" >> {log}
+
+        # Check if FAISS data exists
+        if [ ! -d {params.faiss_dir} ] || [ -z "$(find {params.faiss_dir} -name '*.index' -type f 2>/dev/null | head -1)" ]; then
+            echo "ERROR: No FAISS data found in {params.faiss_dir}" | tee -a {log}
+            echo "Please run Protein Similarity ESM-2 processing first: ./bioyoda.sh run protein_similarity_esm2" | tee -a {log}
+            exit 1
+        fi
+
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting insertion (detailed logs: {log})"
+
+        # Build tracking flag if exists
+        TRACKING_FLAG=""
+        if [ -f {params.tracking_file} ]; then
+            TRACKING_FLAG="--tracking-file {params.tracking_file}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using tracking file for incremental updates" >> {log}
+        fi
+
+        # Build chunk tracking flag
+        CHUNK_TRACKING_FLAG=""
+        if [ -n "{params.chunk_tracking_file}" ] && [ -f {params.chunk_tracking_file} ]; then
+            CHUNK_TRACKING_FLAG="--chunk-tracking-file {params.chunk_tracking_file}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Using chunk tracking file: {params.chunk_tracking_file}" >> {log}
+        fi
+
+        # Build gRPC flag if enabled
+        GRPC_FLAG=""
+        if [ "{params.prefer_grpc}" = "True" ]; then
+            GRPC_FLAG="--prefer-grpc"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] gRPC protocol enabled" >> {log}
+        fi
+
+        python {params.script} \
+            --faiss-dir {params.faiss_dir} \
+            --collection {params.collection} \
+            --qdrant-url $QDRANT_URL \
+            --batch-size {params.batch_size} \
+            --vector-size {params.vector_dim} \
+            --hnsw-m {params.hnsw_m} \
+            --hnsw-ef-construct {params.hnsw_ef_construct} \
+            --indexing-threshold {params.indexing_threshold} \
+            --max-segment-size {params.max_segment_size} \
+            --default-segment-number {params.default_segment_number} \
+            $TRACKING_FLAG \
+            $CHUNK_TRACKING_FLAG \
+            $GRPC_FLAG \
+            >> {log} 2>&1
+
+        # Mark as done
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Protein Similarity ESM-2 insertion complete" > {output.done}
         echo "Completed at: $(date)" >> {output.done}
         """
 

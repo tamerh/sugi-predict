@@ -1,14 +1,48 @@
+biobtree next database pubchem, pubchem compounds pubchem substances. 
+dbsnp
+rhea
+enzymes....
 
-check on_disk if compounds doesnt work...
+
+
+
+yine bu parent child da belki ^2 koyulabilir yada otamtik traversal gibi bişey olabilir.
+aslında yine bu smile veya inchi ilede xref eklemek çok mantıklı chemical dataları hmdb patent chebi chembl 
+
+biobtree için AI hem queryleri iyi bir prompt ile hazırlayacak hemde resultları hem ham halde 
+verecek yada yorumlayıp verecek gerekirse birkaç biobtree querysi ile yapacak bunu....
+
+sars covid genomu da ekle bence...
+
+eğer bir entryde xref yoksa attributelar save edilmiyor ve empty true geliyor.....bunu çözmeliyim...
+
+for uniparc and uniref species level....
+
+proper chebi database integration in biobtree
+
+
+reactome  to gene empty results.....
+
+use also vscode subagent and so on pivot everythin
+biobtree model organisms version......
+
+drug discovery workflow.........
+
+main biobtree workflows
+drug discovery
+sequencing pipelines
+functional enrichments. 
+- Metabolomics workflows
+- Drug discovery pipelines
+- Chemical structure searches
+- Compound identification
+- Systems biology integration
+
+
+
+
 
 biobtree simple test system like bioyoda....
-biobtree model organisms version......
-in biobtree instead of map.filter query syntax....much better one is maybe...
->> uniprot >> string >> hgnc.......and then giant filter page for each one......
-
-drug discovery......
-
-
 maybe something like compounds related processing require large processing you are looking.....
 
 
@@ -22,3 +56,8 @@ Image Processing: Manually measuring or analyzing thousands of microscopy images
 Molecular Dynamics (MD) / Docking: Setting up and running complex simulations like GROMACS or AutoDock.
 
 NGS Pipeline Execution: Wrestling with command-line tools (like SAMtools, BEDtools) to run a standard RNA-seq or variant calling pipeline.
+
+
+future
+viral dataset to biobtree....
+3 yıldır kemoterapilere rağment 6. metastaz

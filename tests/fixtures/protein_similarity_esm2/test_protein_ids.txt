@@ -1,0 +1,7 @@
+# Test protein IDs for validation
+# These are the first 10 proteins from the reference dataset (60 proteins total, 3 chunks of 20)
+sp|Q6GZX4|001R_FRG3G
+sp|Q6GZX3|002L_FRG3G
+sp|Q197F8|002R_IIV3
+sp|Q197F7|003L_IIV3
+sp|Q6GZX2|003R_FRG3G

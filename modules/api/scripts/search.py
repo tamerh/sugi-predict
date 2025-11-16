@@ -133,6 +133,48 @@ class BioYodaSearchEngine:
         logger.debug(f"Query encoded in {encode_time:.2f}ms (model: {model_name})")
         return vector
 
+    def get_protein_vector(self, protein_id: str, collection: str) -> Optional[List[float]]:
+        """
+        Get the embedding vector for a protein by its ID
+
+        Args:
+            protein_id: Protein ID (e.g., "sp|Q6GZX4|001R_FRG3G")
+            collection: Collection name (must be protein_similarity_esm2)
+
+        Returns:
+            Vector embedding as list of floats, or None if protein not found
+        """
+        try:
+            # Search for the protein by ID using payload filter
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+            results = self.client.scroll(
+                collection_name=collection,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="protein_id",
+                            match=MatchValue(value=protein_id)
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=True  # We need the vector for similarity search
+            )
+
+            if results[0] and len(results[0]) > 0:
+                vector = results[0][0].vector
+                logger.debug(f"Retrieved vector for protein {protein_id}")
+                return vector
+            else:
+                logger.warning(f"Protein {protein_id} not found in collection {collection}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error retrieving protein vector for {protein_id}: {e}")
+            return None
+
     def search_single_collection(
         self,
         query: str,
@@ -145,7 +187,7 @@ class BioYodaSearchEngine:
         Search a single collection using the correct embedding model
 
         Args:
-            query: Search query
+            query: Search query (text for text collections, protein_id for protein_similarity_esm2)
             collection: Collection name
             limit: Maximum number of results
             filters: Optional metadata filters
@@ -157,8 +199,16 @@ class BioYodaSearchEngine:
             List of search results with scores and payloads
         """
         try:
-            # Encode query with the correct model for this collection
-            query_vector = self.encode_query(query, collection=collection)
+            # Special handling for protein similarity search
+            if collection == "protein_similarity_esm2":
+                # For proteins, query is a protein ID - look up its vector
+                query_vector = self.get_protein_vector(query, collection)
+                if query_vector is None:
+                    logger.warning(f"Protein not found: {query}")
+                    return []
+            else:
+                # For text collections, encode query with the correct model
+                query_vector = self.encode_query(query, collection=collection)
 
             # Build filter if provided
             query_filter = None
