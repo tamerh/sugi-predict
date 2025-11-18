@@ -103,6 +103,41 @@ protein_similarity_esm2:
   qdrant:
     memory_mb: 4096            # 4GB (vs 8GB production)
 
+# Protein Similarity DIAMOND test overrides
+protein_similarity_diamond:
+  # Test mode settings
+  test_mode: true
+  dataset: "test"              # Use test dataset
+  num_chunks: 3                # Split into 3 chunks (20 proteins each)
+  proteins_per_chunk: 20       # 20 proteins per chunk (60 total)
+
+  # DIAMOND parameters (fast mode for testing)
+  diamond:
+    max_target_seqs: 100       # Keep top-100 targets (vs 1000 production)
+    evalue: 0.001
+    sensitivity: "fast"        # Fast mode (vs sensitive in production)
+    threads: 4
+    outfmt: 6
+
+  # Filtering
+  filter:
+    top_k: 10                  # Keep top-10 for testing (vs 100 production)
+    min_identity: 0.0
+    min_coverage: 0.0
+
+  # Reduced resources for testing
+  download_memory_mb: 2048     # 2GB (vs 8GB production)
+  split_memory_mb: 1024        # 1GB (vs 4GB production)
+  create_db_memory_mb: 2048    # 2GB (vs 8GB production)
+  search_memory_mb: 4096       # 4GB (vs 32GB production)
+  merge_memory_mb: 2048        # 2GB (vs 28GB production)
+  filter_memory_mb: 2048       # 2GB (vs 64GB production)
+
+  # BioBTree output
+  biobtree:
+    enabled: true
+    output_format: "json"
+
 # Qdrant test overrides
 qdrant:
   # Use NFS storage for testing (not local scratch)

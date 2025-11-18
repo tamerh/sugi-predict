@@ -201,7 +201,7 @@ protein_similarity_esm2:
 curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "sp|Q6GZX4|001R_FRG3G",
+    "query": "Q6GZX4",
     "collections": ["protein_similarity_esm2"],
     "limit": 10
   }'
@@ -209,7 +209,7 @@ curl -X POST http://localhost:8000/search \
 
 ### How It Works
 
-1. **Query by Protein ID**: Provide a UniProt ID
+1. **Query by UniProt Accession**: Provide a UniProt accession (e.g., `Q6GZX4`)
 2. **Vector Lookup**: System retrieves the protein's ESM-2 embedding from Qdrant
 3. **Similarity Search**: Finds proteins with similar embeddings (cosine similarity)
 4. **Results**: Returns proteins with similar:
@@ -255,12 +255,10 @@ Each protein in the FAISS index has associated metadata:
 ```json
 {
   "0": {
-    "protein_id": "sp|Q6GZX4|001R_FRG3G",
-    "uniprot_id": "sp|Q6GZX4|001R_FRG3G"
+    "protein_id": "Q6GZX4"
   },
   "1": {
-    "protein_id": "sp|Q6GZX3|002L_FRG3G",
-    "uniprot_id": "sp|Q6GZX3|002L_FRG3G"
+    "protein_id": "Q6GZX3"
   }
 }
 ```
@@ -304,11 +302,11 @@ python tests/fixtures/protein_similarity_esm2/validate_protein_search.py
 ### Test Queries
 Test protein IDs are in `tests/queries_protein_similarity.txt`:
 ```
-sp|Q6GZX4|001R_FRG3G
-sp|Q6GZX3|002L_FRG3G
-sp|Q197F8|002R_IIV3
-sp|Q197F7|003L_IIV3
-sp|Q6GZX2|003R_FRG3G
+Q6GZX4
+Q6GZX3
+Q197F8
+Q197F7
+Q6GZX2
 ```
 
 ## Workflow Examples
@@ -327,7 +325,7 @@ sp|Q6GZX2|003R_FRG3G
 # 4. Test search
 curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "sp|Q6GZX4|001R_FRG3G", "collections": ["protein_similarity_esm2"], "limit": 10}'
+  -d '{"query": "Q6GZX4", "collections": ["protein_similarity_esm2"], "limit": 10}'
 ```
 
 ### Example 2: TrEMBL (Large Scale)

@@ -24,6 +24,8 @@ nohup python3 modules/patents/scripts/process_uspto_json.py       --input-dir /d
 
 nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_organisms2 generate > logs/generatelatest.log 2>&1  &
 
+nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_gen_test generate > logs/generatesizetest.log 2>&1  &
+
 nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_ref/ensembl_model generate > logs/generate_reference.log 2>&1  &
 
 

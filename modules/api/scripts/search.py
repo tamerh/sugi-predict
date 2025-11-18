@@ -135,10 +135,10 @@ class BioYodaSearchEngine:
 
     def get_protein_vector(self, protein_id: str, collection: str) -> Optional[List[float]]:
         """
-        Get the embedding vector for a protein by its ID
+        Get the embedding vector for a protein by its UniProt accession
 
         Args:
-            protein_id: Protein ID (e.g., "sp|Q6GZX4|001R_FRG3G")
+            protein_id: UniProt accession (e.g., "Q6GZX4")
             collection: Collection name (must be protein_similarity_esm2)
 
         Returns:
@@ -187,7 +187,7 @@ class BioYodaSearchEngine:
         Search a single collection using the correct embedding model
 
         Args:
-            query: Search query (text for text collections, protein_id for protein_similarity_esm2)
+            query: Search query (text for text collections, UniProt accession for protein_similarity_esm2)
             collection: Collection name
             limit: Maximum number of results
             filters: Optional metadata filters

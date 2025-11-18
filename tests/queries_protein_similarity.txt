@@ -1,10 +1,10 @@
 # Protein Similarity Search Test Queries
 # These queries test the protein_similarity_esm2 collection (ESM-2 embeddings)
-# Format: protein_id (from test dataset)
+# Format: UniProt accession (from test dataset)
 
 # Test proteins from the reference dataset
-sp|Q6GZX4|001R_FRG3G
-sp|Q6GZX3|002L_FRG3G
-sp|Q197F8|002R_IIV3
-sp|Q197F7|003L_IIV3
-sp|Q6GZX2|003R_FRG3G
+Q6GZX4
+Q6GZX3
+Q197F8
+Q197F7
+Q6GZX2

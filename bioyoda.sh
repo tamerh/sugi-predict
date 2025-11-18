@@ -185,11 +185,12 @@ Commands:
     version                   Show version information
 
 Dataset Modules:
-    pubmed                    PubMed literature processing (FAISS creation)
-    clinical_trials           Clinical trials data processing (FAISS creation)
-    patents                   Patents processing (text + compound FAISS creation)
-    protein_similarity_esm2   Protein functional similarity (ESM-2 embeddings)
-    all                       Run all dataset modules
+    pubmed                      PubMed literature processing (FAISS creation)
+    clinical_trials             Clinical trials data processing (FAISS creation)
+    patents                     Patents processing (text + compound FAISS creation)
+    protein_similarity_esm2     Protein functional similarity (ESM-2 embeddings)
+    protein_similarity_diamond  Protein sequence similarity (DIAMOND BLASTP)
+    all                         Run all dataset modules
 
 Qdrant Subcommands:
     start                     Start Qdrant server (local or cluster)

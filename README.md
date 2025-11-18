@@ -16,10 +16,18 @@ BioYoda is a Snakemake-based pipeline for processing biomedical literature, clin
   - Semantic text search using S-BioBERT embeddings
   - Chemical structure search using Morgan fingerprints (2048-bit)
   - USPTO enrichment for patent abstracts (493K US patents)
-- **Protein Similarity**: ESM-2 protein language model embeddings for similarity search
-  - UniProt SwissProt (570K+ proteins) and TrEMBL (250M+ proteins)
-  - 1280-dimensional embeddings using ESM-2 650M model
-  - Vector-based similarity search for protein homology and function prediction
+- **Protein Similarity**: Multiple methods for protein similarity search
+  - **ESM-2 Embeddings**: Vector-based semantic similarity using protein language models
+    - UniProt SwissProt (570K+ proteins) and TrEMBL (250M+ proteins)
+    - 1280-dimensional embeddings using ESM-2 650M model
+    - Vector search for protein homology and function prediction
+    - Qdrant integration for scalable semantic search
+  - **DIAMOND BLASTP**: Sequence-based similarity with BioBTree integration
+    - 10,000x faster than traditional BLAST alignment
+    - All-vs-all BLASTP search across UniProt (SwissProt and TrEMBL)
+    - Configurable Top-K filtering for efficient storage
+    - BioBTree JSON format for identifier mapping and graph queries
+    - Parallel CPU processing with distributed chunking
 - **Incremental Updates**: Smart tracking system for efficient daily updates (PubMed supported)
 - **Vector Database**: Qdrant server with independent insertion workflow and upsert support
 - **Search API**: FastAPI-based REST API for semantic search across collections
@@ -206,6 +214,12 @@ modules/
 
 # Process Patents (SureChEMBL + USPTO enrichment)
 ./bioyoda.sh run patents --cluster --bg --jobs 50
+
+# Process Protein Similarity with DIAMOND (sequence-based)
+./bioyoda.sh run protein_similarity_diamond --cluster --bg --jobs 100
+
+# Process Protein Similarity with ESM-2 (embedding-based, requires GPU)
+./bioyoda.sh run protein_similarity_esm2 --cluster --bg --jobs 50 --config config/config_gpu.yaml
 
 # Process all datasets
 ./bioyoda.sh run all --cluster --bg --jobs 100
@@ -518,6 +532,8 @@ ls -lhd /localscratch/$USER/qdrant_*
   - `modules/pubmed/README.md` - PubMed processing details
   - `modules/clinical_trials/README.md` - Clinical trials processing
   - `modules/patents/README.md` - Patent and compound search (SureChEMBL, USPTO)
+  - `modules/protein_similarity_diamond/README.md` - DIAMOND BLASTP sequence similarity
+  - `modules/protein_similarity_esm2/README.md` - ESM-2 protein embeddings
   - `modules/qdrant/README.md` - Qdrant operations and architecture
   - `modules/api/README.md` - Search API usage and examples
 - **Configuration**: `config/README.md` - Configuration options

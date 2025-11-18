@@ -57,11 +57,18 @@ def h5_to_faiss(h5_file, index_file, metadata_file, vector_dim):
     faiss.write_index(index, str(index_file))
 
     # Create metadata (following patents/clinical_trials format - dictionary with string keys)
+    # Extract UniProt accession from full ID (e.g., "sp|Q6GZX4|001R_FRG3G" -> "Q6GZX4")
     metadata = {}
     for i, protein_id in enumerate(protein_ids):
+        # Parse accession from format: sp|Q6GZX4|001R_FRG3G or tr|A0A000|EXAMPLE
+        parts = protein_id.split('|')
+        if len(parts) >= 2:
+            accession = parts[1]  # Extract Q6GZX4
+        else:
+            accession = protein_id  # Fallback if format unexpected
+
         metadata[str(i)] = {
-            'protein_id': protein_id,
-            'uniprot_id': protein_id
+            'protein_id': accession
         }
 
     # Write metadata as JSON

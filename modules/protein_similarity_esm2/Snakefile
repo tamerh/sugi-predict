@@ -36,7 +36,7 @@ EMBEDDINGS_DIR = os.path.join(PROCESSED_DIR, "embeddings")
 MERGED_DIR = os.path.join(PROCESSED_DIR, "merged")
 QDRANT_DIR = os.path.join(PROCESSED_DIR, "qdrant")
 LOG_DIR = os.path.join(BASE_DIR, "logs", "protein_similarity_esm2")
-MODULE_SCRIPTS = os.path.join(PROJECT_ROOT, "modules", "protein_similarity_esm2", "scripts")
+esm2_module_scripts = os.path.join(PROJECT_ROOT, "modules", "protein_similarity_esm2", "scripts")
 ESM2_STATE_DIR = os.path.join(BASE_DIR, "state", "protein_similarity_esm2")
 
 # Update config with constructed paths for downstream use
@@ -88,18 +88,28 @@ def aggregate_embeddings(wildcards):
     Dynamically aggregate all embedding INDEX files (not H5).
     Following patents/clinical_trials pattern: return .index files for Qdrant insertion.
     Scans chunks directory to find which chunks exist.
+
+    IMPORTANT: Use config directly to avoid global variable pollution from other modules!
     """
     import glob
     import sys
+    from pathlib import Path
 
     # Wait for checkpoint to complete
-    checkpoints.split_fasta_checkpoint.get(**wildcards)
+    checkpoints.split_fasta_checkpoint_esm2.get(**wildcards)
+
+    # Use config directly to avoid global variable pollution
+    esm2_chunks_dir = config["protein_similarity_esm2"]["chunks_dir"]
+    esm2_embeddings_dir = config["protein_similarity_esm2"]["embeddings_dir"]
+
+    sys.stderr.write(f"[AGGREGATE ESM2] Using chunks_dir from config: {esm2_chunks_dir}\n")
+    sys.stderr.flush()
 
     # Scan chunks directory for actual chunk files
-    chunk_files = sorted(Path(CHUNKS_DIR).glob('chunk_*.fasta'))
+    chunk_files = sorted(Path(esm2_chunks_dir).glob('chunk_*.fasta'))
 
     if not chunk_files:
-        sys.stderr.write(f"[AGGREGATE] No chunk files found in {CHUNKS_DIR}\n")
+        sys.stderr.write(f"[AGGREGATE ESM2] No chunk files found in {esm2_chunks_dir}\n")
         sys.stderr.flush()
         return []
 
@@ -109,11 +119,11 @@ def aggregate_embeddings(wildcards):
         chunk_num = chunk_file.stem.split('_')[1]
         chunks.append(chunk_num)
 
-    sys.stderr.write(f"[AGGREGATE] Found {len(chunks)} chunk files: {chunks}\n")
+    sys.stderr.write(f"[AGGREGATE ESM2] Found {len(chunks)} chunk files: {chunks}\n")
     sys.stderr.flush()
 
     # Return paths to expected FAISS index files (following patents pattern)
-    return [os.path.join(EMBEDDINGS_DIR, f"chunk_{chunk}.index") for chunk in chunks]
+    return [os.path.join(esm2_embeddings_dir, f"chunk_{chunk}.index") for chunk in chunks]
 
 
 # ============================================================================
@@ -137,7 +147,7 @@ rule protein_similarity_esm2_all:
         indices = aggregate_embeddings  # This will return list of chunk H5 files
 
 
-rule download_uniprot:
+rule download_uniprot_esm2:
     """
     Download UniProt FASTA file (SwissProt or TrEMBL)
     Test mode: Downloads SwissProt and limits to first N sequences
@@ -147,7 +157,8 @@ rule download_uniprot:
     params:
         dataset = DATASET,
         output_dir = RAW_DIR,
-        limit_flag = f"--limit {esm2_config.get('test_limit_proteins', 1000)}" if TEST_MODE else ""
+        limit_flag = f"--limit {esm2_config.get('test_limit_proteins', 1000)}" if TEST_MODE else "",
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_download.log")
     conda:
         config["conda_env"]
     resources:
@@ -156,7 +167,7 @@ rule download_uniprot:
         os.path.join(LOG_DIR, "download_uniprot.log")
     shell:
         """
-        python {MODULE_SCRIPTS}/download_uniprot.py \
+        python {esm2_module_scripts}/download_uniprot.py \
             --dataset {params.dataset} \
             --output-dir {params.output_dir} \
             {params.limit_flag} \
@@ -164,7 +175,7 @@ rule download_uniprot:
         """
 
 
-checkpoint split_fasta_checkpoint:
+checkpoint split_fasta_checkpoint_esm2:
     """
     Split FASTA into chunks for parallel processing
     """
@@ -175,7 +186,8 @@ checkpoint split_fasta_checkpoint:
     params:
         num_chunks = NUM_CHUNKS,
         output_dir = CHUNKS_DIR,
-        state_file = STATE_FILE
+        state_file = STATE_FILE,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_split.log")
     conda:
         config["conda_env"]
     resources:
@@ -189,7 +201,7 @@ checkpoint split_fasta_checkpoint:
         mkdir -p $(dirname {params.state_file})
 
         # Split FASTA and create state file (follows patents/clinical_trials convention)
-        python {MODULE_SCRIPTS}/split_fasta.py \
+        python {esm2_module_scripts}/split_fasta.py \
             {input} \
             {params.num_chunks} \
             {params.output_dir} \
@@ -218,7 +230,8 @@ rule generate_embeddings:
         device = DEVICE,
         repr_layer = REPR_LAYER,
         max_seq_len = MAX_SEQ_LEN,
-        vector_dim = esm2_config.get("vector_dimension", 1280)
+        vector_dim = esm2_config.get("vector_dimension", 1280),
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_embeddings_{chunk}.log")
     conda:
         config["conda_env"]
     threads: 4
@@ -229,7 +242,7 @@ rule generate_embeddings:
     shell:
         """
         # Step 1: Generate H5 embeddings
-        python {MODULE_SCRIPTS}/generate_embeddings.py \
+        python {esm2_module_scripts}/generate_embeddings.py \
             {input.query} \
             {params.h5_file} \
             --model {params.model} \
@@ -240,7 +253,7 @@ rule generate_embeddings:
             2>&1 | tee {log}
 
         # Step 2: Convert H5 to FAISS index + JSON metadata
-        python {MODULE_SCRIPTS}/h5_to_faiss.py \
+        python {esm2_module_scripts}/h5_to_faiss.py \
             {params.h5_file} \
             {output.index} \
             {output.metadata} \
@@ -258,6 +271,8 @@ rule merge_embeddings:
         chunk_embeddings = aggregate_embeddings
     output:
         MERGED_EMBEDDINGS
+    params:
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_merge.log")
     conda:
         config["conda_env"]
     resources:
@@ -266,7 +281,7 @@ rule merge_embeddings:
         os.path.join(LOG_DIR, "merge_embeddings.log")
     shell:
         """
-        python {MODULE_SCRIPTS}/merge_embeddings.py \
+        python {esm2_module_scripts}/merge_embeddings.py \
             {output} \
             {input.chunk_embeddings} \
             2>&1 | tee {log}
@@ -277,7 +292,7 @@ rule merge_embeddings:
 # CLEANUP RULES (optional)
 # ============================================================================
 
-rule clean_chunks:
+rule clean_chunks_esm2:
     """
     Remove chunk files to save space
     """

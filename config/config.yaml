@@ -275,6 +275,71 @@ protein_similarity_esm2:
   test_mode: false
   test_limit_proteins: 1000     # Limit proteins in test mode
 
+# ==============================================================================
+# Protein Similarity - DIAMOND
+# ==============================================================================
+# DIAMOND-based protein similarity search (all-vs-all BLASTP)
+# Output: BioBTree JSON format for identifier mapping
+
+protein_similarity_diamond:
+  # Dataset selection
+  dataset: "swissprot"           # swissprot, trembl, or test
+
+  # Chunking for parallel processing
+  num_chunks: 100                # Number of FASTA chunks (parallel DIAMOND jobs)
+
+  # DIAMOND search parameters
+  diamond:
+    max_target_seqs: 1000        # Maximum number of target sequences per query
+    evalue: 0.001                # E-value threshold
+    sensitivity: "sensitive"     # Sensitivity mode: fast, mid-sensitive, sensitive, more-sensitive, very-sensitive, ultra-sensitive
+    threads: 4                   # Threads per DIAMOND job
+    outfmt: 6                    # Output format (6 = tabular BLAST format)
+
+  # Filtering parameters
+  filter:
+    top_k: 100                   # Keep top-K similarities per protein
+    min_identity: 30.0           # Minimum percent identity (0-100)
+
+  # BioBTree output
+  biobtree:
+    enabled: true                # Generate BioBTree JSON output
+    output_format: "json"        # Output format
+
+  # Job resources (per-job limits for SLURM)
+  resources:
+    download:
+      memory_mb: 8192
+      runtime_minutes: 10080     # 7 days for large downloads
+
+    split_fasta:
+      memory_mb: 8192
+      runtime_minutes: 10080
+
+    create_db:
+      memory_mb: 32768           # 32GB for DIAMOND database creation
+      runtime_minutes: 10080
+
+    diamond_search:
+      memory_mb: 32768           # 32GB per chunk search
+      runtime_minutes: 10080
+      threads: 4
+
+    merge_results:
+      memory_mb: 65536           # 64GB for merging large results
+      runtime_minutes: 10080
+
+    filter_top_k:
+      memory_mb: 65536           # 64GB for filtering
+      runtime_minutes: 10080
+
+    convert_biobtree:
+      memory_mb: 16384
+      runtime_minutes: 10080
+
+  # Test mode settings
+  test_mode: false
+
 # Qdrant Module Configuration
 qdrant:
   # NOTE: Directories are constructed from base_dir in Snakefile

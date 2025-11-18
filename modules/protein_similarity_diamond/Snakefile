@@ -1,0 +1,412 @@
+"""
+Protein Similarity with DIAMOND - Snakemake Workflow
+
+This workflow:
+1. Downloads UniProt FASTA (SwissProt or TrEMBL)
+2. Splits into chunks for distributed processing
+3. Creates DIAMOND database
+4. Runs all-vs-all similarity search on each chunk (parallel)
+5. Merges results from all chunks
+6. Filters to keep top-K per protein
+"""
+
+import os
+from pathlib import Path
+
+# Load configuration
+# NOTE: config is passed from main Snakefile when integrated, or from module-local config.yaml
+if "protein_similarity_diamond" not in config:
+    configfile: "config.yaml"
+    # Wrap in module namespace
+    config["protein_similarity_diamond"] = config.copy()
+
+# Module config shorthand
+mod_config = config.get("protein_similarity_diamond", {})
+
+# Get parameters from config
+DATASET = mod_config.get("dataset", "swissprot")
+NUM_CHUNKS = mod_config.get("num_chunks", 20)
+TOP_K = mod_config.get("top_k", mod_config.get("filter", {}).get("top_k", 100))
+MIN_IDENTITY = mod_config.get("min_identity", mod_config.get("filter", {}).get("min_identity", 0.0))
+
+# Directory structure (following ESM2 pattern)
+BASE_DIR = config.get("base_dir", "out")
+PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.path.dirname(workflow.snakefile))))
+
+RAW_DIR = Path(BASE_DIR) / "raw_data" / "protein_similarity_diamond"
+PROCESSED_DIR = Path(BASE_DIR) / "data" / "processed" / "protein_similarity_diamond"
+CHUNKS_DIR = RAW_DIR / "chunks"
+DB_DIR = RAW_DIR / "diamond_db"
+RESULTS_DIR = PROCESSED_DIR / "results"
+MERGED_DIR = PROCESSED_DIR / "merged"
+
+# Module scripts directory
+diamond_module_scripts = os.path.join(PROJECT_ROOT, "modules", "protein_similarity_diamond", "scripts")
+
+# Logs directory (module-specific, avoid namespace collision)
+DIAMOND_STATE_DIR = Path(BASE_DIR) / "state" / "protein_similarity_diamond"
+DIAMOND_STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+# File paths
+if DATASET == "test":
+    RAW_FASTA = RAW_DIR / "test_proteins.fasta"
+    DIAMOND_DB = DB_DIR / "test_proteins"
+else:
+    RAW_FASTA = RAW_DIR / f"uniprot_{DATASET}.fasta"
+    DIAMOND_DB = DB_DIR / f"uniprot_{DATASET}"
+
+MERGED_RESULTS = MERGED_DIR / "merged_results.tsv"
+FILTERED_RESULTS = MERGED_DIR / f"filtered_top{TOP_K}.tsv"
+
+# BioBTree JSON output
+BIOBTREE_JSON = PROCESSED_DIR / "protein_similarities_diamond.json"
+
+# State file to track which chunks have been processed (module-specific namespace)
+DIAMOND_STATE_FILE = DIAMOND_STATE_DIR / "processed_chunks.json"
+
+# Helper function to aggregate diamond search results dynamically
+def aggregate_diamond_results(wildcards):
+    """
+    Dynamically aggregate all diamond search results.
+    Scans chunks directory to find which chunks exist and expects results for all of them.
+
+    IMPORTANT: Use config directly to avoid global variable pollution from other modules!
+    """
+    import glob
+    import sys
+    from pathlib import Path
+
+    # Wait for checkpoint to complete
+    checkpoints.split_fasta_checkpoint.get(**wildcards)
+
+    # Use constructed paths from config to avoid global variable pollution
+    diamond_raw_dir = Path(config["base_dir"]) / "raw_data" / "protein_similarity_diamond"
+    diamond_chunks_dir = diamond_raw_dir / "chunks"
+    diamond_processed_dir = Path(config["base_dir"]) / "data" / "processed" / "protein_similarity_diamond"
+    diamond_results_dir = diamond_processed_dir / "results"
+
+    sys.stderr.write(f"[AGGREGATE DIAMOND] Using chunks_dir: {diamond_chunks_dir}\n")
+    sys.stderr.flush()
+
+    # Scan chunks directory for actual chunk files
+    chunk_files = sorted(diamond_chunks_dir.glob('chunk_*.fasta'))
+
+    if not chunk_files:
+        sys.stderr.write(f"[AGGREGATE DIAMOND] No chunk files found in {diamond_chunks_dir}\n")
+        sys.stderr.flush()
+        return []
+
+    # Extract chunk numbers from filenames
+    chunks = []
+    for chunk_file in chunk_files:
+        # Extract chunk number (e.g., chunk_001.fasta -> 001)
+        chunk_num = chunk_file.stem.split('_')[1]
+        chunks.append(chunk_num)
+
+    sys.stderr.write(f"[AGGREGATE DIAMOND] Found {len(chunks)} chunk files: {chunks}\n")
+    sys.stderr.flush()
+
+    # Return paths to expected result files
+    return [diamond_results_dir / f"chunk_{chunk}.tsv" for chunk in chunks]
+
+
+# ============================================================================
+# LOCAL RULES (don't submit to cluster)
+# ============================================================================
+
+localrules: protein_similarity_diamond_all, download_uniprot, merge_results, convert_to_biobtree_json
+
+
+# ============================================================================
+# RULES
+# ============================================================================
+
+rule protein_similarity_diamond_all:
+    """
+    Default target: BioBTree JSON output
+    """
+    input:
+        BIOBTREE_JSON
+
+
+rule download_uniprot:
+    """
+    Download UniProt FASTA file (skip for test dataset)
+    For test mode: verifies existing file and creates marker
+    For real mode: downloads FASTA from UniProt
+    """
+    output:
+        fasta = RAW_FASTA,
+        metadata = RAW_DIR / f"uniprot_{DATASET}.fasta.metadata.txt" if DATASET != "test" else RAW_DIR / "test_500.fasta.metadata.txt"
+    params:
+        dataset = DATASET,
+        output_dir = RAW_DIR,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_download.log")
+    log:
+        str(DIAMOND_STATE_DIR / "download_uniprot.log")
+    resources:
+        mem_mb = 8000
+
+    run:
+        import os
+        import shutil
+        from pathlib import Path
+
+        if DATASET == "test":
+            # For test dataset, copy from test fixtures
+            project_root = Path(config.get("project_root", "."))
+            test_fixture = project_root / "tests/fixtures/protein_similarity_diamond/test_proteins.fasta"
+
+            if not test_fixture.exists():
+                raise FileNotFoundError(f"Test fixture not found: {test_fixture}")
+
+            # Create output directory
+            Path(output.fasta).parent.mkdir(parents=True, exist_ok=True)
+
+            # Copy test file to output location
+            shutil.copy(test_fixture, output.fasta)
+            print(f"Copied test fixture from: {test_fixture}")
+            print(f"To: {output.fasta}")
+
+            # Write metadata
+            with open(output.metadata, 'w') as f:
+                f.write("dataset: test\n")
+                f.write(f"source: {test_fixture}\n")
+                f.write(f"file: {output.fasta}\n")
+            print(f"Test dataset ready: {output.fasta}")
+        else:
+            # Download for real datasets (creates both FASTA and metadata)
+            shell(f"""
+            python {diamond_module_scripts}/download_uniprot.py \
+                --dataset {{params.dataset}} \
+                --output-dir {{params.output_dir}} \
+                2>&1 | tee {{log}}
+            """)
+
+
+checkpoint split_fasta_checkpoint:
+    """
+    Split FASTA into chunks for parallel processing
+    CHECKPOINT: Creates processed_chunks.json to track which chunks exist
+    """
+    input:
+        RAW_FASTA
+    output:
+        done_marker = CHUNKS_DIR / ".split_complete"
+    params:
+        num_chunks = NUM_CHUNKS,
+        output_dir = CHUNKS_DIR,
+        state_file = DIAMOND_STATE_FILE,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_split.log")
+    resources:
+        mem_mb = 8000
+    log:
+        str(DIAMOND_STATE_DIR / "split_fasta.log")
+    conda:
+        "diamond"
+    shell:
+        f"""
+        # Create directories
+        mkdir -p {{params.output_dir}}
+        mkdir -p $(dirname {{params.state_file}})
+
+        # Split FASTA and create state file
+        python {diamond_module_scripts}/split_fasta.py \
+            {{input}} \
+            {{params.num_chunks}} \
+            {{params.output_dir}} \
+            --state-file {{params.state_file}} \
+            2>&1 | tee {{log}}
+
+        # Create done marker
+        touch {{output.done_marker}}
+        """
+
+
+rule create_diamond_db:
+    """
+    Create DIAMOND database from FASTA
+    """
+    input:
+        RAW_FASTA
+    output:
+        db = f"{DIAMOND_DB}.dmnd"
+    params:
+        db_name = DIAMOND_DB,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_createdb.log")
+    threads:
+        mod_config.get("diamond", {}).get("threads", 4)
+    resources:
+        mem_mb = 8000
+    log:
+        str(DIAMOND_STATE_DIR / "create_diamond_db.log")
+    conda:
+        "diamond"
+    shell:
+        """
+        diamond makedb \
+            --in {input} \
+            --db {params.db_name} \
+            --threads {threads} \
+            2>&1 | tee {log}
+        """
+
+
+rule diamond_search:
+    """
+    Run DIAMOND search for one chunk
+    Determined dynamically based on which chunks exist after checkpoint
+    """
+    input:
+        query = CHUNKS_DIR / "chunk_{chunk}.fasta",
+        db = f"{DIAMOND_DB}.dmnd",
+        checkpoint_done = CHUNKS_DIR / ".split_complete"
+    output:
+        RESULTS_DIR / "chunk_{chunk}.tsv"
+    params:
+        db_name = DIAMOND_DB,
+        max_target_seqs = mod_config.get("diamond", {}).get("max_target_seqs", 1000),
+        evalue = mod_config.get("diamond", {}).get("evalue", 0.001),
+        sensitivity = mod_config.get("diamond", {}).get("sensitivity", "sensitive"),
+        outfmt = mod_config.get("diamond", {}).get("outfmt", 6),
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_search_{chunk}.log")
+    threads: 4
+    resources:
+        mem_mb = 32000
+    log:
+        str(DIAMOND_STATE_DIR / "diamond_search_chunk_{chunk}.log")
+    conda:
+        "diamond"
+    shell:
+        """
+        diamond blastp \
+            --query {input.query} \
+            --db {params.db_name} \
+            --out {output} \
+            --threads {threads} \
+            --max-target-seqs {params.max_target_seqs} \
+            --evalue {params.evalue} \
+            --{params.sensitivity} \
+            --outfmt {params.outfmt} \
+            --compress 0 \
+            2>&1 | tee {log}
+        """
+
+
+rule merge_results:
+    """
+    Merge results from all chunks into single file
+    Dynamically determines which chunks exist based on processed_chunks.json
+    """
+    input:
+        checkpoint_done = CHUNKS_DIR / ".split_complete",
+        chunk_results = aggregate_diamond_results
+    output:
+        MERGED_RESULTS
+    params:
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_merge.log")
+    resources:
+        mem_mb = 28000
+    log:
+        str(DIAMOND_STATE_DIR / "merge_results.log")
+    shell:
+        """
+        echo "Merging chunk results..." > {log}
+        echo "Number of chunks: $(echo {input.chunk_results} | wc -w)" >> {log}
+        cat {input.chunk_results} > {output}
+        echo "Merge complete. Output: {output}" >> {log}
+
+        # Count total lines
+        wc -l {output} >> {log}
+        """
+
+
+rule filter_top_k:
+    """
+    Filter merged results to keep top-K per query protein
+    """
+    input:
+        MERGED_RESULTS
+    output:
+        FILTERED_RESULTS
+    params:
+        k = TOP_K,
+        min_identity = MIN_IDENTITY,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_filter.log")
+    resources:
+        mem_mb = 64000
+    log:
+        str(DIAMOND_STATE_DIR / "filter_top_k.log")
+    conda:
+        "diamond"
+    shell:
+        f"""
+        python {diamond_module_scripts}/filter_top_k.py \
+            {{input}} \
+            {{output}} \
+            --k {{params.k}} \
+            --min-identity {{params.min_identity}} \
+            2>&1 | tee {{log}}
+        """
+    
+
+rule convert_to_biobtree_json:
+    """
+    Convert filtered TSV results to BioBTree JSON format
+    """
+    input:
+        tsv = FILTERED_RESULTS
+    output:
+        json = BIOBTREE_JSON
+    params:
+        dataset = DATASET,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_convert.log")
+    log:
+        str(DIAMOND_STATE_DIR / "convert_to_biobtree_json.log")
+    conda:
+        "diamond"
+    shell:
+        f"""
+        python {diamond_module_scripts}/convert_to_biobtree_json.py \
+            {{input.tsv}} \
+            {{output.json}} \
+            --dataset {{params.dataset}} \
+            2>&1 | tee {{log}}
+        """
+
+
+# ============================================================================
+# CLEANUP RULES (optional)
+# ============================================================================
+
+rule clean_chunks:
+    """
+    Remove chunk files to save space
+    """
+    shell:
+        """
+        rm -rf {CHUNKS_DIR}/*
+        echo "Removed chunk files"
+        """
+
+
+rule clean_chunk_results:
+    """
+    Remove individual chunk results (after merging)
+    """
+    shell:
+        """
+        rm -rf {RESULTS_DIR}/*
+        echo "Removed chunk result files"
+        """
+
+
+rule clean_all:
+    """
+    Remove all intermediate files
+    """
+    shell:
+        """
+        rm -rf {CHUNKS_DIR}/* {RESULTS_DIR}/*
+        echo "Removed all intermediate files"
+        """
