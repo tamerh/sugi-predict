@@ -1,8 +1,0 @@
-# Test protein IDs for validation
-# These are the first 5 proteins from the reference dataset (60 proteins total, 3 chunks of 20)
-# Format: UniProt accession only
-Q6GZX4
-Q6GZX3
-Q197F8
-Q197F7
-Q6GZX2

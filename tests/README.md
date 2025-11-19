@@ -241,12 +241,12 @@ To add new test queries:
 Protein similarity ESM-2 module has been fully integrated into the test framework:
 
 **Test Fixtures:**
-- ✓ Test protein sequences: `tests/fixtures/protein_similarity_esm2/test_proteins.fasta` (1000 proteins)
-- ✓ Metadata file: `tests/fixtures/protein_similarity_esm2/test_proteins.fasta.metadata.txt`
+- ✓ Test protein sequences: `tests/fixtures/esm2/test_proteins.fasta` (1000 proteins)
+- ✓ Metadata file: `tests/fixtures/esm2/test_proteins.fasta.metadata.txt`
 
 **Test Configuration:**
 ```yaml
-protein_similarity_esm2:
+esm2:
   test_mode: true
   test_limit_proteins: 1000     # Download first 1000 proteins from SwissProt
   test_num_chunks: 10           # Split into 10 chunks (100 proteins each)
@@ -265,12 +265,12 @@ protein_similarity_esm2:
 **Regenerating Fixtures:**
 ```bash
 # Clean and regenerate test data
-./bioyoda.sh stop protein_similarity_esm2 --test --clean
-./bioyoda.sh run protein_similarity_esm2 --test
+./bioyoda.sh stop esm2 --test --clean
+./bioyoda.sh run esm2 --test
 
 # Copy to fixtures
-cp test_out/raw_data/protein_similarity_esm2/uniprot_test.fasta \
-   tests/fixtures/protein_similarity_esm2/test_proteins.fasta
+cp test_out/raw_data/esm2/uniprot_test.fasta \
+   tests/fixtures/esm2/test_proteins.fasta
 ```
 
 ## Patents Testing
@@ -392,7 +392,7 @@ When you run `./bioyoda.sh test`, the following collections are created:
 | `clinical_trials` | Text | 50 | 768 | Clinical trials search |
 | `patents_text` | Text | 100 | 768 | Patent semantic search |
 | `patents_compounds` | Chemical | 1000 | 2048 | Chemical similarity |
-| `protein_similarity_esm2` | Protein | 1000 | 1280 | Protein similarity search |
+| `esm2` | Protein | 1000 | 1280 | Protein similarity search |
 
 **Total: 5 collections, 2,200 documents**
 

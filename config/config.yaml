@@ -217,7 +217,7 @@ patents:
   test_limit_compounds: 1000    # Limit compounds to process in test mode
 
 # Protein Similarity ESM-2 Module Configuration
-protein_similarity_esm2:
+esm2:
   # NOTE: Directories are constructed from base_dir in Snakefile
 
   # Dataset selection
@@ -252,7 +252,7 @@ protein_similarity_esm2:
 
   # Qdrant insertion settings
   qdrant:
-    collection_name: "protein_similarity_esm2"
+    collection_name: "esm2"
 
     # HNSW parameters (optimized for protein embeddings)
     hnsw_m: 32                      # Graph connectivity
@@ -281,7 +281,7 @@ protein_similarity_esm2:
 # DIAMOND-based protein similarity search (all-vs-all BLASTP)
 # Output: BioBTree JSON format for identifier mapping
 
-protein_similarity_diamond:
+diamond:
   # Dataset selection
   dataset: "swissprot"           # swissprot, trembl, or test
 

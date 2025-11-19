@@ -188,15 +188,15 @@ Dataset Modules:
     pubmed                      PubMed literature processing (FAISS creation)
     clinical_trials             Clinical trials data processing (FAISS creation)
     patents                     Patents processing (text + compound FAISS creation)
-    protein_similarity_esm2     Protein functional similarity (ESM-2 embeddings)
-    protein_similarity_diamond  Protein sequence similarity (DIAMOND BLASTP)
+    esm2                        Protein functional similarity (ESM-2 embeddings)
+    diamond                     Protein sequence similarity (DIAMOND BLASTP)
     all                         Run all dataset modules
 
 Qdrant Subcommands:
     start                     Start Qdrant server (local or cluster)
     stop                      Stop Qdrant server
     status                    Check Qdrant server status and collections
-    insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, patents, protein_similarity_esm2, or all)
+    insert <dataset>          Insert data to Qdrant (pubmed, clinical_trials, patents, esm2, or all)
     stop-insert <dataset>     Stop a running insertion job
 
 API Subcommands:
@@ -276,7 +276,7 @@ Examples:
     $0 qdrant insert pubmed --cluster --jobs 10 --bg
     $0 qdrant insert clinical_trials --cluster --jobs 10 --bg
     $0 qdrant insert patents --cluster --jobs 10 --bg
-    $0 qdrant insert protein_similarity_esm2 --cluster --jobs 10 --bg
+    $0 qdrant insert esm2 --cluster --jobs 10 --bg
     $0 qdrant insert all --cluster --jobs 20 --bg
 
     # Use CUDA 11.4 nodes for insertion
@@ -1404,7 +1404,7 @@ qdrant_insert() {
         echo "  patents                   - Insert Patents data (both text and compounds)"
         echo "  patents_text              - Insert Patents text only"
         echo "  patents_compounds         - Insert Patents compounds only"
-        echo "  protein_similarity_esm2   - Insert Protein Embeddings data (ESM-2)"
+        echo "  esm2                      - Insert Protein Embeddings data (ESM-2)"
         echo "  all                       - Insert all datasets"
         exit 1
     fi
@@ -1560,8 +1560,8 @@ qdrant_insert() {
         patents_compounds)
             snakemake_cmd="${snakemake_cmd} -- insert_patents_compounds"
             ;;
-        protein_similarity_esm2)
-            snakemake_cmd="${snakemake_cmd} -- insert_protein_similarity_esm2"
+        esm2)
+            snakemake_cmd="${snakemake_cmd} -- insert_esm2"
             ;;
         all)
             snakemake_cmd="${snakemake_cmd} -- insert_all"
@@ -1664,7 +1664,7 @@ qdrant_stop_insert() {
         echo "  patents                   - Stop Patents insertion"
         echo "  patents_text              - Stop Patents text insertion"
         echo "  patents_compounds         - Stop Patents compounds insertion"
-        echo "  protein_similarity_esm2   - Stop Protein Embeddings insertion"
+        echo "  esm2                      - Stop Protein Embeddings insertion"
         echo "  all                       - Stop all insertions"
         exit 1
     fi

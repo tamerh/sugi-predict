@@ -216,10 +216,10 @@ modules/
 ./bioyoda.sh run patents --cluster --bg --jobs 50
 
 # Process Protein Similarity with DIAMOND (sequence-based)
-./bioyoda.sh run protein_similarity_diamond --cluster --bg --jobs 100
+./bioyoda.sh run diamond --cluster --bg --jobs 100
 
 # Process Protein Similarity with ESM-2 (embedding-based, requires GPU)
-./bioyoda.sh run protein_similarity_esm2 --cluster --bg --jobs 50 --config config/config_gpu.yaml
+./bioyoda.sh run esm2 --cluster --bg --jobs 50 --config config/config_gpu.yaml
 
 # Process all datasets
 ./bioyoda.sh run all --cluster --bg --jobs 100
@@ -532,8 +532,8 @@ ls -lhd /localscratch/$USER/qdrant_*
   - `modules/pubmed/README.md` - PubMed processing details
   - `modules/clinical_trials/README.md` - Clinical trials processing
   - `modules/patents/README.md` - Patent and compound search (SureChEMBL, USPTO)
-  - `modules/protein_similarity_diamond/README.md` - DIAMOND BLASTP sequence similarity
-  - `modules/protein_similarity_esm2/README.md` - ESM-2 protein embeddings
+  - `modules/diamond/README.md` - DIAMOND BLASTP sequence similarity
+  - `modules/esm2/README.md` - ESM-2 protein embeddings
   - `modules/qdrant/README.md` - Qdrant operations and architecture
   - `modules/api/README.md` - Search API usage and examples
 - **Configuration**: `config/README.md` - Configuration options

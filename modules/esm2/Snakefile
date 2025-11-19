@@ -15,7 +15,7 @@ from datetime import datetime
 RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Load module-specific configuration
-esm2_config = config["protein_similarity_esm2"]
+esm2_config = config["esm2"]
 
 # Construct paths
 BASE_DIR = config["base_dir"]
@@ -29,15 +29,15 @@ else:
     DATASET = esm2_config.get("dataset", "swissprot")
 
 # Paths
-RAW_DIR = os.path.join(BASE_DIR, "raw_data", "protein_similarity_esm2")
-PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "protein_similarity_esm2")
+RAW_DIR = os.path.join(BASE_DIR, "raw_data", "esm2")
+PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed", "esm2")
 CHUNKS_DIR = os.path.join(RAW_DIR, "chunks")
 EMBEDDINGS_DIR = os.path.join(PROCESSED_DIR, "embeddings")
 MERGED_DIR = os.path.join(PROCESSED_DIR, "merged")
 QDRANT_DIR = os.path.join(PROCESSED_DIR, "qdrant")
-LOG_DIR = os.path.join(BASE_DIR, "logs", "protein_similarity_esm2")
-esm2_module_scripts = os.path.join(PROJECT_ROOT, "modules", "protein_similarity_esm2", "scripts")
-ESM2_STATE_DIR = os.path.join(BASE_DIR, "state", "protein_similarity_esm2")
+LOG_DIR = os.path.join(BASE_DIR, "logs", "esm2")
+esm2_module_scripts = os.path.join(PROJECT_ROOT, "modules", "esm2", "scripts")
+ESM2_STATE_DIR = os.path.join(BASE_DIR, "state", "esm2")
 
 # Update config with constructed paths for downstream use
 esm2_config["raw_dir"] = RAW_DIR
@@ -99,8 +99,8 @@ def aggregate_embeddings(wildcards):
     checkpoints.split_fasta_checkpoint_esm2.get(**wildcards)
 
     # Use config directly to avoid global variable pollution
-    esm2_chunks_dir = config["protein_similarity_esm2"]["chunks_dir"]
-    esm2_embeddings_dir = config["protein_similarity_esm2"]["embeddings_dir"]
+    esm2_chunks_dir = config["esm2"]["chunks_dir"]
+    esm2_embeddings_dir = config["esm2"]["embeddings_dir"]
 
     sys.stderr.write(f"[AGGREGATE ESM2] Using chunks_dir from config: {esm2_chunks_dir}\n")
     sys.stderr.flush()
@@ -130,14 +130,14 @@ def aggregate_embeddings(wildcards):
 # LOCAL RULES (don't submit to cluster)
 # ============================================================================
 
-localrules: protein_similarity_esm2_all, merge_embeddings
+localrules: esm2_all, merge_embeddings
 
 
 # ============================================================================
 # RULES
 # ============================================================================
 
-rule protein_similarity_esm2_all:
+rule esm2_all:
     """
     Default target: FAISS indices for all chunks (no merging by default)
     Similar to patents/clinical_trials: individual chunk files ready for Qdrant
@@ -158,7 +158,7 @@ rule download_uniprot_esm2:
         dataset = DATASET,
         output_dir = RAW_DIR,
         limit_flag = f"--limit {esm2_config.get('test_limit_proteins', 1000)}" if TEST_MODE else "",
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_download.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "esm2_download.log")
     conda:
         config["conda_env"]
     resources:
@@ -187,7 +187,7 @@ checkpoint split_fasta_checkpoint_esm2:
         num_chunks = NUM_CHUNKS,
         output_dir = CHUNKS_DIR,
         state_file = STATE_FILE,
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_split.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "esm2_split.log")
     conda:
         config["conda_env"]
     resources:
@@ -231,7 +231,7 @@ rule generate_embeddings:
         repr_layer = REPR_LAYER,
         max_seq_len = MAX_SEQ_LEN,
         vector_dim = esm2_config.get("vector_dimension", 1280),
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_embeddings_{chunk}.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "esm2_embeddings_{chunk}.log")
     conda:
         config["conda_env"]
     threads: 4
@@ -272,7 +272,7 @@ rule merge_embeddings:
     output:
         MERGED_EMBEDDINGS
     params:
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_esm2_merge.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "esm2_merge.log")
     conda:
         config["conda_env"]
     resources:

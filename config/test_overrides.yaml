@@ -85,7 +85,7 @@ patents:
     memory_mb: 4096            # 4GB (vs 8GB production)
 
 # Protein Similarity ESM-2 test overrides
-protein_similarity_esm2:
+esm2:
   # Test mode settings
   test_mode: true
   test_limit_proteins: 60    # Download first 60 proteins from SwissProt
@@ -104,7 +104,7 @@ protein_similarity_esm2:
     memory_mb: 4096            # 4GB (vs 8GB production)
 
 # Protein Similarity DIAMOND test overrides
-protein_similarity_diamond:
+diamond:
   # Test mode settings
   test_mode: true
   dataset: "test"              # Use test dataset

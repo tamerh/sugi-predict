@@ -15,13 +15,13 @@ from pathlib import Path
 
 # Load configuration
 # NOTE: config is passed from main Snakefile when integrated, or from module-local config.yaml
-if "protein_similarity_diamond" not in config:
+if "diamond" not in config:
     configfile: "config.yaml"
     # Wrap in module namespace
-    config["protein_similarity_diamond"] = config.copy()
+    config["diamond"] = config.copy()
 
 # Module config shorthand
-mod_config = config.get("protein_similarity_diamond", {})
+mod_config = config.get("diamond", {})
 
 # Get parameters from config
 DATASET = mod_config.get("dataset", "swissprot")
@@ -33,21 +33,21 @@ MIN_IDENTITY = mod_config.get("min_identity", mod_config.get("filter", {}).get("
 BASE_DIR = config.get("base_dir", "out")
 PROJECT_ROOT = config.get("project_root", os.path.dirname(os.path.dirname(os.path.dirname(workflow.snakefile))))
 
-RAW_DIR = Path(BASE_DIR) / "raw_data" / "protein_similarity_diamond"
-PROCESSED_DIR = Path(BASE_DIR) / "data" / "processed" / "protein_similarity_diamond"
+RAW_DIR = Path(BASE_DIR) / "raw_data" / "diamond"
+PROCESSED_DIR = Path(BASE_DIR) / "data" / "processed" / "diamond"
 CHUNKS_DIR = RAW_DIR / "chunks"
 DB_DIR = RAW_DIR / "diamond_db"
 RESULTS_DIR = PROCESSED_DIR / "results"
 MERGED_DIR = PROCESSED_DIR / "merged"
 
 # Module scripts directory
-diamond_module_scripts = os.path.join(PROJECT_ROOT, "modules", "protein_similarity_diamond", "scripts")
+diamond_module_scripts = os.path.join(PROJECT_ROOT, "modules", "diamond", "scripts")
 
 # Logs and state directories (module-specific, avoid namespace collision)
-LOG_DIR = Path(BASE_DIR) / "logs" / "protein_similarity_diamond"
+LOG_DIR = Path(BASE_DIR) / "logs" / "diamond"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-DIAMOND_STATE_DIR = Path(BASE_DIR) / "state" / "protein_similarity_diamond"
+DIAMOND_STATE_DIR = Path(BASE_DIR) / "state" / "diamond"
 DIAMOND_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 # File paths
@@ -80,9 +80,9 @@ def aggregate_diamond_results(wildcards):
     checkpoints.split_fasta_checkpoint.get(**wildcards)
 
     # Use constructed paths from config to avoid global variable pollution
-    diamond_raw_dir = Path(config["base_dir"]) / "raw_data" / "protein_similarity_diamond"
+    diamond_raw_dir = Path(config["base_dir"]) / "raw_data" / "diamond"
     diamond_chunks_dir = diamond_raw_dir / "chunks"
-    diamond_processed_dir = Path(config["base_dir"]) / "data" / "processed" / "protein_similarity_diamond"
+    diamond_processed_dir = Path(config["base_dir"]) / "data" / "processed" / "diamond"
     diamond_results_dir = diamond_processed_dir / "results"
 
     sys.stderr.write(f"[AGGREGATE DIAMOND] Using chunks_dir: {diamond_chunks_dir}\n")
@@ -114,14 +114,14 @@ def aggregate_diamond_results(wildcards):
 # LOCAL RULES (don't submit to cluster)
 # ============================================================================
 
-localrules: protein_similarity_diamond_all, download_uniprot, merge_results
+localrules: diamond_all, download_uniprot, merge_results
 
 
 # ============================================================================
 # RULES
 # ============================================================================
 
-rule protein_similarity_diamond_all:
+rule diamond_all:
     """
     Default target: Filtered TSV output (ready for BioBTree)
     """
@@ -141,7 +141,7 @@ rule download_uniprot:
     params:
         dataset = DATASET,
         output_dir = RAW_DIR,
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_download.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "diamond_download.log")
     log:
         str(LOG_DIR / "download_uniprot.log")
     resources:
@@ -155,7 +155,7 @@ rule download_uniprot:
         if DATASET == "test":
             # For test dataset, copy from test fixtures
             project_root = Path(config.get("project_root", "."))
-            test_fixture = project_root / "tests/fixtures/protein_similarity_diamond/test_proteins.fasta"
+            test_fixture = project_root / "tests/fixtures/diamond/test_proteins.fasta"
 
             if not test_fixture.exists():
                 raise FileNotFoundError(f"Test fixture not found: {test_fixture}")
@@ -197,7 +197,7 @@ checkpoint split_fasta_checkpoint:
         num_chunks = NUM_CHUNKS,
         output_dir = CHUNKS_DIR,
         state_file = DIAMOND_STATE_FILE,
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_split.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "diamond_split.log")
     resources:
         mem_mb = 8000
     log:
@@ -233,7 +233,7 @@ rule create_diamond_db:
         db = f"{DIAMOND_DB}.dmnd"
     params:
         db_name = DIAMOND_DB,
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_createdb.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "diamond_createdb.log")
     threads:
         mod_config.get("diamond", {}).get("threads", 4)
     resources:
@@ -269,7 +269,7 @@ rule diamond_search:
         evalue = mod_config.get("diamond", {}).get("evalue", 0.001),
         sensitivity = mod_config.get("diamond", {}).get("sensitivity", "sensitive"),
         outfmt = mod_config.get("diamond", {}).get("outfmt", 6),
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_search_{chunk}.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "diamond_search_{chunk}.log")
     threads: 4
     resources:
         mem_mb = 32000
@@ -304,7 +304,7 @@ rule merge_results:
     output:
         MERGED_RESULTS
     params:
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_merge.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "diamond_merge.log")
     resources:
         mem_mb = 28000
     log:
@@ -332,7 +332,7 @@ rule filter_top_k:
     params:
         k = TOP_K,
         min_identity = MIN_IDENTITY,
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_filter.log")
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "diamond_filter.log")
     resources:
         mem_mb = 64000
     log:

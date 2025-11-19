@@ -27,30 +27,30 @@ Download UniProt → Split FASTA → Generate ESM-2 Embeddings (GPU) → H5 File
 ### Test Run (60 proteins)
 ```bash
 # Process small test dataset
-./bioyoda.sh run protein_similarity_esm2 --config config/test_config.yaml --local
+./bioyoda.sh run esm2 --config config/test_config.yaml --local
 
 # Result: 3 chunk files (20 proteins each)
-# test_out/data/processed/protein_similarity_esm2/embeddings/chunk_*.index
+# test_out/data/processed/esm2/embeddings/chunk_*.index
 ```
 
 ### Production Run - SwissProt (570K proteins)
 ```bash
 # Process SwissProt proteins with GPU acceleration
-./bioyoda.sh run protein_similarity_esm2 --cluster --jobs 50 --config config/config_gpu.yaml
+./bioyoda.sh run esm2 --cluster --jobs 50 --config config/config_gpu.yaml
 
 # Result: ~29 chunk files ready for Qdrant insertion
-# out/data/processed/protein_similarity_esm2/embeddings/chunk_*.index
+# out/data/processed/esm2/embeddings/chunk_*.index
 ```
 
 ### Production Run - TrEMBL (250M proteins)
 ```bash
 # Configure for TrEMBL in config.yaml:
-protein_similarity_esm2:
+esm2:
   dataset: "trembl"
   proteins_per_chunk: 100000  # Larger chunks for efficiency
 
 # Process with many parallel GPU jobs
-./bioyoda.sh run protein_similarity_esm2 --cluster --jobs 200 --config config/config_gpu.yaml
+./bioyoda.sh run esm2 --cluster --jobs 200 --config config/config_gpu.yaml
 
 # Result: ~2500 chunk files
 ```
@@ -64,7 +64,7 @@ protein_similarity_esm2:
 
 ```bash
 # Output location
-out/raw_data/protein_similarity_esm2/
+out/raw_data/esm2/
 └── uniprot_swissprot.fasta  (or uniprot_trembl.fasta)
 ```
 
@@ -75,7 +75,7 @@ out/raw_data/protein_similarity_esm2/
 
 **Output**:
 ```bash
-out/raw_data/protein_similarity_esm2/chunks/
+out/raw_data/esm2/chunks/
 ├── chunk_001.fasta
 ├── chunk_002.fasta
 ├── ...
@@ -98,7 +98,7 @@ out/raw_data/protein_similarity_esm2/chunks/
 
 **Output**:
 ```bash
-out/data/processed/protein_similarity_esm2/embeddings/
+out/data/processed/esm2/embeddings/
 ├── chunk_001.h5    # HDF5 with embeddings + IDs
 ├── chunk_002.h5
 └── ...
@@ -111,7 +111,7 @@ out/data/processed/protein_similarity_esm2/embeddings/
 
 **Output**:
 ```bash
-out/data/processed/protein_similarity_esm2/embeddings/
+out/data/processed/esm2/embeddings/
 ├── chunk_001.index  # FAISS index ← Insert to Qdrant
 ├── chunk_001.json   # Metadata with protein IDs
 ├── chunk_002.index
@@ -123,7 +123,7 @@ out/data/processed/protein_similarity_esm2/embeddings/
 
 ### Test Mode (`config/test_overrides.yaml`)
 ```yaml
-protein_similarity_esm2:
+esm2:
   test_mode: true
   dataset: "test"           # Uses local test file (60 proteins)
   test_num_chunks: 3        # Create 3 chunks for testing
@@ -132,7 +132,7 @@ protein_similarity_esm2:
 
 ### SwissProt Production (`config/config.yaml`)
 ```yaml
-protein_similarity_esm2:
+esm2:
   dataset: "swissprot"           # 570K proteins
   proteins_per_chunk: 20000      # 20K proteins per chunk
   batch_size: 8                  # GPU batch size
@@ -145,7 +145,7 @@ protein_similarity_esm2:
 
 ### TrEMBL Production (Large Scale)
 ```yaml
-protein_similarity_esm2:
+esm2:
   dataset: "trembl"              # 250M proteins
   proteins_per_chunk: 100000     # Larger chunks for efficiency
   batch_size: 16                 # Larger GPU batches
@@ -155,7 +155,7 @@ protein_similarity_esm2:
 
 ### Resource Settings
 ```yaml
-protein_similarity_esm2:
+esm2:
   # Download
   download_memory_mb: 8192       # 8GB
   download_runtime: 120          # 2 hours
@@ -186,7 +186,7 @@ BioYoda supports all ESM-2 models from Meta AI:
 
 **Configure in config.yaml**:
 ```yaml
-protein_similarity_esm2:
+esm2:
   model_name: "esm2_t33_650M_UR50D"  # Default: 650M balanced model
   vector_dimension: 1280              # Must match model
   repr_layer: 33                      # Must match model
@@ -202,7 +202,7 @@ curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
   -d '{
     "query": "Q6GZX4",
-    "collections": ["protein_similarity_esm2"],
+    "collections": ["esm2"],
     "limit": 10
   }'
 ```
@@ -267,14 +267,14 @@ Each protein in the FAISS index has associated metadata:
 
 ```
 out/
-├── raw_data/protein_similarity_esm2/
+├── raw_data/esm2/
 │   ├── uniprot_swissprot.fasta        # Downloaded FASTA
 │   └── chunks/
 │       ├── chunk_001.fasta            # Split chunks
 │       ├── chunk_002.fasta
 │       └── .split_complete
 │
-└── data/processed/protein_similarity_esm2/
+└── data/processed/esm2/
     └── embeddings/
         ├── chunk_001.h5               # ESM-2 embeddings (H5)
         ├── chunk_001.index            # FAISS index ← Insert to Qdrant
@@ -290,7 +290,7 @@ out/
 ### Validate Protein Search
 ```bash
 # Run validation tests (requires Qdrant running)
-python tests/fixtures/protein_similarity_esm2/validate_protein_search.py
+python tests/fixtures/esm2/validate_protein_search.py
 
 # Tests:
 # 1. Collection configuration (1280-dim, Cosine)
@@ -314,18 +314,18 @@ Q6GZX2
 ### Example 1: Standard SwissProt (GPU)
 ```bash
 # 1. Process proteins to chunk files (parallel GPU jobs)
-./bioyoda.sh run protein_similarity_esm2 --cluster --jobs 50 --config config/config_gpu.yaml
+./bioyoda.sh run esm2 --cluster --jobs 50 --config config/config_gpu.yaml
 
 # 2. Start Qdrant server
 ./bioyoda.sh qdrant start
 
 # 3. Insert chunk files to Qdrant
-./bioyoda.sh qdrant insert protein_similarity_esm2
+./bioyoda.sh qdrant insert esm2
 
 # 4. Test search
 curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "Q6GZX4", "collections": ["protein_similarity_esm2"], "limit": 10}'
+  -d '{"query": "Q6GZX4", "collections": ["esm2"], "limit": 10}'
 ```
 
 ### Example 2: TrEMBL (Large Scale)
@@ -336,10 +336,10 @@ curl -X POST http://localhost:8000/search \
 #   proteins_per_chunk: 100000
 
 # 2. Process with many parallel GPU jobs
-./bioyoda.sh run protein_similarity_esm2 --cluster --jobs 200 --config config/config_gpu.yaml
+./bioyoda.sh run esm2 --cluster --jobs 200 --config config/config_gpu.yaml
 
 # 3. Insert to Qdrant (can be done incrementally)
-./bioyoda.sh qdrant insert protein_similarity_esm2 --cluster --jobs 50
+./bioyoda.sh qdrant insert esm2 --cluster --jobs 50
 ```
 
 ## Troubleshooting
@@ -347,23 +347,23 @@ curl -X POST http://localhost:8000/search \
 ### GPU Memory Issues
 ```bash
 # Reduce batch size in config
-protein_similarity_esm2:
+esm2:
   batch_size: 4  # Smaller batches for GPUs with less memory
 ```
 
 ### Check Processing Status
 ```bash
 # Count generated chunks
-ls -lh out/data/processed/protein_similarity_esm2/embeddings/chunk_*.index | wc -l
+ls -lh out/data/processed/esm2/embeddings/chunk_*.index | wc -l
 
 # Check chunk files exist
-ls -lh out/raw_data/protein_similarity_esm2/chunks/
+ls -lh out/raw_data/esm2/chunks/
 ```
 
 ### Check Embeddings
 ```bash
 # Inspect H5 file
-python -c "import h5py; f=h5py.File('out/data/processed/protein_similarity_esm2/embeddings/chunk_001.h5'); print(f['embeddings'].shape, f['ids'][:][:5])"
+python -c "import h5py; f=h5py.File('out/data/processed/esm2/embeddings/chunk_001.h5'); print(f['embeddings'].shape, f['ids'][:][:5])"
 
 # Expected output:
 # (20, 1280) [b'sp|Q6GZX4|001R_FRG3G' b'sp|Q6GZX3|002L_FRG3G' ...]
@@ -372,8 +372,8 @@ python -c "import h5py; f=h5py.File('out/data/processed/protein_similarity_esm2/
 ### Failed Chunks
 ```bash
 # Rerun specific chunk
-snakemake --snakefile modules/protein_similarity_esm2/Snakefile \
-  out/data/processed/protein_similarity_esm2/embeddings/chunk_005.index \
+snakemake --snakefile modules/esm2/Snakefile \
+  out/data/processed/esm2/embeddings/chunk_005.index \
   --cores 1
 ```
 

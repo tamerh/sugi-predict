@@ -139,7 +139,7 @@ class BioYodaSearchEngine:
 
         Args:
             protein_id: UniProt accession (e.g., "Q6GZX4")
-            collection: Collection name (must be protein_similarity_esm2)
+            collection: Collection name (must be esm2)
 
         Returns:
             Vector embedding as list of floats, or None if protein not found
@@ -187,7 +187,7 @@ class BioYodaSearchEngine:
         Search a single collection using the correct embedding model
 
         Args:
-            query: Search query (text for text collections, UniProt accession for protein_similarity_esm2)
+            query: Search query (text for text collections, UniProt accession for esm2)
             collection: Collection name
             limit: Maximum number of results
             filters: Optional metadata filters
@@ -200,7 +200,7 @@ class BioYodaSearchEngine:
         """
         try:
             # Special handling for protein similarity search
-            if collection == "protein_similarity_esm2":
+            if collection == "esm2":
                 # For proteins, query is a protein ID - look up its vector
                 query_vector = self.get_protein_vector(query, collection)
                 if query_vector is None:

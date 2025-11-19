@@ -30,7 +30,7 @@ config["merged_dir"] = os.path.join(BASE_DIR, "data", "merged")
 config["project_root"] = PROJECT_ROOT  # Make available to other Snakefiles
 
 # Local rules (don't submit to cluster)
-localrules: all, pubmed, clinical_trials, patents, protein_similarity_esm2, protein_similarity_diamond
+localrules: all, pubmed, clinical_trials, patents, esm2, diamond
 
 # Create logging directory
 os.makedirs(config["logs_dir"], exist_ok=True)
@@ -59,8 +59,8 @@ def estimate_mb_required(file_path, size_factor=8000, min_mb=8000, max_mb=30000)
 include: "pubmed/Snakefile"
 include: "clinical_trials/Snakefile"
 include: "patents/Snakefile"
-include: "protein_similarity_esm2/Snakefile"
-include: "protein_similarity_diamond/Snakefile"
+include: "esm2/Snakefile"
+include: "diamond/Snakefile"
 
 # Top-level target: build all data modules
 rule all:
@@ -68,8 +68,8 @@ rule all:
         rules.pubmed_all.input,
         rules.clinical_trials_all.input,
         rules.patents_all.input,
-        rules.protein_similarity_esm2_all.input,
-        rules.protein_similarity_diamond_all.input
+        rules.esm2_all.input,
+        rules.diamond_all.input
 
 # Individual module targets (data processing only)
 # Note: Merge is optional - can be done separately if needed
@@ -85,13 +85,13 @@ rule patents:
     input:
         rules.patents_all.input
 
-rule protein_similarity_esm2:
+rule esm2:
     input:
-        rules.protein_similarity_esm2_all.input
+        rules.esm2_all.input
 
-rule protein_similarity_diamond:
+rule diamond:
     input:
-        rules.protein_similarity_diamond_all.input
+        rules.diamond_all.input
 
 ##############################################################################
 # Pipeline Completion Handlers
