@@ -7,7 +7,7 @@ This workflow:
 3. Creates DIAMOND database
 4. Runs all-vs-all similarity search on each chunk (parallel)
 5. Merges results from all chunks
-6. Filters to keep top-K per protein
+6. Filters to keep top-K per protein (TSV output for BioBTree)
 """
 
 import os
@@ -43,7 +43,10 @@ MERGED_DIR = PROCESSED_DIR / "merged"
 # Module scripts directory
 diamond_module_scripts = os.path.join(PROJECT_ROOT, "modules", "protein_similarity_diamond", "scripts")
 
-# Logs directory (module-specific, avoid namespace collision)
+# Logs and state directories (module-specific, avoid namespace collision)
+LOG_DIR = Path(BASE_DIR) / "logs" / "protein_similarity_diamond"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 DIAMOND_STATE_DIR = Path(BASE_DIR) / "state" / "protein_similarity_diamond"
 DIAMOND_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -57,9 +60,6 @@ else:
 
 MERGED_RESULTS = MERGED_DIR / "merged_results.tsv"
 FILTERED_RESULTS = MERGED_DIR / f"filtered_top{TOP_K}.tsv"
-
-# BioBTree JSON output
-BIOBTREE_JSON = PROCESSED_DIR / "protein_similarities_diamond.json"
 
 # State file to track which chunks have been processed (module-specific namespace)
 DIAMOND_STATE_FILE = DIAMOND_STATE_DIR / "processed_chunks.json"
@@ -114,7 +114,7 @@ def aggregate_diamond_results(wildcards):
 # LOCAL RULES (don't submit to cluster)
 # ============================================================================
 
-localrules: protein_similarity_diamond_all, download_uniprot, merge_results, convert_to_biobtree_json
+localrules: protein_similarity_diamond_all, download_uniprot, merge_results
 
 
 # ============================================================================
@@ -123,10 +123,10 @@ localrules: protein_similarity_diamond_all, download_uniprot, merge_results, con
 
 rule protein_similarity_diamond_all:
     """
-    Default target: BioBTree JSON output
+    Default target: Filtered TSV output (ready for BioBTree)
     """
     input:
-        BIOBTREE_JSON
+        FILTERED_RESULTS
 
 
 rule download_uniprot:
@@ -143,7 +143,7 @@ rule download_uniprot:
         output_dir = RAW_DIR,
         LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_download.log")
     log:
-        str(DIAMOND_STATE_DIR / "download_uniprot.log")
+        str(LOG_DIR / "download_uniprot.log")
     resources:
         mem_mb = 8000
 
@@ -201,7 +201,7 @@ checkpoint split_fasta_checkpoint:
     resources:
         mem_mb = 8000
     log:
-        str(DIAMOND_STATE_DIR / "split_fasta.log")
+        str(LOG_DIR / "split_fasta.log")
     conda:
         "diamond"
     shell:
@@ -239,7 +239,7 @@ rule create_diamond_db:
     resources:
         mem_mb = 8000
     log:
-        str(DIAMOND_STATE_DIR / "create_diamond_db.log")
+        str(LOG_DIR / "create_diamond_db.log")
     conda:
         "diamond"
     shell:
@@ -274,7 +274,7 @@ rule diamond_search:
     resources:
         mem_mb = 32000
     log:
-        str(DIAMOND_STATE_DIR / "diamond_search_chunk_{chunk}.log")
+        str(LOG_DIR / "diamond_search_chunk_{chunk}.log")
     conda:
         "diamond"
     shell:
@@ -308,7 +308,7 @@ rule merge_results:
     resources:
         mem_mb = 28000
     log:
-        str(DIAMOND_STATE_DIR / "merge_results.log")
+        str(LOG_DIR / "merge_results.log")
     shell:
         """
         echo "Merging chunk results..." > {log}
@@ -336,7 +336,7 @@ rule filter_top_k:
     resources:
         mem_mb = 64000
     log:
-        str(DIAMOND_STATE_DIR / "filter_top_k.log")
+        str(LOG_DIR / "filter_top_k.log")
     conda:
         "diamond"
     shell:
@@ -346,31 +346,6 @@ rule filter_top_k:
             {{output}} \
             --k {{params.k}} \
             --min-identity {{params.min_identity}} \
-            2>&1 | tee {{log}}
-        """
-    
-
-rule convert_to_biobtree_json:
-    """
-    Convert filtered TSV results to BioBTree JSON format
-    """
-    input:
-        tsv = FILTERED_RESULTS
-    output:
-        json = BIOBTREE_JSON
-    params:
-        dataset = DATASET,
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "protein_similarity_diamond_convert.log")
-    log:
-        str(DIAMOND_STATE_DIR / "convert_to_biobtree_json.log")
-    conda:
-        "diamond"
-    shell:
-        f"""
-        python {diamond_module_scripts}/convert_to_biobtree_json.py \
-            {{input.tsv}} \
-            {{output.json}} \
-            --dataset {{params.dataset}} \
             2>&1 | tee {{log}}
         """
 

@@ -22,7 +22,7 @@ Default port is 9292. Lets start
 
 nohup python3 modules/patents/scripts/process_uspto_json.py       --input-dir /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto       --filter-ids test_out/raw_data/patents/surechembl/2025-10-01/us_patent_ids.txt       --output /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto/uspto_historical.parquet  > /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/logs/patents/process_uspto_json_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 
-nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_organisms2 generate > logs/generatelatest.log 2>&1  &
+nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_organisms generate > logs/generatelatest.log 2>&1  &
 
 nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_gen_test generate > logs/generatesizetest.log 2>&1  &
 
@@ -206,7 +206,7 @@ qstat -f
 
 npm config set prefix ~/.npm-global
 
-qlogin -pe smp 2 -q scc -l h_vmem=32G -l h_rt=4:00:00
+qlogin -pe smp 2 -q scc -l h_vmem=16G -l h_rt=12:00:00
 
 
 qlogin -pe smp 4 -q scc -l h_vmem=64G -l h_rt=168:00:00

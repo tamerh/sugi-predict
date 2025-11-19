@@ -7,10 +7,10 @@ Processes UniProt protein sequences into sequence-based similarity scores using 
 This module performs all-vs-all protein sequence similarity searches using DIAMOND:
 - **Source**: UniProt (SwissProt: 570K+ proteins, TrEMBL: 250M+ proteins)
 - **Method**: DIAMOND BLASTP (10,000x faster than BLAST)
-- **Output**: BioBTree JSON format for identifier mapping
+- **Output**: Filtered TSV format for BioBTree identifier mapping
 - **Scale**: Configurable chunking for distributed processing
 
-**Note**: This module creates JSON output **only** for BioBTree. It does not use Qdrant (no vector embeddings, just sequence alignment scores).
+**Note**: This module creates TSV output for BioBTree. It does not use Qdrant (no vector embeddings, just sequence alignment scores).
 
 ## Architecture
 
@@ -19,18 +19,18 @@ Download UniProt → Split FASTA → Create DIAMOND DB
                                          ↓
                      Parallel DIAMOND Search (all-vs-all per chunk)
                                          ↓
-                     Merge Results → Filter Top-K → BioBTree JSON
+                     Merge Results → Filter Top-K → TSV Output (for BioBTree)
 ```
 
 ## Quick Start
 
-### Test Run (60 proteins)
+### Test Run (20 globin proteins)
 ```bash
 # Process small test dataset
 ./bioyoda.sh run protein_similarity_diamond --test --local
 
-# Result: BioBTree JSON with similarity scores
-# test_out/data/processed/protein_similarity_diamond/protein_similarities_diamond.json
+# Result: Filtered TSV ready for BioBTree
+# test_out/data/processed/protein_similarity_diamond/merged/filtered_top10.tsv
 ```
 
 ### Production Run - SwissProt (570K proteins)
@@ -38,8 +38,8 @@ Download UniProt → Split FASTA → Create DIAMOND DB
 # Process SwissProt proteins with parallel DIAMOND jobs
 ./bioyoda.sh run protein_similarity_diamond --cluster --jobs 100
 
-# Result: BioBTree JSON ready for identifier mapping
-# out/data/processed/protein_similarity_diamond/protein_similarities_diamond.json
+# Result: Filtered TSV ready for BioBTree identifier mapping
+# out/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
 ```
 
 ### Production Run - TrEMBL (250M proteins)
@@ -122,26 +122,16 @@ out/data/processed/protein_similarity_diamond/merged/
 └── merged_results.tsv  # All similarity pairs
 ```
 
-### 6. Filter Top-K (`filter_top_k.py`)
+### 6. Filter Top-K (`filter_top_k.py`) - FINAL OUTPUT
 - Keeps top-K hits per query protein
 - Filters by minimum identity threshold
 - Reduces data size dramatically
+- **TSV output ready for BioBTree parsing**
 
 **Output**:
 ```bash
 out/data/processed/protein_similarity_diamond/merged/
-└── filtered_top100.tsv  # Top-K per protein
-```
-
-### 7. Convert to BioBTree JSON (`convert_to_biobtree_json.py`)
-- Converts TSV to BioBTree JSON format
-- Extracts UniProt accessions from IDs
-- Groups by query protein
-
-**Output**:
-```bash
-out/data/processed/protein_similarity_diamond/
-└── protein_similarities_diamond.json  # BioBTree format
+└── filtered_top100.tsv  # Top-K per protein (BioBTree-ready)
 ```
 
 ## Configuration
@@ -240,56 +230,51 @@ protein_similarity_diamond:
     sensitivity: "sensitive"  # Default: balanced mode
 ```
 
-## BioBTree JSON Format
+## BioBTree TSV Format
 
-Output format for BioBTree identifier mapping:
+Output format for BioBTree identifier mapping (TSV with tab-separated columns):
 
-```json
-{
-  "protein_similarities": [
-    {
-      "query_id": "Q6GZX4",
-      "dataset": "swissprot",
-      "num_similar": 100,
-      "similar_proteins": [
-        {
-          "target_id": "Q6GZX3",
-          "identity": 98.5,
-          "alignment_length": 256,
-          "evalue": 1e-180,
-          "bitscore": 512.3
-        },
-        {
-          "target_id": "Q197F8",
-          "identity": 45.2,
-          "alignment_length": 198,
-          "evalue": 1e-45,
-          "bitscore": 156.7
-        }
-      ]
-    }
-  ]
-}
+```tsv
+query_id	target_id	identity	alignment_length	mismatches	gap_opens	q_start	q_end	s_start	s_end	evalue	bitscore
+sp|Q6GZX4|...	sp|Q6GZX3|...	98.5	256	3	1	1	256	1	256	1e-180	512.3
+sp|Q6GZX4|...	sp|Q197F8|...	45.2	198	95	5	12	205	8	201	1e-45	156.7
+sp|Q6GZX4|...	sp|P12345|...	42.1	187	89	3	15	198	10	192	3e-42	148.9
 ```
+
+**TSV Columns** (DIAMOND BLASTP outfmt 6):
+1. `query_id` - Query protein ID (full sp|accession|name format)
+2. `target_id` - Target protein ID
+3. `identity` - Percent sequence identity
+4. `alignment_length` - Length of alignment
+5. `mismatches` - Number of mismatches
+6. `gap_opens` - Number of gap openings
+7. `q_start` - Query alignment start
+8. `q_end` - Query alignment end
+9. `s_start` - Subject alignment start
+10. `s_end` - Subject alignment end
+11. `evalue` - Expectation value
+12. `bitscore` - Bit score
+
+BioBTree can parse this TSV format directly for identifier mapping and graph queries.
 
 ## Performance
 
-### Test Mode (60 proteins, 3 chunks)
+### Test Mode (20 globin proteins, 3 chunks)
 - Runtime: ~2 minutes (CPU)
 - Memory: 4GB per chunk
-- Output: ~600 similarity pairs
+- Output: ~184 similarity pairs (filtered top-10)
 
 ### SwissProt Production (570K proteins, 100 chunks)
 - **CPU**: ~12-24 hours (wall time with 100 parallel jobs)
 - Memory: 32GB per chunk
 - **Parallel**: 100 jobs × 4 cores each
-- Storage: ~10GB merged TSV → ~500MB filtered JSON
+- Storage: ~10GB merged TSV → ~500MB filtered TSV
 
 ### TrEMBL Production (250M proteins, 1000 chunks)
 - **CPU**: ~5-7 days (wall time with 500 parallel jobs)
 - Memory: 32GB per chunk
 - **Parallel**: 500 jobs × 4 cores each
-- Storage: ~500GB merged TSV → ~5GB filtered JSON
+- Storage: ~500GB merged TSV → ~5GB filtered TSV
 
 **DIAMOND Speedup**:
 - DIAMOND is 10,000-20,000x faster than BLAST
@@ -314,21 +299,21 @@ out/
     │   ├── chunk_001.tsv              # Per-chunk results
     │   ├── chunk_002.tsv
     │   └── ...
-    ├── merged/
-    │   ├── merged_results.tsv         # All results merged
-    │   └── filtered_top100.tsv        # Top-K filtered
-    └── protein_similarities_diamond.json  # BioBTree JSON
+    └── merged/
+        ├── merged_results.tsv         # All results merged
+        └── filtered_top100.tsv        # Top-K filtered (BioBTree-ready)
 ```
 
 ## Workflow Examples
 
 ### Example 1: Standard SwissProt
 ```bash
-# 1. Process proteins to BioBTree JSON (parallel CPU jobs)
+# 1. Process proteins to filtered TSV (parallel CPU jobs)
 ./bioyoda.sh run protein_similarity_diamond --cluster --jobs 100
 
 # 2. Use BioBTree for identifier mapping (external tool)
-biobtree insert --input out/data/processed/protein_similarity_diamond/protein_similarities_diamond.json
+# BioBTree can parse the TSV directly
+biobtree insert --input out/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
 
 # 3. Query BioBTree for protein relationships
 biobtree query --protein Q6GZX4 --type similarity
@@ -345,8 +330,8 @@ biobtree query --protein Q6GZX4 --type similarity
 # 2. Process with many parallel CPU jobs
 ./bioyoda.sh run protein_similarity_diamond --cluster --jobs 500
 
-# 3. BioBTree integration
-biobtree insert --input out/data/processed/protein_similarity_diamond/protein_similarities_diamond.json
+# 3. BioBTree integration (TSV input)
+biobtree insert --input out/data/processed/protein_similarity_diamond/merged/filtered_top50.tsv
 ```
 
 ## Troubleshooting

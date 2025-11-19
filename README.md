@@ -26,7 +26,7 @@ BioYoda is a Snakemake-based pipeline for processing biomedical literature, clin
     - 10,000x faster than traditional BLAST alignment
     - All-vs-all BLASTP search across UniProt (SwissProt and TrEMBL)
     - Configurable Top-K filtering for efficient storage
-    - BioBTree JSON format for identifier mapping and graph queries
+    - TSV output for BioBTree identifier mapping and graph queries
     - Parallel CPU processing with distributed chunking
 - **Incremental Updates**: Smart tracking system for efficient daily updates (PubMed supported)
 - **Vector Database**: Qdrant server with independent insertion workflow and upsert support
