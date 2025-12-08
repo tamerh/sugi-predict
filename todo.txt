@@ -1,10 +1,33 @@
+eklenebilecek datasetler...
+PharmGKB
+
+
+text search olayı ontologiler üzerinden olmalı.....
+
+
+Tip: Working with HTML/CSS? Add the frontend-design plugin:
+/plugin marketplace add anthropics/claude-code
+/plugin install frontend-design@claude-code-plugins
+
+data update needed for the patent....tüm biyoda updatelerini çalıştırmalıyım...surechembl yeni release çıkartmış....
+
+LRG_321 - a Locus Reference Genomic entry (not indexed as primary entry)
+
+we should use mostly the obo format....
+
+{
+    "category": "genomics",
+    "name": "CRISPR Cas9 to GO Terms (Bacteria)",
+    "query": ">>ensembl[ensembl.genome==\"campylobacter_coli_gca_001717605\"]>>go[go.type==\"biological_process\"]",
+    "why": "Functional annotation of CRISPR systems in bacteria",
+    "should_pass": [
+    "cas9"
+    ],
+    "should_fail": []
+},
+
 biobtree next database pubchem, pubchem compounds pubchem substances. 
-dbsnp
-rhea
 enzymes....
-
-
-
 
 yine bu parent child da belki ^2 koyulabilir yada otamtik traversal gibi bişey olabilir.
 aslında yine bu smile veya inchi ilede xref eklemek çok mantıklı chemical dataları hmdb patent chebi chembl 
@@ -19,7 +42,6 @@ eğer bir entryde xref yoksa attributelar save edilmiyor ve empty true geliyor..
 for uniparc and uniref species level....
 
 proper chebi database integration in biobtree
-
 
 reactome  to gene empty results.....
 

@@ -1,0 +1,113 @@
+# Test queries and expected results for Drug Discovery Agent
+# Response times measured on scc2 BioBTree server (2024-12-08)
+# Note: Times vary based on cache state - first query after restart is slower
+
+queries:
+  - q: "What drugs target EGFR?"
+    chain: "EGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "150 drugs including erlotinib, gefitinib"
+    response_time_ms: 10
+    status: ok
+
+  - q: "Find drugs targeting BRAF"
+    chain: "BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "150 drugs including vemurafenib, dabrafenib"
+    response_time_ms: 10
+    status: ok
+
+  - q: "What drugs target HER2?"
+    chain: "HER2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "150 drugs including trastuzumab, pertuzumab"
+    response_time_ms: 10
+    status: ok
+
+  - q: "What compounds target ABL1?"
+    chain: "ABL1 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "imatinib, dasatinib, nilotinib"
+    response_time_ms: 10
+    status: ok
+
+  - q: "What drugs target PIK3CA?"
+    chain: "PIK3CA >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "alpelisib, copanlisib"
+    response_time_ms: 10
+    status: ok
+
+  - q: "Show me JAK2 inhibitors"
+    chain: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "ruxolitinib, fedratinib"
+    response_time_ms: 10
+    status: ok
+
+  - q: "Find therapeutic compounds for MTOR"
+    chain: "MTOR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "everolimus, temsirolimus"
+    response_time_ms: 10
+    status: ok
+
+  - q: "Find VEGFR inhibitors"
+    chain: "VEGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "150 drugs"
+    response_time_ms: 10
+    status: ok
+
+  - q: "Find drugs for EGFR, KRAS and BRAF"
+    chain: "EGFR,KRAS,BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "450 drugs across 3 targets"
+    response_time_ms: 20
+    status: ok
+
+  - q: "What drugs target FAKEGENE123?"
+    chain: "FAKEGENE123 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+    expected: "0 drugs (gene not found)"
+    response_time_ms: 10
+    status: ok
+
+# Filtered query examples
+# Performance note: pChembl filters are fast (~300ms), phase filters are slow (~22s)
+filtered_queries:
+  - q: "Find potent BRAF inhibitors"
+    chain: "BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.pChembl>7.0] >> chembl_molecule"
+    expected: "150 potent compounds"
+    response_time_ms: 318
+    status: ok
+
+  - q: "Find potent JAK2 inhibitors"
+    chain: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.pChembl>7.0] >> chembl_molecule"
+    expected: "150 compounds"
+    response_time_ms: 304
+    status: ok
+
+  - q: "Find JAK2 drugs in advanced clinical trials"
+    chain: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>2]"
+    expected: "109 compounds (Phase 3+)"
+    response_time_ms: 21862
+    status: ok
+    note: "Phase filters are slow (~22s)"
+
+# Logical operator examples
+logical_operator_queries:
+  - q: "Find JAK2 Phase 3 OR approved drugs"
+    chain: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==3 || chembl.molecule.highestDevelopmentPhase==4]"
+    expected: "109 compounds"
+    response_time_ms: 24385
+    status: ok
+
+  - q: "Find JAK2 clinical Phase 1-3 only"
+    chain: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>0 && chembl.molecule.highestDevelopmentPhase<4]"
+    expected: "150 compounds"
+    response_time_ms: 22952
+    status: ok
+
+issues:
+  - q: "Find inhibitors for BCR-ABL"
+    chain: "BCR-ABL >> ensembl >> uniprot >> ..."
+    issue: "Fusion gene not found in ensembl"
+    workaround: "Use ABL1 or BCR separately"
+    date: "2024-12-08"
+
+  - q: "Find approved EGFR drugs (phase==4)"
+    chain: "EGFR >> ensembl >> ... >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==4]"
+    issue: "DEADLINE_EXCEEDED - query times out"
+    workaround: "Use phase>3 instead of phase==4, or run without filter"
+    date: "2024-12-08"

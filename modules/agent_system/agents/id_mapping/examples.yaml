@@ -1,0 +1,35 @@
+# Test queries and expected results for ID Mapping Agent
+# Response times measured on scc2 BioBTree server (2024-12-08)
+
+queries:
+  - q: "What is the UniProt ID for KRAS?"
+    chain: "KRAS >> ensembl >> uniprot"
+    expected: "P01116"
+    response_time_ms: 10
+    status: ok
+
+  - q: "Map TP53 and BRCA1 to UniProt"
+    chain: "TP53,BRCA1 >> ensembl >> uniprot"
+    expected: "P04637, P38398"
+    response_time_ms: 10
+    status: ok
+
+  - q: "What pathways is TP53 involved in?"
+    chain: "TP53 >> ensembl >> uniprot >> reactome"
+    expected: "82 pathways including R-HSA-6803211"
+    response_time_ms: 10
+    status: ok
+
+  - q: "What GO terms are associated with BRCA1?"
+    chain: "BRCA1 >> ensembl >> uniprot >> go"
+    expected: "GO:0046600, GO:0070531, etc."
+    response_time_ms: 10
+    status: ok
+
+  - q: "What gene encodes P04637?"
+    chain: "P04637 >> uniprot >> ensembl"
+    expected: "ENSG00000141510 (TP53)"
+    response_time_ms: 10
+    status: ok
+
+issues: []

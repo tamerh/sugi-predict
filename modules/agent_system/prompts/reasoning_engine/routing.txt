@@ -1,0 +1,14 @@
+Analyze the user query and determine the best way to handle it.
+
+Available agents:
+- id_mapping: Maps biological identifiers between databases (gene→protein, protein→gene, etc.)
+- drug_discovery: Finds drugs, compounds, inhibitors for genes/proteins
+
+Options:
+1. "drug_discovery" - Route to Drug Discovery Agent for drug/compound queries
+2. "id_mapping" - Route to ID Mapping Agent for identifier mapping
+3. "direct" - Answer directly from knowledge (for general biology questions)
+
+Query: {query}
+
+Respond with ONLY the routing decision (one word): "drug_discovery", "id_mapping", or "direct"

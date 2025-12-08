@@ -42,6 +42,15 @@ dependencies:
   - pyyaml
   - ruamel.yaml  # YAML with comment preservation (for snapshot feature)
 
+  # Agent system dependencies
+  - grpcio  # gRPC for BioBTree integration
+  - protobuf  # Protocol Buffers
+  - httpx  # Async HTTP client
+  - jinja2  # Template engine for prompts
+  - redis-py  # Redis caching
+  - structlog  # Structured logging
+  - python-dotenv  # Environment variables
+
   - pip
   - pip:
     - snakemake-executor-plugin-cluster-generic  # For SGE/cluster execution
@@ -53,3 +62,5 @@ dependencies:
     - tiktoken>=0.5.0    # Token counting for cost estimation
     # Protein similarity modules
     - fair-esm  # Meta AI's ESM-2 protein language model
+    # Agent system (gRPC tools not available via conda)
+    - grpcio-tools>=1.60.0  # gRPC Python code generation

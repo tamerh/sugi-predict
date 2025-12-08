@@ -1,0 +1,36 @@
+# BioBTree chain templates for ID Mapping Agent
+
+gene_to_protein:
+  description: "Map gene symbol to UniProt protein ID"
+  chain: "{gene} >> ensembl >> uniprot"
+  example: "TP53 >> ensembl >> uniprot"
+
+protein_to_gene:
+  description: "Map UniProt ID to Ensembl gene"
+  chain: "{protein} >> uniprot >> ensembl"
+  example: "P04637 >> uniprot >> ensembl"
+
+gene_to_pathways:
+  description: "Find Reactome pathways for a gene"
+  chain: "{gene} >> ensembl >> uniprot >> reactome"
+  example: "TP53 >> ensembl >> uniprot >> reactome"
+
+gene_to_go:
+  description: "Find GO terms for a gene"
+  chain: "{gene} >> ensembl >> uniprot >> go"
+  example: "BRCA1 >> ensembl >> uniprot >> go"
+
+protein_to_pathways:
+  description: "Find pathways for a protein"
+  chain: "{protein} >> uniprot >> reactome"
+  example: "P04637 >> uniprot >> reactome"
+
+multiple_genes:
+  description: "Map multiple genes at once"
+  chain: "{gene1},{gene2},{gene3} >> ensembl >> uniprot"
+  example: "TP53,BRCA1,EGFR >> ensembl >> uniprot"
+
+variant_to_gene:
+  description: "Map dbSNP variant to gene"
+  chain: "{rsid} >> dbsnp >> ensembl"
+  example: "rs121912651 >> dbsnp >> ensembl"

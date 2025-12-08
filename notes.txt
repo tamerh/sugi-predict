@@ -17,24 +17,6 @@ so produce them seperately. Also for general improvements produce another docume
 with this processed data just run the biobtree in the background ./biobtree --out-dir out_model_organisms web. 
 Default port is 9292. Lets start
 
-
-
-
-nohup python3 modules/patents/scripts/process_uspto_json.py       --input-dir /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto       --filter-ids test_out/raw_data/patents/surechembl/2025-10-01/us_patent_ids.txt       --output /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto/uspto_historical.parquet  > /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/logs/patents/process_uspto_json_$(date +%Y%m%d_%H%M%S).log 2>&1 &
-
-nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_organisms generate > logs/generatelatest.log 2>&1  &
-
-nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_gen_test generate > logs/generatesizetest.log 2>&1  &
-
-nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_ref/ensembl_model generate > logs/generate_reference.log 2>&1  &
-
-
-./biobtree --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_model_organisms web
-
-nohup ./biobtree --keep --out-dir  /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/biobtreev2/out_def build > logs/build.log 2>&1  &
-
-nohup ./biobtree --out-dir out_model_organisms web > logs/web.log 2>&1  &
-
 patents data for text....
 
  ok we are going to talk little bit more about patents integration which you can get the details in the modules/patents/README also briefy update
@@ -281,3 +263,32 @@ https://scite.ai/pricing
   - Bypasses file locking issues on NFS (your NFS has local_lock=none)
   - Perfect for biobtree since it's typically single-process access during build/generate phases
   - Safe for your use case where one process builds the DB, then it's read-only accessed
+
+
+
+  Çalıştaylar
+• Yapısal Biyoloji: Cryo-EM için Protein Örnek Hazırlığı, Veri Toplanması ve Analizi: https://lnkd.in/d96hEcWH
+• E. coli Bakterisinde Rekombinant Protein Üretimi ve Saflaştırılması: https://lnkd.in/ddjErniv
+• Moleküler Klonlama Teknikleri için Biyoinformatik Uygulamalar Çalıştayı: https://lnkd.in/gZcJpT6
+• Site Directed Mutagenesis için Biyoinformatik Uygulamalar: https://lnkd.in/guQS38G
+• Proteinlerin 3B Yapı Tahmininde Kullanılan Biyoenformatik Yöntemler: https://lnkd.in/dq-6DdNq
+
+Rehber Videolar
+• Akademik Makale Araştırma Tabanları: https://lnkd.in/dJgTMJQH
+• Connected Papers ile Benzer Konulu Makaleleri Bulma: https://lnkd.in/gVfVPcR
+• BioRender ile Bilimsel Figür Oluşturulması: https://lnkd.in/gfiriYh
+• Clustal Omega ve MAFFT ile Dizilerin Hizalanması: https://lnkd.in/dG9gCupP
+• BLAST Kullanımı: https://lnkd.in/dfeW2xxu
+• Filogenetik Ağaç Oluşturma: https://lnkd.in/gh-gk8T
+• SnapGene ve UGENE ile Sanger Dizi Analizi: https://lnkd.in/grnkRXn
+• Optimize PCR Primer Tasarımı: https://lnkd.in/d6nP6Kxg
+• Overlap Extension PCR ve Spesifik Primer Tasarımları: https://lnkd.in/gffz8Yn
+• Çoklu DNA Dizisi/Gen Klonlanması – Teorik ve Biyoinformatik Anlatım: https://lnkd.in/gpX-M3B
+• Agaroz Jel Elektroforezi Simülasyonu: https://lnkd.in/des4ukhm
+• Bioinfolab Serisi: Agaroz Jel Elektroforezi: https://lnkd.in/dGGqrtKk
+• Bioinfolab Serisi: Native-PAGE: https://lnkd.in/dkaMB3hU
+
+ Ekibimizin ve katılımcı bilim insanlarının tüm eğitimlerine ve konuşmalarına da buradan ulaşabilirsiniz:
+🔗 https://lnkd.in/dC5c3SHM
+
+Youtube kanalımızda Biyolojik Bilimlerde eğitim almakta olan öğrenciler için bir hazine bulunmaktadır, değerlendirmenizi öneririm.

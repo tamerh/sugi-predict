@@ -1,0 +1,109 @@
+# BioBTree chain templates for Drug Discovery Agent
+# Filter syntax: dataset[attribute==value] or dataset[attribute>value]
+
+# =============================================================================
+# BASIC CHAINS (No Filtering)
+# =============================================================================
+
+gene_to_drugs:
+  description: "Find all drugs/compounds targeting a gene"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+  example: "EGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+
+gene_to_targets:
+  description: "Check if gene is a drug target (faster, no molecules)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target"
+  example: "BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target"
+
+protein_to_drugs:
+  description: "Find drugs for a UniProt protein"
+  chain: "{protein} >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+  example: "P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+
+multiple_genes:
+  description: "Find drugs for multiple genes at once"
+  chain: "{gene1},{gene2},{gene3} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+  example: "EGFR,KRAS,BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+
+drug_to_targets:
+  description: "Find what targets a drug hits (reverse lookup)"
+  chain: "{chembl_id} >> chembl_molecule >> chembl_activity >> chembl_assay >> chembl_target >> chembl_target_component >> uniprot"
+  example: "CHEMBL941 >> chembl_molecule >> chembl_activity >> chembl_assay >> chembl_target >> chembl_target_component >> uniprot"
+
+# =============================================================================
+# FILTERED CHAINS - Clinical Development Phase
+# =============================================================================
+# highestDevelopmentPhase: 0=preclinical, 1=Phase I, 2=Phase II, 3=Phase III, 4=Approved
+
+gene_to_approved_drugs:
+  description: "Find only approved drugs (Phase 4) targeting a gene"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==4]"
+  example: "EGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==4]"
+
+gene_to_clinical_drugs:
+  description: "Find drugs in clinical trials (Phase 1-4)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>0]"
+  example: "BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>0]"
+
+gene_to_advanced_clinical:
+  description: "Find advanced clinical candidates (Phase 3+)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>2]"
+  example: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>2]"
+
+# =============================================================================
+# FILTERED CHAINS - Activity/Potency
+# =============================================================================
+# activity.value: IC50/Ki/EC50 values (note: lower = more potent)
+# activity.pChembl: -log10 of activity (higher = more potent, typically 5-10)
+# NOTE: pChembl is double, use 7.0 not 7 for comparison
+
+gene_to_potent_compounds:
+  description: "Find highly potent compounds (pChEMBL > 7, ~100nM)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.pChembl>7.0] >> chembl_molecule"
+  example: "EGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.pChembl>7.0] >> chembl_molecule"
+
+gene_to_ic50_activities:
+  description: "Find IC50 measurements only (BAO_0000190)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.bao==\"BAO_0000190\"] >> chembl_molecule"
+  example: "BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.bao==\"BAO_0000190\"] >> chembl_molecule"
+
+# =============================================================================
+# FILTERED CHAINS - Target Type
+# =============================================================================
+# target.type: SINGLE PROTEIN, PROTEIN COMPLEX, PROTEIN FAMILY, ORGANISM, CELL LINE
+
+gene_to_single_protein_target:
+  description: "Find compounds targeting single protein (not complex/family)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target[chembl.target.type==\"SINGLE PROTEIN\"] >> chembl_assay >> chembl_activity >> chembl_molecule"
+  example: "EGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target[chembl.target.type==\"SINGLE PROTEIN\"] >> chembl_assay >> chembl_activity >> chembl_molecule"
+
+# =============================================================================
+# COMBINED FILTERS
+# =============================================================================
+
+gene_to_approved_potent:
+  description: "Approved drugs with high potency"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.pChembl>6.0] >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==4]"
+  example: "EGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity[chembl.activity.pChembl>6.0] >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==4]"
+
+# =============================================================================
+# LOGICAL OPERATORS
+# =============================================================================
+# Supported: && (AND), || (OR), ! (NOT)
+# NOT supported: 'and', 'or', 'not' keywords
+# WARNING: Logical operators are slower (~17-25s vs ~3-5ms for simple filters)
+
+gene_to_clinical_not_preclinical:
+  description: "Drugs in clinical trials (exclude preclinical phase==0)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[!(chembl.molecule.highestDevelopmentPhase==0)]"
+  example: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[!(chembl.molecule.highestDevelopmentPhase==0)]"
+
+gene_to_phase3_or_approved:
+  description: "Phase 3 OR approved drugs (phase==3 || phase==4)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==3 || chembl.molecule.highestDevelopmentPhase==4]"
+  example: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase==3 || chembl.molecule.highestDevelopmentPhase==4]"
+
+gene_to_clinical_range:
+  description: "Clinical phase 1-3 (exclude preclinical and approved)"
+  chain: "{gene} >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>0 && chembl.molecule.highestDevelopmentPhase<4]"
+  example: "JAK2 >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule[chembl.molecule.highestDevelopmentPhase>0 && chembl.molecule.highestDevelopmentPhase<4]"
