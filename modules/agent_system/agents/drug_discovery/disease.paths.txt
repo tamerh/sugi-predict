@@ -1,0 +1,66 @@
+      ┌─────────────────────────────────────────────────────────────────┐
+                           │                    DISEASE IDENTIFIER                           │
+                           │     (glioblastoma, EFO:0000519, MONDO:0001062)                 │
+                           └─────────────────────────────────────────────────────────────────┘
+                                                        │
+                ┌───────────────┬───────────────┬───────┴───────┬───────────────┬───────────────┐
+                ▼               ▼               ▼               ▼               ▼               ▼
+      ┌─────────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+      │ PATH 1: DIRECT  │ │ PATH 2: GWAS │ │ PATH 3:      │ │ PATH 4:      │ │ PATH 5:      │ │ PATH 6:      │
+      │ INDICATIONS     │ │ GENETICS     │ │ CLINVAR      │ │ REACTOME     │ │ UNIPROT      │ │ CLINICAL     │
+      │ (ChEMBL)        │ │              │ │ VARIANTS     │ │ PATHWAYS     │ │ DISEASE      │ │ TRIALS       │
+      └────────┬────────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+               │                 │                │                │                │                │
+               ▼                 ▼                ▼                ▼                ▼                ▼
+      ┌─────────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+      │ Query:          │ │ Query:       │ │ Query:       │ │ Query:       │ │ Query:       │ │ BioYoda      │
+      │ disease >> efo  │ │ disease >>   │ │ disease >>   │ │ disease >>   │ │ orphanet >>  │ │ Vector DB    │
+      │ >> chembl_mol   │ │ efo >> gwas  │ │ clinvar      │ │ reactome[    │ │ uniprot >>   │ │ clinical_    │
+      │                 │ │              │ │              │ │ is_disease]  │ │ chembl       │ │ trials       │
+      └────────┬────────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+               │                 │                │                │                │                │
+               ▼                 ▼                ▼                ▼                ▼                ▼
+      ┌─────────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+      │ FILTER BY:      │ │ Get:         │ │ Get:         │ │ Get:         │ │ Get:         │ │ Get:         │
+      │ indication.     │ │ reported_    │ │ HGNC genes   │ │ Proteins in  │ │ Proteins w/  │ │ Drugs being  │
+      │ highest_phase   │ │ genes +      │ │ with patho-  │ │ dysregulated │ │ disease      │ │ tested for   │
+      │ >= 3 or 4       │ │ mapped_gene  │ │ genic vars   │ │ pathways     │ │ annotations  │ │ this disease │
+      └────────┬────────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+               │                 │                │                │                │                │
+               ▼                 └────────────────┴────────────────┴────────────────┘                │
+      ┌─────────────────┐                                         │                                 │
+      │ APPROVED DRUGS  │                                         ▼                                 │
+      │ (Temozolomide)  │                           ┌─────────────────────────────┐                │
+      └─────────────────┘                           │ GENES/PROTEINS (Targets)    │                │
+                                                    │ EGFR, TP53, IDH1, PTEN...   │                │
+                                                    └──────────────┬──────────────┘                │
+                                                                   │                                │
+                                                                   ▼                                │
+                                                    ┌─────────────────────────────┐                │
+                                                    │ Query: genes >> ensembl >>  │                │
+                                                    │ uniprot >> chembl_target >> │                │
+                                                    │ chembl_molecule             │                │
+                                                    └──────────────┬──────────────┘                │
+                                                                   │                                │
+                                                                   ▼                                │
+                                                    ┌─────────────────────────────┐                │
+                                                    │ DRUGS TARGETING THESE GENES │◄───────────────┘
+                                                    │ (Erlotinib, Gefitinib, etc) │
+                                                    └─────────────────────────────┘
+
+
+  | Model            | Follows Multi-Step? | Runs Both Queries?  | Faithful to Data?   | Speed | Cost     |
+  |------------------|---------------------|---------------------|---------------------|-------|----------|
+  | Llama 3.3 70B    | ❌ Poor              | ❌ Only 1 query      | N/A                 | 5s    | $0.12/1M |
+  | Gemini 2.0 Flash | ❌ Poor              | ❌ Didn't call tools | N/A                 | 1.4s  | $0.10/1M |
+  | Gemini 2.5 Flash | ✅ Good              | ✅ 2 queries         | ❌ HALLUCINATING!    | 10s   | $0.15/1M |
+  | GPT-4o mini      | ✅ Good              | ✅ 2 queries         | ⚠️ Phase data wrong | 14s   | $0.15/1M |
+  | Claude 3 Haiku   | ✅ Best              | ✅ 2 queries         | ✅ Faithful          | 10s   | $0.25/1M |
+
+  Key Findings:
+
+  1. Claude 3 Haiku is the winner - follows instructions AND stays faithful to observation data
+  2. Gemini 2.5 Flash is dangerous - it hallucinated fake ChEMBL IDs and drug data!
+  3. GPT-4o mini works but shows wrong phase values (drug-level instead of indication-level)
+  4. Llama models don't follow multi-step instructions well
+

@@ -169,14 +169,26 @@ class Agent(ABC):
                 reasoning.append(f"Observation: {observation[:500]}...")
 
                 # Add tool response to messages
+                # For OpenAI-style APIs, need to include tool_calls in assistant message
+                import json as json_module
+                tool_call_id = response.function_call.id if response.function_call.id else f"call_{tool_name}"
                 messages.append(Message(
                     role="assistant",
-                    content=response.content or f"Calling {tool_name}"
+                    content=response.content or "",
+                    tool_calls=[{
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json_module.dumps(tool_args) if isinstance(tool_args, dict) else str(tool_args)
+                        }
+                    }]
                 ))
                 messages.append(Message(
                     role="tool",
                     content=observation,
-                    name=tool_name
+                    name=tool_name,
+                    tool_call_id=tool_call_id
                 ))
 
             else:

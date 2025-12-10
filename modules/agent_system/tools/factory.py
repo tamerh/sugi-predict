@@ -4,6 +4,7 @@ from typing import List
 
 from .base import Tool
 from .biobtree_tool import BioBTreeQueryTool, BioBTreeSearchTool
+from .disease_drug_tool import DiseaseDrugDiscoveryTool
 from .registry import ToolRegistry, get_registry
 from ..core.config import get_config
 from ..integrations.biobtree_client import create_biobtree_client
@@ -25,6 +26,7 @@ def create_default_tools() -> List[Tool]:
     tools = [
         BioBTreeQueryTool(biobtree_client),
         BioBTreeSearchTool(biobtree_client),
+        DiseaseDrugDiscoveryTool(biobtree_client),  # Specialized disease-drug tool
     ]
 
     return tools

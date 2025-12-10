@@ -6,6 +6,7 @@ from typing import Optional
 from ..core.config import get_config, LLMProviderConfig
 from .base import LLMProvider
 from .gemini_provider import GeminiProvider
+from .openrouter_provider import OpenRouterProvider
 
 
 def create_manual_provider(fine_tuning_file: Optional[str] = None) -> LLMProvider:
@@ -55,19 +56,25 @@ def create_llm_provider(
             raise ValueError(f"Provider '{provider_name}' not configured")
         provider_config = config.llm.providers[provider_name]
 
-    # Get API key from environment
+    # Get API key: 1) Direct in config, 2) Environment variable, 3) Fallback env var
     api_key = None
-    if provider_config.api_key_env:
+
+    # First check for direct API key in config (for testing)
+    if provider_config.api_key:
+        api_key = provider_config.api_key
+
+    # Then check configured environment variable
+    if not api_key and provider_config.api_key_env:
         api_key = os.getenv(provider_config.api_key_env)
 
-    # Check for direct API key in environment (fallback)
+    # Fallback to standard env var name
     if not api_key:
         api_key = os.getenv(f"{provider_name.upper()}_API_KEY")
 
     if not api_key:
         raise ValueError(
             f"API key not found for provider '{provider_name}'. "
-            f"Set {provider_config.api_key_env or f'{provider_name.upper()}_API_KEY'} environment variable."
+            f"Set api_key in config or {provider_config.api_key_env or f'{provider_name.upper()}_API_KEY'} environment variable."
         )
 
     # Create provider instance
@@ -92,6 +99,14 @@ def create_llm_provider(
     elif provider_name == "openai":
         from .openai_provider import OpenAIProvider
         return OpenAIProvider(
+            model=provider_config.model,
+            api_key=api_key,
+            max_tokens=provider_config.max_tokens,
+            temperature=provider_config.temperature,
+            timeout=provider_config.timeout
+        )
+    elif provider_name == "openrouter":
+        return OpenRouterProvider(
             model=provider_config.model,
             api_key=api_key,
             max_tokens=provider_config.max_tokens,

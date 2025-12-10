@@ -112,6 +112,34 @@ todos
 1- biobtre integration
 
 
+screen -X -S 807.bioyoda quit
+
+
+
+
+
+  The performance profile confirms:
+
+  1. The CEL fix is working - no CEL parsing overhead in the profile
+  2. Cold cache slowness is 100% I/O bound - only 0.37% CPU usage during 266s query
+  3. The bottleneck is LMDB disk reads - waiting for data pages to load from storage
+
+  This is expected behavior for memory-mapped databases like LMDB on cold cache. The TP53 query traverses a large graph (~240KB result), requiring many LMDB lookups. On first run, each
+  lookup causes a page fault and disk read. Once in OS page cache, it's sub-second.
+
+  Potential optimizations for cold cache:
+  1. Prefetching/warming - load common gene data into page cache on startup
+  2. SSD storage - faster random reads reduce cold cache penalty
+  3. Increase OS page cache - more RAM for caching
+  4. Batch LMDB reads - reduce number of transactions (though this is harder)
+
+
+
+
+
+
+openrouter...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 
+
 0-faiss script should start  shoul start where it left....
 3- grant data integration
 4- patent data integration

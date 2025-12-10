@@ -61,7 +61,8 @@ class IntegrationsConfig(BaseModel):
 class LLMProviderConfig(BaseModel):
     """Single LLM provider configuration."""
     model: Optional[str] = None
-    api_key_env: Optional[str] = None
+    api_key_env: Optional[str] = None  # Environment variable name for API key
+    api_key: Optional[str] = None  # Direct API key (for testing only, prefer api_key_env)
     max_tokens: int = 4096
     temperature: float = 0.0
     timeout: int = 60

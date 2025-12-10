@@ -73,8 +73,8 @@ class DrugDiscoveryAgent(Agent):
             description="Finds drugs, compounds, and therapeutic targets for genes/proteins",
             llm=llm,
             tool_registry=tool_registry,
-            tools=["disease_drug_discovery", "biobtree_query"],  # Specialized + general tools
-            max_iterations=3,  # Reduced - specialized tool does the work
+            tools=["biobtree_query"],
+            max_iterations=7,  # Increased to support multi-path queries (3+ tool calls)
             system_prompt=system_prompt
         )
 
@@ -167,85 +167,13 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
         # Cap at 1.0
         return min(score, 1.0)
 
-    def _format_disease_drug_result(self, data: dict) -> str:
-        """
-        Format disease_drug_discovery tool output for observation.
-
-        Args:
-            data: Tool result with direct_indications and gwas_targets
-
-        Returns:
-            Formatted string for LLM observation
-        """
-        lines = []
-        disease = data.get("disease", "Unknown")
-        lines.append(f"Disease Drug Discovery Results for: {disease}")
-        lines.append("=" * 50)
-
-        # Direct indications
-        direct = data.get("direct_indications", {})
-        direct_drugs = direct.get("drugs", [])
-        lines.append(f"\n## Direct Indications ({len(direct_drugs)} drugs with Phase 3+)")
-
-        if direct_drugs:
-            lines.append("| Drug Name | ChEMBL ID | Phase | Mechanism |")
-            lines.append("|-----------|-----------|-------|-----------|")
-            for drug in direct_drugs[:15]:  # Limit to 15
-                name = drug.get("name", drug.get("id", "?"))
-                drug_id = drug.get("id", "?")
-                phase = drug.get("indication_phase", "?")
-                mechanism = drug.get("mechanism", "")[:50]  # Truncate
-                lines.append(f"| {name} | {drug_id} | {phase} | {mechanism} |")
-            if len(direct_drugs) > 15:
-                lines.append(f"... and {len(direct_drugs) - 15} more drugs")
-        else:
-            lines.append("No drugs found with Phase 3+ indications for this disease.")
-
-        # GWAS targets
-        gwas = data.get("gwas_targets", {})
-        gwas_genes = gwas.get("genes", [])
-        drugs_by_gene = gwas.get("drugs_by_gene", {})
-        total_gwas_drugs = gwas.get("drug_count", 0)
-
-        lines.append(f"\n## GWAS Targets ({len(gwas_genes)} genes, {total_gwas_drugs} drugs)")
-
-        if drugs_by_gene:
-            lines.append("| Target Gene | Drug Name | ChEMBL ID | Drug Phase |")
-            lines.append("|-------------|-----------|-----------|------------|")
-            shown = 0
-            for gene, drugs in drugs_by_gene.items():
-                for drug in drugs[:3]:  # Max 3 drugs per gene
-                    if shown >= 20:  # Max 20 rows total
-                        break
-                    name = drug.get("name", drug.get("id", "?"))
-                    drug_id = drug.get("id", "?")
-                    phase = drug.get("drug_phase", "?")
-                    lines.append(f"| {gene} | {name} | {drug_id} | {phase} |")
-                    shown += 1
-                if shown >= 20:
-                    break
-            remaining = total_gwas_drugs - shown
-            if remaining > 0:
-                lines.append(f"... and {remaining} more drug-gene associations")
-        else:
-            lines.append("No GWAS-associated gene targets found.")
-
-        # Summary
-        summary = data.get("summary", {})
-        lines.append(f"\n## Summary")
-        lines.append(f"- Direct indication drugs: {summary.get('direct_indication_drugs', 0)}")
-        lines.append(f"- GWAS genes: {summary.get('gwas_genes', 0)}")
-        lines.append(f"- GWAS drugs: {summary.get('gwas_drugs', 0)}")
-
-        return "\n".join(lines)
-
     def _format_observation(self, data: dict) -> str:
         """
-        Format tool result for clearer observation.
+        Format BioBTree drug discovery result for clearer observation.
 
-        Handles:
-        - disease_drug_discovery tool output
-        - biobtree_query tool output
+        Handles multi-path queries:
+        - PATH 1: Direct indications (disease >> efo >> chembl_molecule)
+        - PATH 2-5: Gene-based queries (via GWAS, ClinVar, Reactome, etc.)
 
         Args:
             data: Tool result data
@@ -255,10 +183,6 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
         """
         if not isinstance(data, dict):
             return str(data)
-
-        # Handle disease_drug_discovery tool output
-        if "direct_indications" in data or "gwas_targets" in data:
-            return self._format_disease_drug_result(data)
 
         lines = []
 

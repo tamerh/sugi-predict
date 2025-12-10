@@ -1,9 +1,11 @@
 """Tool registry for managing available tools."""
 
+import time
 from typing import Dict, List, Optional
 
 from .base import Tool, ToolResult
 from ..llm.base import ToolDefinition
+from ..core.metrics import get_metrics
 
 
 class ToolRegistry:
@@ -90,8 +92,19 @@ class ToolRegistry:
                 error=f"Invalid parameters for tool '{tool_name}'"
             )
 
-        # Execute tool
-        return await tool.execute(**kwargs)
+        # Execute tool with timing
+        start_time = time.perf_counter()
+        result = await tool.execute(**kwargs)
+        latency_ms = (time.perf_counter() - start_time) * 1000
+
+        # Record metrics
+        get_metrics().record_tool_call(
+            tool_name=tool_name,
+            latency_ms=latency_ms,
+            success=result.success
+        )
+
+        return result
 
     def list_tools(self) -> List[str]:
         """

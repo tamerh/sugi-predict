@@ -10,6 +10,8 @@ class Message(BaseModel):
     role: str  # "user", "assistant", "system", "tool"
     content: str
     name: Optional[str] = None  # For tool messages
+    tool_call_id: Optional[str] = None  # For tool response messages (OpenAI format)
+    tool_calls: Optional[List[Dict[str, Any]]] = None  # For assistant messages with tool calls
 
 
 class ToolDefinition(BaseModel):
@@ -23,6 +25,7 @@ class FunctionCall(BaseModel):
     """Function call from LLM."""
     name: str
     arguments: Dict[str, Any]
+    id: Optional[str] = None  # Tool call ID for OpenAI-style APIs
 
 
 class LLMResponse(BaseModel):

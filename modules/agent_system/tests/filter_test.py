@@ -19,32 +19,38 @@ async def test_filters():
     client = BioBTreeClient(config.integrations.biobtree)
 
     tests = [
-        # Basic queries
+        # === FAST FILTERS ===
+        # ChEMBL activity filter (~400ms)
         {
-            "name": "JAK2 all drugs (no filter)",
-            "terms": ["JAK2"],
-            "mapfilter": ">>ensembl>>uniprot>>chembl_target_component>>chembl_target>>chembl_assay>>chembl_activity>>chembl_molecule"
-        },
-        {
-            "name": "JAK2 pChembl>7.0 (fast filter)",
+            "name": "JAK2 -> ChEMBL pChembl>7.0 (FAST)",
             "terms": ["JAK2"],
             "mapfilter": ">>ensembl>>uniprot>>chembl_target_component>>chembl_target>>chembl_assay>>chembl_activity[chembl.activity.pChembl>7.0]>>chembl_molecule"
         },
+        # PubChem no filter (baseline ~90ms)
         {
-            "name": "JAK2 phase>2 (slow filter)",
+            "name": "JAK2 -> PubChem (no filter)",
+            "terms": ["JAK2"],
+            "mapfilter": ">>ensembl>>uniprot>>pubchem_activity>>pubchem"
+        },
+        # PubChem has_patents filter (~400ms)
+        {
+            "name": "JAK2 -> PubChem has_patents (FAST)",
+            "terms": ["JAK2"],
+            "mapfilter": '>>ensembl>>uniprot>>pubchem_activity>>pubchem[pubchem.has_patents==true]'
+        },
+        # === MEDIUM SPEED FILTERS ===
+        # PubChem compound_type=drug (~5s) - GOOD alternative to ChEMBL phase filter
+        {
+            "name": "JAK2 -> PubChem compound_type=drug (5s)",
+            "terms": ["JAK2"],
+            "mapfilter": '>>ensembl>>uniprot>>pubchem_activity>>pubchem[pubchem.compound_type=="drug"]'
+        },
+        # === SLOW FILTERS ===
+        # ChEMBL phase filter (~20s) - works but slow
+        {
+            "name": "JAK2 -> ChEMBL phase>2 (SLOW ~20s)",
             "terms": ["JAK2"],
             "mapfilter": ">>ensembl>>uniprot>>chembl_target_component>>chembl_target>>chembl_assay>>chembl_activity>>chembl_molecule[chembl.molecule.highestDevelopmentPhase>2]"
-        },
-        # Species filtering - human only improves slow phase filter
-        {
-            "name": "JAK2 human only",
-            "terms": ["JAK2"],
-            "mapfilter": '>>ensembl[ensembl.genome=="homo_sapiens"]>>uniprot>>chembl_target_component>>chembl_target>>chembl_assay>>chembl_activity>>chembl_molecule'
-        },
-        {
-            "name": "JAK2 human only + phase>2",
-            "terms": ["JAK2"],
-            "mapfilter": '>>ensembl[ensembl.genome=="homo_sapiens"]>>uniprot>>chembl_target_component>>chembl_target>>chembl_assay>>chembl_activity>>chembl_molecule[chembl.molecule.highestDevelopmentPhase>2]'
         },
     ]
 
@@ -55,22 +61,30 @@ async def test_filters():
         print(f"TEST: {test['name']}")
         print("=" * 60)
 
-        start_time = time.time()
+        start_time = time.perf_counter()
         try:
             result = await client.map_query(
                 terms=test["terms"],
                 mapfilter=test["mapfilter"],
                 mode="lite"
             )
-            elapsed = time.time() - start_time
+            total_elapsed_ms = (time.perf_counter() - start_time) * 1000
 
             lite = result.get('results_lite', {})
             stats = lite.get('stats', {})
             mappings = lite.get('mappings', [])
 
-            elapsed_ms = elapsed * 1000
+            # Get precise gRPC timing from client
+            grpc_time_ms = result.get('_client_timing_ms', 0)
+
+            # Check if BioBTree returns server-side timing
+            server_time_ms = lite.get('timing_ms') or lite.get('elapsed_ms') or stats.get('timing_ms')
+
             print(f"Stats: {stats}")
-            print(f"Response time: {elapsed_ms:.0f}ms")
+            print(f"gRPC call time: {grpc_time_ms:.1f}ms")
+            print(f"Total (with overhead): {total_elapsed_ms:.1f}ms")
+            if server_time_ms:
+                print(f"Server-side time: {server_time_ms}ms")
 
             if mappings and mappings[0].get('targets'):
                 targets = mappings[0]['targets']
@@ -83,7 +97,7 @@ async def test_filters():
                 results_summary.append({
                     "name": test["name"],
                     "results": len(targets),
-                    "time_ms": round(elapsed_ms),
+                    "time_ms": round(grpc_time_ms),
                     "status": "ok"
                 })
             else:
@@ -93,7 +107,7 @@ async def test_filters():
                     results_summary.append({
                         "name": test["name"],
                         "results": 0,
-                        "time_ms": round(elapsed_ms),
+                        "time_ms": round(grpc_time_ms),
                         "status": "error",
                         "error": str(error)
                     })
@@ -102,21 +116,24 @@ async def test_filters():
                     results_summary.append({
                         "name": test["name"],
                         "results": 0,
-                        "time_ms": round(elapsed_ms),
+                        "time_ms": round(grpc_time_ms),
                         "status": "ok"
                     })
 
         except Exception as e:
-            elapsed = time.time() - start_time
-            elapsed_ms = elapsed * 1000
-            print(f"Error: {e}")
-            print(f"Response time: {elapsed_ms:.0f}ms")
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            error_msg = str(e)
+            if "DEADLINE_EXCEEDED" in error_msg:
+                print(f"Error: TIMEOUT (>{elapsed_ms/1000:.1f}s)")
+            else:
+                print(f"Error: {error_msg[:100]}")
+            print(f"Elapsed time: {elapsed_ms:.0f}ms")
             results_summary.append({
                 "name": test["name"],
                 "results": 0,
                 "time_ms": round(elapsed_ms),
-                "status": "error",
-                "error": str(e)[:50]
+                "status": "timeout" if "DEADLINE_EXCEEDED" in error_msg else "error",
+                "error": "TIMEOUT" if "DEADLINE_EXCEEDED" in error_msg else error_msg[:50]
             })
 
         print()

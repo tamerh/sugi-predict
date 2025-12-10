@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from modules.agent_system.llm import create_llm_provider, Message
 from modules.agent_system.tools import setup_tools
 from modules.agent_system.agents import create_reasoning_engine
+from modules.agent_system.core.metrics import get_metrics
 
 
 # Direct mode system prompt (bypasses agent system)
@@ -79,10 +80,19 @@ class AgentCLI:
 
     async def query(self, user_input: str) -> dict:
         """Execute a single query and return result."""
+        # Reset and start metrics tracking
+        metrics = get_metrics()
+        metrics.reset()
+        metrics.start_query()
+
         if self.use_reasoning_engine:
-            return await self._query_with_engine(user_input)
+            result = await self._query_with_engine(user_input)
         else:
-            return await self._query_direct(user_input)
+            result = await self._query_direct(user_input)
+
+        # Add metrics to result
+        result["metrics"] = metrics.get_summary()
+        return result
 
     async def _query_with_engine(self, user_input: str) -> dict:
         """Query using reasoning engine."""
@@ -112,6 +122,10 @@ class AgentCLI:
                 result["tool_calls"] = response.agent_result.tool_calls
                 result["reasoning_chain"] = response.agent_result.reasoning
                 result["iterations"] = response.agent_result.iterations
+                result["status"] = response.agent_result.status.value
+                # Extract agent error if present
+                if response.agent_result.error:
+                    result["error"] = response.agent_result.error
 
         except Exception as e:
             result["error"] = str(e)
@@ -177,7 +191,8 @@ class AgentCLI:
                     print(f"   Reason: {routing['reasoning']}")
 
             if result.get("agent_used"):
-                print(f"\n🤖 Agent: {result['agent_used']}")
+                status = result.get("status", "unknown")
+                print(f"\n🤖 Agent: {result['agent_used']} (status: {status})")
 
             if result.get("tool_calls"):
                 print(f"\n🔧 Tool Calls:")
@@ -211,6 +226,10 @@ class AgentCLI:
         if result.get("error") and result.get("mode") != "direct":
             print(f"\n❌ Error: {result['error']}")
 
+        # Print metrics
+        if result.get("metrics"):
+            self._print_metrics(result["metrics"])
+
     def _print_tool_result(self, data):
         """Print formatted tool result."""
         if isinstance(data, dict) and data.get('mode') == 'lite':
@@ -239,6 +258,40 @@ class AgentCLI:
                     break
         else:
             print(f"\n   📊 Result: {json.dumps(data, indent=2)[:300]}...")
+
+    def _print_metrics(self, metrics: dict):
+        """Print metrics summary."""
+        print(f"\n{'─' * 50}")
+        print("📊 METRICS")
+        print('─' * 50)
+
+        llm = metrics.get('llm', {})
+        tools = metrics.get('tools', {})
+
+        # LLM metrics
+        if llm.get('total_calls', 0) > 0:
+            print(f"\nLLM ({llm['total_calls']} calls):")
+            for model, stats in llm.get('by_model', {}).items():
+                avg_latency = stats['total_latency_ms'] / stats['calls'] if stats['calls'] > 0 else 0
+                print(f"  {model}:")
+                print(f"    Tokens: {stats['input_tokens']} in / {stats['output_tokens']} out")
+                print(f"    Time: {stats['total_latency_ms']:.0f}ms total ({avg_latency:.0f}ms avg)")
+
+            print(f"\n  Total: {llm['total_tokens']} tokens ({llm['total_input_tokens']} in / {llm['total_output_tokens']} out)")
+            print(f"  Total LLM time: {llm['total_latency_ms']}ms")
+
+        # Tool metrics
+        if tools.get('total_calls', 0) > 0:
+            print(f"\nTools ({tools['total_calls']} calls):")
+            for tool, stats in tools.get('by_tool', {}).items():
+                avg_latency = stats['total_latency_ms'] / stats['calls'] if stats['calls'] > 0 else 0
+                print(f"  {tool}: {stats['calls']} calls, {stats['total_latency_ms']:.0f}ms total ({avg_latency:.0f}ms avg)")
+
+        # Total time
+        if metrics.get('query_total_ms'):
+            print(f"\nTotal query time: {metrics['query_total_ms']:.0f}ms")
+
+        print('─' * 50)
 
     async def interactive(self):
         """Run interactive session."""
