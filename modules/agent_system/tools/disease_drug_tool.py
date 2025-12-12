@@ -95,11 +95,101 @@ class DiseaseDrugDiscoveryTool(Tool):
                             "Include drugs targeting proteins annotated with the disease in UniProt (default: true)."
                         ),
                         "default": True
+                    },
+                    "include_pubchem": {
+                        "type": "boolean",
+                        "description": (
+                            "Include FDA-approved drugs from PubChem targeting disease-associated genes (default: true)."
+                        ),
+                        "default": True
                     }
                 },
                 "required": ["disease"]
             }
         )
+
+    async def _paginated_map_query(
+        self,
+        terms: List[str],
+        mapfilter: str,
+        mode: str = "full",
+        max_pages: int = 10,
+        preserve_sources: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Execute a map query with pagination to get ALL results.
+
+        Args:
+            terms: List of input terms
+            mapfilter: BioBTree mapfilter string
+            mode: Query mode ("full" or "lite")
+            max_pages: Maximum pages to fetch (safety limit)
+            preserve_sources: If True, preserve source-to-target mapping (for multi-term queries)
+
+        Returns:
+            Combined result with all targets from all pages
+        """
+        page_token = None
+
+        if preserve_sources:
+            # Preserve source-to-target mapping (each source has its own targets)
+            targets_by_source = {}  # source_id -> list of targets
+
+            for _ in range(max_pages):
+                result = await self.client.map_query(
+                    terms=terms,
+                    mapfilter=mapfilter,
+                    mode=mode,
+                    page=page_token
+                )
+
+                results_data = result.get("results", {})
+                results_list = results_data.get("results", [])
+
+                for r in results_list:
+                    source = r.get("source", {})
+                    source_id = source.get("keyword") or source.get("identifier", "unknown")
+                    if source_id not in targets_by_source:
+                        targets_by_source[source_id] = {"source": source, "targets": []}
+                    targets_by_source[source_id]["targets"].extend(r.get("targets", []))
+
+                nextpage = results_data.get("nextpage", "")
+                if nextpage and nextpage != page_token:
+                    page_token = nextpage
+                else:
+                    break
+
+            # Rebuild results list preserving source structure
+            combined_results = [
+                {"source": data["source"], "targets": data["targets"]}
+                for data in targets_by_source.values()
+            ]
+            return {"results": {"results": combined_results}}
+
+        else:
+            # Flatten all targets (for single-term queries like disease -> drugs)
+            all_targets = []
+
+            for _ in range(max_pages):
+                result = await self.client.map_query(
+                    terms=terms,
+                    mapfilter=mapfilter,
+                    mode=mode,
+                    page=page_token
+                )
+
+                results_data = result.get("results", {})
+                results_list = results_data.get("results", [])
+                for r in results_list:
+                    all_targets.extend(r.get("targets", []))
+
+                nextpage = results_data.get("nextpage", "")
+                if nextpage and nextpage != page_token:
+                    page_token = nextpage
+                else:
+                    break
+
+            return {"results": {"results": [{"targets": all_targets}]}}
 
     async def _query_direct_indications(self, disease: str) -> Dict[str, Any]:
         """
@@ -113,12 +203,9 @@ class DiseaseDrugDiscoveryTool(Tool):
         """
         try:
             # Query: disease >> efo >> chembl_molecule (full mode for indication data)
+            # Use pagination to get ALL drugs (BEVACIZUMAB etc. may be on page 2+)
             mapfilter = ">>efo>>chembl_molecule"
-            result = await self.client.map_query(
-                terms=[disease],
-                mapfilter=mapfilter,
-                mode="full"
-            )
+            result = await self._paginated_map_query([disease], mapfilter, mode="full")
 
             return {
                 "success": True,
@@ -144,12 +231,9 @@ class DiseaseDrugDiscoveryTool(Tool):
         """
         try:
             # Query: disease >> efo >> gwas >> ensembl (get genes)
+            # Use pagination to get ALL associated genes
             mapfilter = ">>efo>>gwas>>ensembl[ensembl.genome==\"homo_sapiens\"]"
-            result = await self.client.map_query(
-                terms=[disease],
-                mapfilter=mapfilter,
-                mode="full"
-            )
+            result = await self._paginated_map_query([disease], mapfilter, mode="full")
 
             return {
                 "success": True,
@@ -177,12 +261,9 @@ class DiseaseDrugDiscoveryTool(Tool):
         """
         try:
             # Query: disease >> mondo >> clinvar >> ensembl (via MONDO ontology)
+            # Use pagination to get ALL variant-associated genes
             mapfilter = ">>mondo>>clinvar>>ensembl[ensembl.genome==\"homo_sapiens\"]"
-            result = await self.client.map_query(
-                terms=[disease],
-                mapfilter=mapfilter,
-                mode="full"
-            )
+            result = await self._paginated_map_query([disease], mapfilter, mode="full")
 
             return {
                 "success": True,
@@ -210,12 +291,9 @@ class DiseaseDrugDiscoveryTool(Tool):
         """
         try:
             # Query: disease >> efo >> reactome >> ensembl (get genes in pathways)
+            # Use pagination to get ALL pathway-associated genes
             mapfilter = ">>efo>>reactome>>ensembl[ensembl.genome==\"homo_sapiens\"]"
-            result = await self.client.map_query(
-                terms=[disease],
-                mapfilter=mapfilter,
-                mode="full"
-            )
+            result = await self._paginated_map_query([disease], mapfilter, mode="full")
 
             return {
                 "success": True,
@@ -243,12 +321,9 @@ class DiseaseDrugDiscoveryTool(Tool):
         """
         try:
             # Query: disease >> efo >> uniprot (get proteins with disease annotation)
+            # Use pagination to get ALL disease-associated proteins
             mapfilter = ">>efo>>uniprot[uniprot.reviewed==true]"
-            result = await self.client.map_query(
-                terms=[disease],
-                mapfilter=mapfilter,
-                mode="full"
-            )
+            result = await self._paginated_map_query([disease], mapfilter, mode="full")
 
             return {
                 "success": True,
@@ -280,16 +355,15 @@ class DiseaseDrugDiscoveryTool(Tool):
 
         try:
             # Query: genes >> ensembl >> uniprot >> ... >> chembl_molecule
+            # Use pagination to get ALL drugs (some genes have many drug targets)
             mapfilter = (
                 ">>ensembl[ensembl.genome==\"homo_sapiens\"]"
                 ">>uniprot[uniprot.reviewed==true]"
                 ">>chembl_target_component>>chembl_target"
                 ">>chembl_assay>>chembl_activity>>chembl_molecule"
             )
-            result = await self.client.map_query(
-                terms=genes,
-                mapfilter=mapfilter,
-                mode="full"
+            result = await self._paginated_map_query(
+                genes, mapfilter, mode="full", preserve_sources=True
             )
 
             return {
@@ -322,15 +396,14 @@ class DiseaseDrugDiscoveryTool(Tool):
 
         try:
             # Query: proteins >> uniprot >> chembl_target_component >> ... >> chembl_molecule
+            # Use pagination to get ALL drugs
             mapfilter = (
                 ">>uniprot[uniprot.reviewed==true]"
                 ">>chembl_target_component>>chembl_target"
                 ">>chembl_assay>>chembl_activity>>chembl_molecule"
             )
-            result = await self.client.map_query(
-                terms=proteins,
-                mapfilter=mapfilter,
-                mode="full"
+            result = await self._paginated_map_query(
+                proteins, mapfilter, mode="full", preserve_sources=True
             )
 
             return {
@@ -347,6 +420,145 @@ class DiseaseDrugDiscoveryTool(Tool):
                 "proteins": proteins,
                 "source": "uniprot"
             }
+
+    async def _query_genes_to_reactome_pathways(self, genes: List[str]) -> Dict[str, Any]:
+        """
+        Get Reactome pathways for disease-associated genes.
+
+        Provides pathway context for the genes found via GWAS/ClinVar.
+
+        Args:
+            genes: List of gene symbols
+
+        Returns:
+            Dict with pathway mappings per gene
+        """
+        if not genes:
+            return {"success": True, "data": {"results": {"results": []}}, "genes": []}
+
+        try:
+            # Query: genes >> ensembl >> reactome
+            # Use pagination to get ALL pathways (genes can be in many pathways)
+            mapfilter = (
+                ">>ensembl[ensembl.genome==\"homo_sapiens\"]"
+                ">>reactome"
+            )
+            result = await self._paginated_map_query(
+                genes, mapfilter, mode="full", preserve_sources=True
+            )
+
+            return {
+                "success": True,
+                "data": result,
+                "genes": genes,
+                "query": f"{','.join(genes[:5])}... >> ensembl >> reactome"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "genes": genes
+            }
+
+    async def _query_genes_to_pubchem_drugs(self, genes: List[str], source: str = "pubchem") -> Dict[str, Any]:
+        """
+        Map genes to FDA-approved PubChem compounds via bioactivity data.
+
+        PATH 6: genes >> ensembl >> uniprot >> pubchem_activity >> pubchem[pubchem.is_fda_approved==true]
+
+        Args:
+            genes: List of gene symbols
+            source: Source identifier for tracking
+
+        Returns:
+            Dict with FDA-approved PubChem drug mappings for genes
+        """
+        if not genes:
+            return {"success": True, "data": {"results": {"results": []}}, "genes": [], "source": source}
+
+        try:
+            # Query: genes >> ensembl >> uniprot >> pubchem_activity >> pubchem (FDA approved only)
+            # Use pagination to get ALL FDA drugs
+            mapfilter = (
+                ">>ensembl[ensembl.genome==\"homo_sapiens\"]"
+                ">>uniprot[uniprot.reviewed==true]"
+                ">>pubchem_activity"
+                ">>pubchem[pubchem.is_fda_approved==true]"
+            )
+            result = await self._paginated_map_query(
+                genes, mapfilter, mode="full", preserve_sources=True
+            )
+
+            return {
+                "success": True,
+                "data": result,
+                "genes": genes,
+                "source": source,
+                "query": f"{','.join(genes[:5])}... >> ensembl >> uniprot >> pubchem_activity >> pubchem[fda_approved]"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "genes": genes,
+                "source": source
+            }
+
+    def _get_best_drug_name(self, alt_names: List[str], fallback: str = None) -> str:
+        """
+        Select the best drug name from altNames list.
+
+        Prefers common/trade names over IUPAC chemical names.
+
+        Args:
+            alt_names: List of alternative names from ChEMBL
+            fallback: Fallback name if no good name found
+
+        Returns:
+            Best drug name
+        """
+        if not alt_names:
+            return fallback
+
+        # Score each name - lower is better
+        def name_score(name: str) -> int:
+            if not name or len(name) < 2:
+                return 1000
+
+            score = 0
+
+            # Penalize IUPAC-like names (contain brackets, complex patterns)
+            if any(c in name for c in ['{', '}', '[', ']']):
+                score += 100
+            if name.count('(') > 1 or name.count('-') > 3:
+                score += 50
+
+            # Penalize very long names (likely IUPAC)
+            if len(name) > 50:
+                score += 80
+            elif len(name) > 30:
+                score += 30
+
+            # Penalize names starting with numbers or special chars
+            if name[0].isdigit() or name[0] in '({[':
+                score += 40
+
+            # Prefer simple alphanumeric names
+            special_chars = sum(1 for c in name if not c.isalnum() and c not in ' -')
+            score += special_chars * 5
+
+            # Prefer shorter names
+            score += len(name) // 10
+
+            return score
+
+        # Sort by score and return best
+        scored = [(name, name_score(name)) for name in alt_names if name]
+        if scored:
+            scored.sort(key=lambda x: x[1])
+            return scored[0][0]
+
+        return fallback
 
     def _extract_genes_from_result(self, result: Dict, max_genes: int = 50) -> List[str]:
         """
@@ -387,7 +599,8 @@ class DiseaseDrugDiscoveryTool(Tool):
                 if gene_symbol:
                     genes.add(gene_symbol)
 
-        return list(genes)[:max_genes]
+        # Sort for consistent results across runs
+        return sorted(list(genes))[:max_genes]
 
     def _extract_proteins_from_result(self, result: Dict, max_proteins: int = 50) -> List[Dict]:
         """
@@ -429,7 +642,8 @@ class DiseaseDrugDiscoveryTool(Tool):
                 if len(proteins) >= max_proteins:
                     break
 
-        return list(proteins.values())
+        # Sort by accession for consistent results
+        return sorted(proteins.values(), key=lambda p: p["accession"])
 
     def _extract_drugs_from_indication_results(
         self,
@@ -474,14 +688,9 @@ class DiseaseDrugDiscoveryTool(Tool):
                 if not drug_info:
                     continue
 
-                # Get drug name
-                drug_name = None
+                # Get drug name (prefer common names over IUPAC)
                 alt_names = drug_info.get("altNames", [])
-                if alt_names and isinstance(alt_names, list):
-                    for name in alt_names:
-                        if name and len(name) > 2:
-                            drug_name = name
-                            break
+                drug_name = self._get_best_drug_name(alt_names, fallback=drug_id)
 
                 # Get indications and find disease-specific phase
                 indications = drug_info.get("indications", [])
@@ -571,15 +780,11 @@ class DiseaseDrugDiscoveryTool(Tool):
 
                 drug_info = chembl_data.get("molecule", {})
 
-                # Get drug name
+                # Get drug name (prefer common names over IUPAC)
                 drug_name = None
                 if drug_info:
                     alt_names = drug_info.get("altNames", [])
-                    if alt_names and isinstance(alt_names, list):
-                        for name in alt_names:
-                            if name and len(name) > 2:
-                                drug_name = name
-                                break
+                    drug_name = self._get_best_drug_name(alt_names, fallback=drug_id)
 
                 drug_phase = drug_info.get("highestDevelopmentPhase") if drug_info else None
 
@@ -613,6 +818,147 @@ class DiseaseDrugDiscoveryTool(Tool):
 
         return drugs_by_gene
 
+    def _extract_pathways_from_results(self, result: Dict) -> Dict[str, List[Dict]]:
+        """
+        Extract Reactome pathways grouped by gene.
+
+        Args:
+            result: BioBTree query result from genes >> ensembl >> reactome
+
+        Returns:
+            Dict mapping gene symbols to their pathway lists
+        """
+        pathways_by_gene = {}
+
+        results_data = result.get("data", {}).get("results", {})
+        results_list = results_data.get("results", [])
+
+        for r in results_list:
+            # Get gene symbol from source
+            source = r.get("source", {})
+            gene_symbol = source.get("keyword") or source.get("identifier", "Unknown")
+
+            # Clean up gene symbol
+            if gene_symbol.startswith("ENSG"):
+                ensembl_data = source.get("ensembl", {})
+                if not ensembl_data:
+                    attrs = source.get("Attributes", {})
+                    ensembl_data = attrs.get("Ensembl", {}) or attrs.get("ensembl", {})
+                if ensembl_data:
+                    gene_symbol = ensembl_data.get("symbol") or gene_symbol
+
+            for target in r.get("targets", []):
+                pathway_id = target.get("identifier", "")
+
+                # Get Reactome data
+                reactome_data = target.get("reactome", {})
+                if not reactome_data:
+                    attrs = target.get("Attributes", {})
+                    reactome_data = attrs.get("Reactome", {}) or attrs.get("reactome", {})
+
+                pathway_name = reactome_data.get("name", "") if reactome_data else ""
+                is_disease = reactome_data.get("is_disease_pathway", False) if reactome_data else False
+
+                pathway_entry = {
+                    "id": pathway_id,
+                    "name": pathway_name,
+                    "is_disease_pathway": is_disease
+                }
+
+                if gene_symbol not in pathways_by_gene:
+                    pathways_by_gene[gene_symbol] = []
+
+                # Avoid duplicates
+                if pathway_id not in [p["id"] for p in pathways_by_gene[gene_symbol]]:
+                    pathways_by_gene[gene_symbol].append(pathway_entry)
+
+        # Sort pathways by name
+        for gene in pathways_by_gene:
+            pathways_by_gene[gene].sort(key=lambda p: p.get("name", "").lower())
+
+        return pathways_by_gene
+
+    def _extract_pubchem_drugs_from_results(
+        self,
+        result: Dict,
+        evidence_type: str = "pubchem_fda"
+    ) -> Dict[str, List[Dict]]:
+        """
+        Extract PubChem FDA-approved drugs grouped by target gene.
+
+        Args:
+            result: BioBTree query result from genes >> ... >> pubchem
+            evidence_type: Type of evidence for tracking
+
+        Returns:
+            Dict mapping gene symbols to their PubChem drug lists
+        """
+        drugs_by_gene = {}
+
+        results_data = result.get("data", {}).get("results", {})
+        results_list = results_data.get("results", [])
+
+        for r in results_list:
+            # Get gene symbol from source
+            source = r.get("source", {})
+            gene_symbol = source.get("keyword") or source.get("identifier", "Unknown")
+
+            # Clean up gene symbol
+            if gene_symbol.startswith("ENSG"):
+                ensembl_data = source.get("ensembl", {})
+                if not ensembl_data:
+                    attrs = source.get("Attributes", {})
+                    ensembl_data = attrs.get("Ensembl", {}) or attrs.get("ensembl", {})
+                if ensembl_data:
+                    gene_symbol = ensembl_data.get("symbol") or gene_symbol
+
+            for target in r.get("targets", []):
+                drug_id = target.get("identifier", "")  # PubChem CID
+
+                # Get PubChem data
+                pubchem_data = target.get("pubchem", {})
+                if not pubchem_data:
+                    attrs = target.get("Attributes", {})
+                    pubchem_data = attrs.get("Pubchem", {}) or attrs.get("pubchem", {})
+
+                # Get drug name (title or first synonym)
+                drug_name = None
+                if pubchem_data:
+                    drug_name = pubchem_data.get("title")
+                    if not drug_name:
+                        synonyms = pubchem_data.get("synonyms", [])
+                        if synonyms and isinstance(synonyms, list):
+                            drug_name = synonyms[0]
+
+                # Get molecular properties
+                molecular_formula = pubchem_data.get("molecular_formula", "") if pubchem_data else ""
+                molecular_weight = pubchem_data.get("molecular_weight") if pubchem_data else None
+                is_fda_approved = pubchem_data.get("is_fda_approved", False) if pubchem_data else False
+
+                drug_entry = {
+                    "id": f"CID:{drug_id}" if drug_id and not drug_id.startswith("CID") else drug_id,
+                    "cid": drug_id,
+                    "name": drug_name or drug_id,
+                    "molecular_formula": molecular_formula,
+                    "molecular_weight": molecular_weight,
+                    "is_fda_approved": is_fda_approved,
+                    "evidence": evidence_type,
+                    "source": "pubchem"
+                }
+
+                if gene_symbol not in drugs_by_gene:
+                    drugs_by_gene[gene_symbol] = []
+
+                # Avoid duplicates within same gene
+                if drug_id not in [d["cid"] for d in drugs_by_gene[gene_symbol]]:
+                    drugs_by_gene[gene_symbol].append(drug_entry)
+
+        # Sort drugs within each gene by name
+        for gene in drugs_by_gene:
+            drugs_by_gene[gene].sort(key=lambda d: d.get("name", "").lower())
+
+        return drugs_by_gene
+
     async def execute(
         self,
         disease: str,
@@ -621,6 +967,7 @@ class DiseaseDrugDiscoveryTool(Tool):
         include_clinvar: bool = True,
         include_reactome: bool = True,
         include_uniprot: bool = True,
+        include_pubchem: bool = True,
         **kwargs
     ) -> ToolResult:
         """
@@ -734,6 +1081,59 @@ class DiseaseDrugDiscoveryTool(Tool):
                             }
 
             # ========================================
+            # PHASE 4: Query PubChem and Reactome in parallel
+            # ========================================
+            # Collect all unique genes from all sources
+            all_genes = set()
+            for source_genes in gene_sources.values():
+                all_genes.update(source_genes)
+            all_genes_list = sorted(list(all_genes))[:50]  # Limit to 50 genes
+
+            pubchem_data = None
+            reactome_data = None
+
+            if all_genes_list:
+                # Run PubChem and Reactome queries in parallel
+                phase4_tasks = []
+                phase4_labels = []
+
+                if include_pubchem:
+                    phase4_tasks.append(self._query_genes_to_pubchem_drugs(all_genes_list, source="pubchem"))
+                    phase4_labels.append("pubchem")
+
+                # Always query Reactome for pathway context
+                phase4_tasks.append(self._query_genes_to_reactome_pathways(all_genes_list))
+                phase4_labels.append("reactome_pathways")
+
+                if phase4_tasks:
+                    phase4_results = await asyncio.gather(*phase4_tasks)
+
+                    for label, result in zip(phase4_labels, phase4_results):
+                        if label == "pubchem" and result.get("success"):
+                            pubchem_drugs = self._extract_pubchem_drugs_from_results(
+                                result,
+                                evidence_type="pubchem_fda"
+                            )
+                            if pubchem_drugs:
+                                pubchem_data = {
+                                    "genes": list(pubchem_drugs.keys()),
+                                    "drugs_by_gene": pubchem_drugs,
+                                    "gene_count": len(pubchem_drugs),
+                                    "drug_count": sum(len(d) for d in pubchem_drugs.values()),
+                                    "note": "FDA-approved drugs from PubChem targeting disease-associated genes"
+                                }
+                        elif label == "reactome_pathways" and result.get("success"):
+                            pathways_by_gene = self._extract_pathways_from_results(result)
+                            if pathways_by_gene:
+                                reactome_data = {
+                                    "genes": list(pathways_by_gene.keys()),
+                                    "pathways_by_gene": pathways_by_gene,
+                                    "gene_count": len(pathways_by_gene),
+                                    "pathway_count": sum(len(p) for p in pathways_by_gene.values()),
+                                    "note": "Reactome pathways for disease-associated genes"
+                                }
+
+            # ========================================
             # Build response
             # ========================================
             response_data = {
@@ -782,13 +1182,52 @@ class DiseaseDrugDiscoveryTool(Tool):
                     }
                     queries_run.append(f"{source}_genes")
 
+            # Add PubChem results
+            pubchem_drug_count = 0
+            if pubchem_data:
+                response_data["pubchem_targets"] = pubchem_data
+                pubchem_drug_count = pubchem_data["drug_count"]
+                queries_run.append("pubchem_fda_drugs")
+            elif include_pubchem:
+                response_data["pubchem_targets"] = {
+                    "genes": [],
+                    "drugs_by_gene": {},
+                    "gene_count": 0,
+                    "drug_count": 0,
+                    "note": "FDA-approved drugs from PubChem (no results)"
+                }
+                queries_run.append("pubchem_fda_drugs")
+
+            # Add Reactome pathway results
+            reactome_pathway_count = 0
+            if reactome_data:
+                response_data["reactome_pathways"] = reactome_data
+                reactome_pathway_count = reactome_data["pathway_count"]
+                queries_run.append("reactome_pathways")
+            else:
+                response_data["reactome_pathways"] = {
+                    "genes": [],
+                    "pathways_by_gene": {},
+                    "gene_count": 0,
+                    "pathway_count": 0,
+                    "note": "Reactome pathways (no results)"
+                }
+
             # Add summary
+            sources_with_results = list(drugs_by_source.keys())
+            if pubchem_data:
+                sources_with_results.append("pubchem")
+            if reactome_data:
+                sources_with_results.append("reactome_pathways")
+
             response_data["summary"] = {
                 "direct_indication_drugs": len(direct_drugs),
                 "total_target_genes": total_genes,
                 "total_gene_based_drugs": total_gene_drugs,
-                "sources_queried": task_labels,
-                "sources_with_results": list(drugs_by_source.keys()),
+                "pubchem_fda_drugs": pubchem_drug_count,
+                "reactome_pathways": reactome_pathway_count,
+                "sources_queried": task_labels + (["pubchem"] if include_pubchem else []) + ["reactome_pathways"],
+                "sources_with_results": sources_with_results,
                 "queries_run": queries_run
             }
 
@@ -801,8 +1240,20 @@ class DiseaseDrugDiscoveryTool(Tool):
                 if source in drugs_by_source:
                     data = drugs_by_source[source]
                     summary_parts.append(
-                        f"{data['drug_count']} drugs from {data['gene_count']} {source.upper()} genes"
+                        f"{data['drug_count']} ChEMBL drugs from {data['gene_count']} {source.upper()} genes"
                     )
+
+            # Add PubChem to summary
+            if pubchem_data:
+                summary_parts.append(
+                    f"{pubchem_data['drug_count']} FDA-approved PubChem drugs from {pubchem_data['gene_count']} genes"
+                )
+
+            # Add Reactome to summary
+            if reactome_data:
+                summary_parts.append(
+                    f"{reactome_data['pathway_count']} Reactome pathways for {reactome_data['gene_count']} genes"
+                )
 
             summary_text = ", ".join(summary_parts)
 
@@ -816,7 +1267,8 @@ class DiseaseDrugDiscoveryTool(Tool):
                         "gwas": include_gwas,
                         "clinvar": include_clinvar,
                         "reactome": include_reactome,
-                        "uniprot": include_uniprot
+                        "uniprot": include_uniprot,
+                        "pubchem": include_pubchem
                     },
                     "summary": summary_text
                 }

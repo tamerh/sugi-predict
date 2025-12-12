@@ -172,7 +172,7 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
         Format disease_drug_discovery tool output for observation.
 
         Args:
-            data: Tool result with direct_indications and gwas_targets
+            data: Tool result with direct_indications and gene-based targets
 
         Returns:
             Formatted string for LLM observation
@@ -201,41 +201,126 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
         else:
             lines.append("No drugs found with Phase 3+ indications for this disease.")
 
-        # GWAS targets
-        gwas = data.get("gwas_targets", {})
-        gwas_genes = gwas.get("genes", [])
-        drugs_by_gene = gwas.get("drugs_by_gene", {})
-        total_gwas_drugs = gwas.get("drug_count", 0)
+        # Format gene-based sources (GWAS, ClinVar, Reactome, UniProt) - ChEMBL drugs
+        source_configs = [
+            ("gwas_targets", "GWAS Targets (ChEMBL)", "Genetically associated genes"),
+            ("clinvar_targets", "ClinVar Targets (ChEMBL)", "Genes with disease-associated variants"),
+            ("reactome_targets", "Reactome Targets (ChEMBL)", "Genes in disease-related pathways"),
+            ("uniprot_targets", "UniProt Targets (ChEMBL)", "Proteins annotated with disease"),
+        ]
 
-        lines.append(f"\n## GWAS Targets ({len(gwas_genes)} genes, {total_gwas_drugs} drugs)")
+        for source_key, source_name, source_desc in source_configs:
+            source_data = data.get(source_key, {})
+            source_genes = source_data.get("genes", [])
+            drugs_by_gene = source_data.get("drugs_by_gene", {})
+            total_drugs = source_data.get("drug_count", 0)
 
-        if drugs_by_gene:
-            lines.append("| Target Gene | Drug Name | ChEMBL ID | Drug Phase |")
-            lines.append("|-------------|-----------|-----------|------------|")
-            shown = 0
-            for gene, drugs in drugs_by_gene.items():
-                for drug in drugs[:3]:  # Max 3 drugs per gene
-                    if shown >= 20:  # Max 20 rows total
+            # Only show sources with results
+            if source_genes and total_drugs > 0:
+                lines.append(f"\n## {source_name} ({len(source_genes)} genes, {total_drugs} drugs)")
+                lines.append(f"*{source_desc}*")
+                lines.append(f"Genes: {', '.join(source_genes)}")
+
+                if drugs_by_gene:
+                    lines.append("| Target Gene | Drug Name | ChEMBL ID | Drug Phase |")
+                    lines.append("|-------------|-----------|-----------|------------|")
+                    shown = 0
+                    for gene, drugs in drugs_by_gene.items():
+                        for drug in drugs[:3]:  # Max 3 drugs per gene
+                            if shown >= 15:  # Max 15 rows total per source
+                                break
+                            name = drug.get("name", drug.get("id", "?"))
+                            drug_id = drug.get("id", "?")
+                            phase = drug.get("drug_phase", "?")
+                            lines.append(f"| {gene} | {name} | {drug_id} | {phase} |")
+                            shown += 1
+                        if shown >= 15:
+                            break
+                    remaining = total_drugs - shown
+                    if remaining > 0:
+                        lines.append(f"... and {remaining} more drug-gene associations")
+
+        # Format PubChem FDA-approved drugs
+        pubchem_data = data.get("pubchem_targets", {})
+        pubchem_genes = pubchem_data.get("genes", [])
+        pubchem_drugs_by_gene = pubchem_data.get("drugs_by_gene", {})
+        pubchem_total_drugs = pubchem_data.get("drug_count", 0)
+
+        if pubchem_genes and pubchem_total_drugs > 0:
+            lines.append(f"\n## PubChem FDA-Approved Drugs ({len(pubchem_genes)} genes, {pubchem_total_drugs} drugs)")
+            lines.append(f"*FDA-approved drugs from PubChem bioactivity data targeting {disease}-associated genes*")
+
+            # Show drugs grouped by gene with actual CIDs
+            if pubchem_drugs_by_gene:
+                for gene, drugs in pubchem_drugs_by_gene.items():
+                    drug_count = len(drugs)
+                    # Get sample CIDs
+                    sample_cids = [d.get("cid", d.get("id", "?")) for d in drugs[:5]]
+                    cids_str = ", ".join(f"CID:{cid}" for cid in sample_cids)
+                    if drug_count > 5:
+                        cids_str += f" (+{drug_count - 5} more)"
+                    lines.append(f"- **{gene}**: {drug_count} FDA-approved drugs - {cids_str}")
+
+                # Also show detailed table for first few
+                lines.append("\nSample drugs with details:")
+                lines.append("| Target Gene | PubChem CID | Formula |")
+                lines.append("|-------------|-------------|---------|")
+                shown = 0
+                for gene, drugs in pubchem_drugs_by_gene.items():
+                    for drug in drugs[:2]:  # Max 2 drugs per gene in table
+                        if shown >= 10:
+                            break
+                        cid = drug.get("cid", drug.get("id", "?"))
+                        formula = drug.get("molecular_formula", "")
+                        lines.append(f"| {gene} | {cid} | {formula} |")
+                        shown += 1
+                    if shown >= 10:
                         break
-                    name = drug.get("name", drug.get("id", "?"))
-                    drug_id = drug.get("id", "?")
-                    phase = drug.get("drug_phase", "?")
-                    lines.append(f"| {gene} | {name} | {drug_id} | {phase} |")
-                    shown += 1
-                if shown >= 20:
-                    break
-            remaining = total_gwas_drugs - shown
-            if remaining > 0:
-                lines.append(f"... and {remaining} more drug-gene associations")
-        else:
-            lines.append("No GWAS-associated gene targets found.")
+
+                lines.append(f"\n*Note: Use PubChem CID to lookup drug details at pubchem.ncbi.nlm.nih.gov*")
+
+        # Format Reactome pathways
+        reactome_data = data.get("reactome_pathways", {})
+        reactome_genes = reactome_data.get("genes", [])
+        pathways_by_gene = reactome_data.get("pathways_by_gene", {})
+        total_pathways = reactome_data.get("pathway_count", 0)
+
+        if reactome_genes and total_pathways > 0:
+            lines.append(f"\n## Reactome Pathways ({len(reactome_genes)} genes, {total_pathways} pathways)")
+            lines.append(f"*Biological pathways involving {disease}-associated genes*")
+            lines.append(f"**INCLUDE THIS DATA IN YOUR RESPONSE - list each gene with its pathways below:**")
+
+            for gene, pathways in pathways_by_gene.items():
+                # Show pathway names for each gene
+                disease_pathways = [p for p in pathways if p.get("is_disease_pathway")]
+                other_pathways = [p for p in pathways if not p.get("is_disease_pathway")]
+
+                pathway_names = []
+                # Prioritize disease pathways
+                for p in disease_pathways[:3]:
+                    pathway_names.append(f"**{p.get('name', p.get('id'))}** (disease)")
+                for p in other_pathways[:2]:
+                    name = p.get('name', p.get('id'))
+                    if len(name) > 50:
+                        name = name[:47] + "..."
+                    pathway_names.append(name)
+
+                more_count = len(pathways) - len(pathway_names)
+                pathways_str = ", ".join(pathway_names)
+                if more_count > 0:
+                    pathways_str += f" (+{more_count} more)"
+
+                lines.append(f"- **{gene}**: {pathways_str}")
 
         # Summary
         summary = data.get("summary", {})
         lines.append(f"\n## Summary")
-        lines.append(f"- Direct indication drugs: {summary.get('direct_indication_drugs', 0)}")
-        lines.append(f"- GWAS genes: {summary.get('gwas_genes', 0)}")
-        lines.append(f"- GWAS drugs: {summary.get('gwas_drugs', 0)}")
+        lines.append(f"- Direct indication drugs (ChEMBL): {summary.get('direct_indication_drugs', 0)}")
+        lines.append(f"- Total target genes: {summary.get('total_target_genes', 0)}")
+        lines.append(f"- Total gene-based drugs (ChEMBL): {summary.get('total_gene_based_drugs', 0)}")
+        lines.append(f"- FDA-approved drugs (PubChem): {summary.get('pubchem_fda_drugs', 0)}")
+        lines.append(f"- Reactome pathways: {summary.get('reactome_pathways', 0)}")
+        lines.append(f"- Sources with results: {summary.get('sources_with_results', [])}")
 
         return "\n".join(lines)
 

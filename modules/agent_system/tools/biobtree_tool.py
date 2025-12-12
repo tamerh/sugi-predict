@@ -1,15 +1,349 @@
-"""BioBTree query tool for agent system."""
+"""BioBTree query tool for agent system.
+
+This module provides tools for querying BioBTree database with:
+- Full pagination support to get ALL results
+- Modular helper methods for reuse
+- Clean separation between parsing, querying, and result formatting
+"""
 
 from typing import Optional, List, Dict, Any
 
 from .base import Tool, ToolResult
 from ..llm.base import ToolDefinition
 from ..integrations.biobtree_client import BioBTreeClient
-from ..core.config import BioBTreeConfig
 
+
+# =============================================================================
+# PAGINATION HELPERS
+# =============================================================================
+
+async def paginated_map_query(
+    client: BioBTreeClient,
+    terms: List[str],
+    mapfilter: str,
+    mode: str = "full",
+    max_pages: int = 20,
+    preserve_sources: bool = True
+) -> Dict[str, Any]:
+    """
+    Execute a BioBTree map query with pagination to get ALL results.
+
+    BioBTree returns paginated results (75 per page for full mode, 150 for lite).
+    This helper fetches all pages and combines them.
+
+    Args:
+        client: BioBTree client instance
+        terms: List of input terms to query
+        mapfilter: BioBTree mapfilter string (e.g., ">>ensembl>>uniprot")
+        mode: Query mode - "full" or "lite"
+        max_pages: Maximum pages to fetch (safety limit, default 20)
+        preserve_sources: If True, preserve source-to-target mapping per input term
+                         If False, flatten all targets into single list
+
+    Returns:
+        Combined result with all targets from all pages
+
+    Example:
+        # Get all drugs for a disease (may be 150+ results across 2+ pages)
+        result = await paginated_map_query(
+            client, ["glioblastoma"], ">>efo>>chembl_molecule"
+        )
+    """
+    page_token = None
+
+    if preserve_sources:
+        # Preserve source-to-target mapping (each input term keeps its own targets)
+        targets_by_source = {}  # source_id -> {"source": {}, "targets": []}
+
+        for page_num in range(max_pages):
+            result = await client.map_query(
+                terms=terms,
+                mapfilter=mapfilter,
+                mode=mode,
+                page=page_token
+            )
+
+            # Extract results based on mode
+            if mode == "lite":
+                results_data = result.get("results_lite", {})
+                results_list = results_data.get("mappings", [])
+
+                for mapping in results_list:
+                    source_id = mapping.get("input", "unknown")
+                    if source_id not in targets_by_source:
+                        targets_by_source[source_id] = {
+                            "source": mapping.get("source", {}),
+                            "targets": []
+                        }
+                    targets_by_source[source_id]["targets"].extend(
+                        mapping.get("targets", [])
+                    )
+
+                # Check pagination
+                pagination = results_data.get("pagination", {})
+                if pagination.get("has_next") and pagination.get("next_token"):
+                    page_token = pagination["next_token"]
+                else:
+                    break
+            else:
+                # Full mode
+                results_data = result.get("results", {})
+                results_list = results_data.get("results", [])
+
+                for r in results_list:
+                    source = r.get("source", {})
+                    source_id = source.get("keyword") or source.get("identifier", "unknown")
+                    if source_id not in targets_by_source:
+                        targets_by_source[source_id] = {"source": source, "targets": []}
+                    targets_by_source[source_id]["targets"].extend(r.get("targets", []))
+
+                # Check pagination
+                nextpage = results_data.get("nextpage", "")
+                if nextpage and nextpage != page_token:
+                    page_token = nextpage
+                else:
+                    break
+
+        # Rebuild results preserving source structure
+        if mode == "lite":
+            combined_mappings = [
+                {
+                    "input": source_id,
+                    "source": data["source"],
+                    "targets": data["targets"]
+                }
+                for source_id, data in targets_by_source.items()
+            ]
+            return {
+                "results_lite": {
+                    "mappings": combined_mappings,
+                    "stats": {
+                        "total_terms": len(terms),
+                        "mapped": len([m for m in combined_mappings if m["targets"]]),
+                        "total_targets": sum(len(m["targets"]) for m in combined_mappings)
+                    }
+                }
+            }
+        else:
+            combined_results = [
+                {"source": data["source"], "targets": data["targets"]}
+                for data in targets_by_source.values()
+            ]
+            return {"results": {"results": combined_results}}
+
+    else:
+        # Flatten all targets into single list (for single-term queries)
+        all_targets = []
+
+        for page_num in range(max_pages):
+            result = await client.map_query(
+                terms=terms,
+                mapfilter=mapfilter,
+                mode=mode,
+                page=page_token
+            )
+
+            if mode == "lite":
+                results_data = result.get("results_lite", {})
+                for mapping in results_data.get("mappings", []):
+                    all_targets.extend(mapping.get("targets", []))
+
+                pagination = results_data.get("pagination", {})
+                if pagination.get("has_next") and pagination.get("next_token"):
+                    page_token = pagination["next_token"]
+                else:
+                    break
+            else:
+                results_data = result.get("results", {})
+                for r in results_data.get("results", []):
+                    all_targets.extend(r.get("targets", []))
+
+                nextpage = results_data.get("nextpage", "")
+                if nextpage and nextpage != page_token:
+                    page_token = nextpage
+                else:
+                    break
+
+        if mode == "lite":
+            return {
+                "results_lite": {
+                    "mappings": [{"targets": all_targets}],
+                    "stats": {"total_targets": len(all_targets)}
+                }
+            }
+        else:
+            return {"results": {"results": [{"targets": all_targets}]}}
+
+
+# =============================================================================
+# QUERY PARSING HELPERS
+# =============================================================================
+
+def parse_chain_query(chain_query: str) -> tuple:
+    """
+    Parse a BioBTree chain query into terms and datasets.
+
+    Args:
+        chain_query: Query string like "EGFR >> ensembl >> uniprot"
+
+    Returns:
+        Tuple of (terms_list, datasets_list)
+
+    Example:
+        >>> parse_chain_query("BRCA1,TP53 >> ensembl >> uniprot")
+        (['BRCA1', 'TP53'], ['ensembl', 'uniprot'])
+    """
+    parts = [p.strip() for p in chain_query.split(">>")]
+
+    if len(parts) < 2:
+        raise ValueError("Invalid query format. Use 'term >> dataset' or 'term >> dataset >> dataset'")
+
+    # First part is terms (comma-separated if multiple)
+    term_string = parts[0]
+    if ',' in term_string:
+        terms = [t.strip() for t in term_string.split(',')]
+    else:
+        terms = [term_string]
+
+    # Remaining parts are datasets
+    datasets = parts[1:]
+
+    return terms, datasets
+
+
+def build_mapfilter(
+    datasets: List[str],
+    species: Optional[str] = None,
+    canonical_only: bool = False
+) -> str:
+    """
+    Build BioBTree mapfilter with native filtering.
+
+    Args:
+        datasets: List of dataset names from chain query
+        species: Species genome filter (e.g., "homo_sapiens")
+        canonical_only: If True, add reviewed filter for uniprot
+
+    Returns:
+        Mapfilter string with filters applied
+
+    Example:
+        >>> build_mapfilter(["ensembl", "uniprot"], species="homo_sapiens", canonical_only=True)
+        '>>ensembl[ensembl.genome=="homo_sapiens"]>>uniprot[uniprot.reviewed==true]'
+    """
+    filtered_parts = []
+
+    for dataset in datasets:
+        dataset = dataset.strip()
+
+        # Add species filter to ensembl
+        if dataset == "ensembl" and species:
+            dataset = f'ensembl[ensembl.genome=="{species}"]'
+
+        # Add canonical filter to uniprot
+        elif dataset == "uniprot" and canonical_only:
+            dataset = "uniprot[uniprot.reviewed==true]"
+
+        filtered_parts.append(dataset)
+
+    return ">>" + ">>".join(filtered_parts)
+
+
+# =============================================================================
+# RESPONSE PARSING HELPERS
+# =============================================================================
+
+def parse_lite_response(result: Dict) -> Dict[str, Any]:
+    """
+    Parse lite mode response into a simplified format.
+
+    Args:
+        result: Raw response from BioBTree with results_lite
+
+    Returns:
+        Parsed response with mappings, stats, pagination
+    """
+    lite = result.get('results_lite', {})
+
+    query_info = lite.get('query', {})
+    original_terms = query_info.get('terms', [])
+
+    mappings = []
+    for i, m in enumerate(lite.get('mappings', [])):
+        original_term = original_terms[i] if i < len(original_terms) else None
+
+        mapping = {
+            'term': original_term,
+            'input': m.get('input', ''),
+            'source': None,
+            'targets': [],
+            'error': m.get('error')
+        }
+
+        if m.get('source'):
+            mapping['source'] = {
+                'dataset': m['source'].get('d', ''),
+                'id': m['source'].get('id', ''),
+                'has_attr': m['source'].get('has_attr', False)
+            }
+
+        for t in m.get('targets', []):
+            mapping['targets'].append({
+                'dataset': t.get('d', ''),
+                'id': t.get('id', ''),
+                'has_attr': t.get('has_attr', False)
+            })
+
+        mappings.append(mapping)
+
+    return {
+        'mode': 'lite',
+        'mappings': mappings,
+        'stats': lite.get('stats', {}),
+        'pagination': lite.get('pagination', {}),
+        'query': lite.get('query', {})
+    }
+
+
+def count_results(result: Dict, mode: str) -> tuple:
+    """
+    Count sources and targets in a result.
+
+    Args:
+        result: BioBTree result dict
+        mode: "lite" or "full"
+
+    Returns:
+        Tuple of (total_sources, total_targets)
+    """
+    if mode == "lite":
+        lite = result.get('results_lite', {})
+        mappings = lite.get('mappings', [])
+        total_sources = len(mappings)
+        total_targets = sum(len(m.get('targets', [])) for m in mappings)
+    else:
+        full_result = result.get('results', {})
+        results_list = full_result.get('results', [])
+        total_sources = len(results_list)
+        total_targets = sum(len(r.get('targets', [])) for r in results_list)
+
+    return total_sources, total_targets
+
+
+# =============================================================================
+# MAIN TOOL CLASSES
+# =============================================================================
 
 class BioBTreeQueryTool(Tool):
-    """Tool for querying BioBTree database with chain syntax."""
+    """
+    Tool for querying BioBTree database with chain syntax.
+
+    Features:
+    - Full pagination support (fetches ALL results, not just first page)
+    - Species filtering (default: homo_sapiens)
+    - Canonical protein filtering (default: reviewed only)
+    - Both lite (compact) and full (detailed) response modes
+    """
 
     def __init__(self, client: BioBTreeClient):
         """
@@ -33,97 +367,6 @@ class BioBTreeQueryTool(Tool):
             )
         )
         self.client = client
-
-    def _build_filtered_mapfilter(
-        self,
-        datasets: list,
-        species: Optional[str] = None,
-        canonical_only: bool = False
-    ) -> str:
-        """
-        Build BioBTree mapfilter with native filtering.
-
-        Args:
-            datasets: List of dataset names from chain query
-            species: Species genome filter (e.g., "homo_sapiens")
-            canonical_only: If True, add reviewed filter for uniprot
-
-        Returns:
-            Filtered mapfilter string
-
-        Example:
-            datasets=["ensembl", "uniprot"], species="homo_sapiens", canonical_only=True
-            Returns: ">>ensembl[ensembl.genome==\"homo_sapiens\"]>>uniprot[uniprot.reviewed==true]"
-        """
-        filtered_parts = []
-
-        for dataset in datasets:
-            dataset = dataset.strip()
-
-            # Add species filter to ensembl
-            if dataset == "ensembl" and species:
-                dataset = f'ensembl[ensembl.genome=="{species}"]'
-
-            # Add canonical filter to uniprot
-            elif dataset == "uniprot" and canonical_only:
-                dataset = "uniprot[uniprot.reviewed==true]"
-
-            filtered_parts.append(dataset)
-
-        return ">>" + ">>".join(filtered_parts)
-
-    def _parse_lite_response(self, result: Dict) -> Dict[str, Any]:
-        """
-        Parse lite mode response into a simplified format.
-
-        Args:
-            result: Raw response from BioBTree with results_lite
-
-        Returns:
-            Parsed response with mappings, stats, pagination
-        """
-        lite = result.get('results_lite', {})
-
-        # Get original query terms to match with mappings
-        query_info = lite.get('query', {})
-        original_terms = query_info.get('terms', [])
-
-        mappings = []
-        for i, m in enumerate(lite.get('mappings', [])):
-            # Get original term if available (by index matching)
-            original_term = original_terms[i] if i < len(original_terms) else None
-
-            mapping = {
-                'term': original_term,  # Original query term (e.g., "EGFR")
-                'input': m.get('input', ''),  # Resolved ID (e.g., "ENSG00000146648")
-                'source': None,
-                'targets': [],
-                'error': m.get('error')
-            }
-
-            if m.get('source'):
-                mapping['source'] = {
-                    'dataset': m['source'].get('d', ''),
-                    'id': m['source'].get('id', ''),
-                    'has_attr': m['source'].get('has_attr', False)
-                }
-
-            for t in m.get('targets', []):
-                mapping['targets'].append({
-                    'dataset': t.get('d', ''),
-                    'id': t.get('id', ''),
-                    'has_attr': t.get('has_attr', False)
-                })
-
-            mappings.append(mapping)
-
-        return {
-            'mode': 'lite',
-            'mappings': mappings,
-            'stats': lite.get('stats', {}),
-            'pagination': lite.get('pagination', {}),
-            'query': lite.get('query', {})
-        }
 
     def get_definition(self) -> ToolDefinition:
         """Get tool definition for LLM function calling."""
@@ -181,7 +424,7 @@ class BioBTreeQueryTool(Tool):
         **kwargs
     ) -> ToolResult:
         """
-        Execute BioBTree query with optional native filtering.
+        Execute BioBTree query with full pagination.
 
         Args:
             chain_query: BioBTree chain query (e.g., "EGFR >> ensembl >> uniprot")
@@ -191,47 +434,27 @@ class BioBTreeQueryTool(Tool):
             **kwargs: Additional parameters
 
         Returns:
-            Tool result with BioBTree response
+            Tool result with ALL BioBTree results (paginated automatically)
         """
         try:
-            # Parse query to extract terms and mapfilter
-            # Format: "term >> dataset >> dataset" or "term1,term2 >> dataset"
-            parts = [p.strip() for p in chain_query.split(">>")]
+            # Parse query
+            terms, datasets = parse_chain_query(chain_query)
 
-            if len(parts) < 2:
-                return ToolResult(
-                    success=False,
-                    data=None,
-                    error="Invalid query format. Use 'term >> dataset' or 'term >> dataset >> dataset'"
-                )
+            # Build mapfilter with filters
+            mapfilter = build_mapfilter(datasets, species=species, canonical_only=canonical_only)
 
-            # First part is the search term(s) - split by comma if multiple
-            term_string = parts[0]
-            if ',' in term_string:
-                # Multiple terms: "TP53,BRCA1" -> ["TP53", "BRCA1"]
-                terms = [t.strip() for t in term_string.split(',')]
-            else:
-                # Single term
-                terms = [term_string]
-
-            # Build mapping chain with native BioBTree filters
-            mapfilter = self._build_filtered_mapfilter(
-                parts[1:],
-                species=species,
-                canonical_only=canonical_only
-            )
-
-            # Execute query on shared connection (client will auto-connect)
-            result = await self.client.map_query(
+            # Execute query with FULL PAGINATION
+            result = await paginated_map_query(
+                self.client,
                 terms=terms,
                 mapfilter=mapfilter,
-                mode=mode
+                mode=mode,
+                preserve_sources=True
             )
 
-            # Handle response based on mode
+            # Format response based on mode
             if mode == "lite":
-                # Parse lite mode response
-                parsed = self._parse_lite_response(result)
+                parsed = parse_lite_response(result)
                 stats = parsed.get('stats', {})
 
                 return ToolResult(
@@ -254,16 +477,8 @@ class BioBTreeQueryTool(Tool):
                     }
                 )
             else:
-                # Full mode - return raw result with full attributes
-                full_result = result.get('results', {})
-                results_list = full_result.get('results', [])
-                stats = full_result.get('stats', {})
-
-                total_sources = len(results_list)
-                total_targets = sum(
-                    len(r.get('targets', []))
-                    for r in results_list
-                )
+                # Full mode
+                total_sources, total_targets = count_results(result, mode)
 
                 return ToolResult(
                     success=True,
@@ -283,6 +498,12 @@ class BioBTreeQueryTool(Tool):
                     }
                 )
 
+        except ValueError as e:
+            return ToolResult(
+                success=False,
+                data=None,
+                error=str(e)
+            )
         except Exception as e:
             return ToolResult(
                 success=False,
@@ -355,7 +576,6 @@ class BioBTreeSearchTool(Tool):
             Tool result with search results
         """
         try:
-            # Execute search on shared connection (client will auto-connect)
             result = await self.client.search(
                 terms=[term],
                 dataset=dataset,

@@ -1,0 +1,187 @@
+# BioYoda Multi-Agent System Configuration
+
+# Gateway settings
+gateway:
+  max_query_length: 1000
+  session_timeout_hours: 24
+  rate_limit:
+    requests_per_minute: 60
+    requests_per_hour: 1000
+
+# Integration settings
+integrations:
+  biobtree:
+    protocol: "grpc"  # "grpc" (default) or "rest"
+    grpc:
+      host: "scc2"  # BioBTree running on scc2
+      port: 7777
+      max_connections: 50
+      keepalive_time: 30  # seconds
+      timeout: 30  # seconds
+    rest:  # Optional fallback for debugging
+      host: "localhost"
+      port: 9292
+      timeout: 30
+    retry_attempts: 3
+    retry_delay: 1  # seconds
+
+  qdrant:
+    host: "localhost"
+    port: 6333
+    timeout: 10
+    collections:
+      pubmed: "pubmed_abstracts"
+      clinical_trials: "clinical_trials"
+      patents: "patents_text"
+      esm2: "esm2_proteins"
+
+  redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    cache_ttl_hours: 24
+    enabled: true
+
+# LLM provider settings
+# NOTE: These settings can be overridden by the main BioYoda config (config/config.yaml -> rag section)
+# Agent system will check: 1) This file, 2) Main config rag section, 3) Environment variables
+llm:
+  # Default provider: anthropic | openai | gemini | openrouter
+  # If not set here, will use config.yaml -> rag.provider
+  default_provider: openrouter  # OpenRouter provides unified access to multiple models
+
+  # Provider configurations
+  # If null/missing, will fallback to config.yaml -> rag section
+  providers:
+    # OpenRouter - Unified API for 100+ models
+    # Available models via OpenRouter:
+    #   - OpenAI: openai/gpt-4o, openai/gpt-4o-mini, openai/gpt-4-turbo
+    #   - Anthropic: anthropic/claude-3.5-sonnet, anthropic/claude-3-opus, anthropic/claude-3-haiku
+    #   - Google: google/gemini-2.0-flash-exp:free, google/gemini-pro-1.5
+    #   - Mistral: mistralai/mistral-large, mistralai/mixtral-8x7b-instruct
+    #   - Groq: groq/llama-3.3-70b-versatile, groq/llama-3.1-8b-instant
+    #   - Meta: meta-llama/llama-3.1-70b-instruct
+    #   - DeepSeek: deepseek/deepseek-chat
+    openrouter:
+      # === SELECT MODEL (uncomment ONE) ===
+      # OpenAI
+      # model: "openai/gpt-4o"              # GPT-4o - Fast, capable ($2.50/1M in, $10/1M out)
+      # model: "openai/gpt-4o-mini"         # GPT-4o mini - Fast, cheap ($0.15/1M in, $0.60/1M out)
+      # model: "openai/gpt-4-turbo"         # GPT-4 Turbo - Powerful ($10/1M in, $30/1M out)
+
+      # Google Gemini
+      # model: "google/gemini-2.5-flash"      # Gemini 2.5 Flash - Fast reasoning ($0.15/1M in, $0.60/1M out)
+      # model: "google/gemini-2.5-pro"        # Gemini 2.5 Pro - Best reasoning ($1.25/1M in, $10/1M out)
+      # model: "google/gemini-2.0-flash-001"  # Gemini 2.0 Flash ($0.10/1M in, $0.40/1M out)
+      # model: "google/gemini-flash-1.5-8b"   # Gemini 1.5 Flash 8B - Fast, cheap
+
+      # Anthropic Claude
+      # model: "anthropic/claude-3.5-sonnet"  # Claude 3.5 Sonnet - Balanced ($3/1M in, $15/1M out)
+      # model: "anthropic/claude-3-opus"      # Claude 3 Opus - Most capable ($15/1M in, $75/1M out)
+      # model: "anthropic/claude-3-haiku"     # Claude 3 Haiku - Fast, cheap ($0.25/1M in, $1.25/1M out)
+
+      # Meta Llama (open models)
+      # model: "meta-llama/llama-3.3-70b-instruct"  # Llama 3.3 70B - Best open model ($0.12/1M)
+      # Testing different models for multi-path approach
+      # model: "openai/gpt-4o-mini"  # GPT-4o mini - runs queries but phase data wrong
+      # model: "google/gemini-2.5-flash"  # Gemini 2.5 Flash - HALLUCINATING drug data!
+      model: "anthropic/claude-3-haiku"  # Claude Haiku - BEST for multi-path (faithful to data)
+      # model: "meta-llama/llama-3.1-70b-instruct"  # Llama 3.1 70B - Capable ($0.12/1M)
+      # model: "meta-llama/llama-3.1-8b-instruct"   # Llama 3.1 8B - Fast, light ($0.02/1M)
+
+      # Mistral
+      # model: "mistralai/mistral-large-2411"  # Mistral Large - Powerful ($2/1M in, $6/1M out)
+      # model: "mistralai/mistral-small-2409"  # Mistral Small - Fast ($0.20/1M in, $0.60/1M out)
+
+      # DeepSeek
+      # model: "deepseek/deepseek-chat"      # DeepSeek Chat ($0.14/1M in, $0.28/1M out)
+      # model: "deepseek/deepseek-coder"     # DeepSeek Coder ($0.14/1M in, $0.28/1M out)
+
+      # Qwen
+      # model: "qwen/qwen-2.5-72b-instruct"  # Qwen 2.5 72B - Strong multilingual ($0.12/1M)
+
+      api_key: "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"
+      api_key_env: "OPENROUTER_API_KEY"
+      max_tokens: 4096
+      temperature: 0.0  # Deterministic for agent reasoning
+      timeout: 60
+
+    anthropic:
+      model: "claude-3-5-sonnet-20241022"  # Latest Claude model
+      api_key_env: "ANTHROPIC_API_KEY"
+      max_tokens: 4096
+      temperature: 0.0  # Deterministic for agent reasoning
+      timeout: 60
+
+    openai:
+      model: "gpt-4-turbo-preview"
+      api_key_env: "OPENAI_API_KEY"
+      max_tokens: 4096
+      temperature: 0.0
+      timeout: 60
+
+    gemini:
+      model: "gemini-2.0-flash-lite"  # Latest Gemini model
+      api_key_env: "GOOGLE_API_KEY"  # Will fallback to config.yaml -> rag.api_key if not set
+      max_tokens: 4096
+      temperature: 0.0
+      timeout: 60
+
+# Agent settings
+agents:
+  max_iterations: 7  # Maximum ReAct iterations
+  tool_timeout: 30  # seconds
+
+  reasoning_engine:
+    model_override: null  # Use default LLM if null
+    confidence_threshold: 0.8
+
+  specialized:
+    drug_discovery:
+      enabled: true
+      tools: ["biobtree_query", "bioyoda_search"]
+
+    variant_analysis:
+      enabled: true
+      tools: ["biobtree_query", "bioyoda_search"]
+
+    protein_analysis:
+      enabled: true
+      tools: ["biobtree_query", "bioyoda_search", "bioyoda_protein_similarity"]
+
+# Prompt settings
+prompts:
+  directory: "modules/agent_system/prompts"
+  cache_enabled: true
+  version: "v1"  # Default prompt version
+
+# Logging settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "json"  # "json" or "text"
+
+  handlers:
+    console: true
+    file: true
+    file_path: "logs/agent_system.log"
+
+  structured:
+    include_timestamp: true
+    include_trace_id: true
+
+# Monitoring settings
+monitoring:
+  enabled: true
+  prometheus_port: 9090
+  tracing_enabled: false  # OpenTelemetry tracing
+  metrics:
+    - query_latency
+    - tool_execution_time
+    - llm_token_usage
+    - cache_hit_rate
+
+# Development settings
+development:
+  debug: false
+  reload: false
+  profile: false

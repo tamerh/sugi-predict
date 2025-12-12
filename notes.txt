@@ -320,3 +320,52 @@ Rehber Videolar
 🔗 https://lnkd.in/dC5c3SHM
 
 Youtube kanalımızda Biyolojik Bilimlerde eğitim almakta olan öğrenciler için bir hazine bulunmaktadır, değerlendirmenizi öneririm.
+
+
+ Reactome - Disease Relationship Summary
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  Reactome Disease Data Model in BioTree                                     │
+  │                                                                             │
+  │  ┌───────────────────────────────────────────────────────────────────────┐ │
+  │  │  Reactome Pathway (e.g., R-HSA-1226099)                               │ │
+  │  │  Attributes:                                                          │ │
+  │  │    - name: "Signaling by FGFR in disease"                            │ │
+  │  │    - tax_id: 9606 (Homo sapiens)                                     │ │
+  │  │    - is_disease_pathway: true/false                                  │ │
+  │  └───────────────────────────────────────────────────────────────────────┘ │
+  │                           │                                                 │
+  │        Cross-references:                                                    │
+  │                           ▼                                                 │
+  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+  │  │ Ensembl      │  │ UniProt      │  │ ChEBI        │  │ GO           │   │
+  │  │ (genes)      │  │ (proteins)   │  │ (compounds)  │  │ (GO terms)   │   │
+  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘   │
+  │                                                                             │
+  │  Hierarchy: reactomeparent / reactomechild                                 │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  Query Examples
+
+  # Gene -> Reactome pathways
+  ENSG00000141510 >>ensembl >>reactome
+
+  # Filter disease pathways only  
+  ENSG00000141510 >>ensembl >>reactome[reactome.isDiseasePathway==true]
+
+  # Disease pathway -> Genes
+  R-HSA-1226099 >>reactome >>ensembl
+
+  # Pathway hierarchy
+  R-HSA-1226099 >>reactome >>reactomeparent  # Get parent pathways
+  R-HSA-1226099 >>reactome >>reactomechild   # Get child pathways
+
+  # Pathway -> GO term
+  R-HSA-109582 >>reactome >>go
+
+  Key differences from ClinVar:
+  - ClinVar: Variant-level disease associations (specific mutations causing diseases)
+  - Reactome: Pathway-level disease annotations (biological processes involved in diseases)
+
+
+

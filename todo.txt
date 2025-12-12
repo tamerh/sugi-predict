@@ -1,4 +1,26 @@
+  Option 2: Add EFO → Antibody link in BioBTree (Medium)
+  - Parse indications field from TheraSAbDab
+  - Map indication text to EFO terms
+  - Enable: disease >> efo >> antibody
+
+  Option 3: Antibody similarity search (Advanced)
+  - Use heavy/light chain sequences
+  - ESM2 embeddings for sequence similarity
+  - Find similar antibodies for a given therapeutic
+
+
+
+
+
+ÖNEMLİ....
+
 biobtree needs normalization for ontologies not full text search....
+
+
+yine bu tool çağrılırken top targets gibi bişey yapıyor kod şuanda...
+
+tableları biz inject edecez.....
+
 
 batch api provider bazında ondan open router sadece development için kullanılabilir.....
 
