@@ -1,0 +1,112 @@
+BioYoda v0.2.0 - AI-powered biomedical search system
+
+Usage: bioyoda.sh <command> [options]
+
+COMMANDS:
+    start                     Start both Qdrant and API servers
+    stop                      Stop both Qdrant and API servers
+    run <module>              Run data processing pipeline
+    status                    Show pipeline status
+    qdrant <subcommand>       Manage Qdrant vector database
+    api <subcommand>          Manage BioYoda Search API
+    search [query]            Quick search across collections
+    test [--pipeline]         Run test suite
+    snapshot --name <name>    Create isolated code snapshot
+    validate <module>         Validate module outputs
+    clean [module]            Clean intermediate files
+    dryrun <module>           Show what would be executed
+    dag <module>              Generate workflow DAG visualization
+    unlock                    Unlock working directory after crash
+    help                      Show this help message
+    version                   Show version information
+
+DATA PROCESSING MODULES:
+    pubmed                    PubMed literature (30M+ abstracts)
+    clinical_trials           Clinical trials data (500K+ trials)
+    patents                   Patents (43M+ patents, 30M+ compounds)
+    esm2                      Protein embeddings (ESM-2 model)
+    diamond                   Protein sequence similarity (DIAMOND BLASTP)
+    all                       Run all modules
+
+QDRANT SUBCOMMANDS:
+    start                     Start Qdrant server (local or cluster)
+    stop                      Stop Qdrant server
+    restart [path]            Restart with existing storage (auto-detect or specify path)
+    status                    Check server status and collections
+    insert <dataset>          Insert data (pubmed, clinical_trials, patents, esm2, all)
+    stop-insert <dataset>     Stop a running insertion job
+
+API SUBCOMMANDS:
+    start                     Start API server
+    stop                      Stop API server
+    status                    Check API server status
+    search                    CLI search tool
+
+RUN OPTIONS:
+    --cluster                 Submit jobs to SGE cluster
+    --local                   Run locally (default)
+    --bg, -b                  Run in background with nohup
+    --cores N                 Number of cores for local mode (default: 1)
+    --jobs N                  Max parallel cluster jobs (default: 100)
+    --config FILE             Use custom config file
+    --test                    Use test configuration
+    --mode <full|update>      Processing mode (default: full)
+    --dryrun                  Show what would be executed
+    --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066)
+
+QDRANT START OPTIONS:
+    --mode <local|cluster>    Run mode (default: local)
+    --queue <name>            SGE queue (default: scc, can use: gpu)
+    --runtime <hours>         Runtime in hours (default: 48)
+    --memory <mb>             Memory in MB (default: 32000)
+    --out-dir <path>          Use existing storage directory
+
+API START OPTIONS:
+    --port N                  Port number (default: 8000)
+    --host HOST               Host address (default: 0.0.0.0)
+    --bg, -b                  Run in background
+    --reload                  Auto-reload on code changes
+
+EXAMPLES:
+    # Quick start/stop servers
+    bioyoda.sh start
+    bioyoda.sh stop
+
+    # Data processing
+    bioyoda.sh run pubmed --cluster --bg --jobs 50
+    bioyoda.sh run all --cluster --bg --jobs 100
+
+    # Test with small dataset
+    bioyoda.sh run pubmed --test --local
+
+    # GPU cluster with CUDA 11.4 nodes
+    bioyoda.sh run pubmed --cluster --bg --cuda11.4
+
+    # Qdrant operations
+    bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
+    bioyoda.sh qdrant start --out-dir /scratch/qdrant_data  # Use existing storage
+    bioyoda.sh qdrant restart                                # Auto-detect and restart
+    bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --bg
+    bioyoda.sh qdrant status
+    bioyoda.sh qdrant stop
+
+    # API operations
+    bioyoda.sh api start --bg
+    bioyoda.sh search "CRISPR gene editing"
+    bioyoda.sh api stop
+
+    # Testing
+    bioyoda.sh test                    # Fast fixture mode
+    bioyoda.sh test --pipeline         # Full E2E test
+
+    # Production snapshot
+    bioyoda.sh snapshot --name prod_v1.0
+    cd snapshots/prod_v1.0/code
+    ./bioyoda.sh run all --cluster --bg
+
+    # Maintenance
+    bioyoda.sh status
+    bioyoda.sh stop pubmed --clean
+    bioyoda.sh unlock
+
+For more information: https://github.com/yourusername/bioyoda

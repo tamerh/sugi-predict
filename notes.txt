@@ -1,3 +1,6 @@
+
+"http://scc2:9292/ws/?i=BEVACIZUMAB&s=antibody"
+
 ok we added some integration tests recently were you can check tests/xintegration (read all the files) where our aim is both make integration tests but at the same time find good usecases or bugs in a very
  simple intiutive ways......i have reprocess data with some fixes and now again available at scc2 host....also from the first version of biobtree i have also some good usecase but remember when these were 
 created several dataset werent included in biobtree but still we can use them  get inspiriration and improve our xintegration....remember our aim again like i told in the begining here is those usecases they

@@ -26,14 +26,15 @@ integrations:
     retry_delay: 1  # seconds
 
   qdrant:
-    host: "localhost"
+    host: "scc2"  # Qdrant running on scc2 (same as BioBTree)
     port: 6333
-    timeout: 10
+    timeout: 30
     collections:
       pubmed: "pubmed_abstracts"
       clinical_trials: "clinical_trials"
-      patents: "patents_text"
-      esm2: "esm2_proteins"
+      patents_text: "patents_text"
+      patents_compounds: "patents_compounds"
+      esm2: "esm2"
 
   redis:
     host: "localhost"
