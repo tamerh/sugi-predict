@@ -19,6 +19,8 @@ The agent uses a specialized `disease_drug_discovery` tool that runs multiple qu
 | PATH 3 | ClinVar | MONDO | `disease >> mondo >> clinvar >> ensembl >> ChEMBL drugs` | ✅ Working |
 | PATH 6 | PubChem FDA | - | `genes >> ensembl >> uniprot >> pubchem_activity >> pubchem[fda_approved]` | ✅ Working |
 | PATH 7 | Reactome Pathways | - | `genes >> ensembl >> reactome` | ✅ Working |
+| PATH 8 | Similar Proteins | Qdrant ESM-2 | 573K SwissProt proteins | ✅ Working |
+| PATH 9 | Similar Compounds | Qdrant Morgan FP | 30.8M patent compounds | ✅ Working |
 
 ### Pending Paths (Code Ready, Awaiting BioBTree Links)
 
@@ -62,8 +64,24 @@ disease_drug_discovery(
     include_clinvar=True,          # Include ClinVar variant associations
     include_reactome=True,         # Include Reactome pathways (pending)
     include_uniprot=True,          # Include UniProt annotations (pending)
-    include_pubchem=True           # Include PubChem FDA-approved drugs (default: True)
+    include_pubchem=True,          # Include PubChem FDA-approved drugs (default: True)
+    include_similar_proteins=False,  # Find similar proteins via ESM-2 (default: False)
+    include_similar_compounds=False, # Find similar compounds via Morgan FP (default: False)
+    similarity_limit=5             # Number of similar items per query (default: 5)
 )
+```
+
+### Similarity Search (PATH 8 & 9)
+
+When enabled, the tool finds:
+- **Similar Proteins**: Uses ESM-2 embeddings (1280-dim) from 573K SwissProt proteins to find structurally similar proteins to disease targets
+- **Similar Compounds**: Uses Morgan fingerprints (2048-bit) from 30.8M SureChEMBL patent compounds to find analogs of discovered drugs
+
+Example with similarity search enabled:
+```
+Direct indications: 28 drugs
+Similar proteins: 21 proteins for 7 targets (scores 0.98-0.99)
+Similar compounds: 19 compounds for 8 drugs (scores 0.95-1.0)
 ```
 
 ## Key Files

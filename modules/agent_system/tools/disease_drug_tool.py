@@ -2,6 +2,10 @@
 
 This tool runs multiple BioBTree queries internally and returns
 consolidated, filtered results for disease-to-drug queries.
+
+Integrates with Qdrant for similarity search:
+- ESM-2 protein embeddings (573K proteins)
+- Morgan fingerprint compound similarity (30.8M patent compounds)
 """
 
 import asyncio
@@ -10,6 +14,7 @@ from typing import Optional, List, Dict, Any
 from .base import Tool, ToolResult
 from ..llm.base import ToolDefinition
 from ..integrations.biobtree_client import BioBTreeClient
+from ..integrations.qdrant_client import BioYodaQdrantClient
 
 
 class DiseaseDrugDiscoveryTool(Tool):
@@ -22,27 +27,34 @@ class DiseaseDrugDiscoveryTool(Tool):
     - PATH 3: ClinVar variants (disease >> mondo >> clinvar >> ensembl)
     - PATH 4: Reactome pathways (disease >> efo >> reactome >> ensembl)
     - PATH 5: UniProt disease associations (disease >> efo >> uniprot)
+    - PATH 6: PubChem FDA-approved drugs
+    - PATH 7: Reactome pathway context
+    - PATH 8: Similar proteins via ESM-2 embeddings (Qdrant)
+    - PATH 9: Similar compounds via Morgan fingerprints (Qdrant)
 
     Returns consolidated results with proper indication-phase filtering.
     """
 
-    def __init__(self, client: BioBTreeClient):
+    def __init__(self, client: BioBTreeClient, qdrant_client: BioYodaQdrantClient = None):
         """
         Initialize Disease Drug Discovery tool.
 
         Args:
             client: BioBTree client instance
+            qdrant_client: Optional Qdrant client for similarity search
         """
         super().__init__(
             name="disease_drug_discovery",
             description=(
                 "Find drugs for a disease using multiple evidence paths. "
                 "Returns: (1) Drugs with direct disease indications (filtered by approval phase), "
-                "(2) Drugs targeting genes from GWAS, ClinVar variants, Reactome pathways, and UniProt. "
+                "(2) Drugs targeting genes from GWAS, ClinVar variants, Reactome pathways, and UniProt, "
+                "(3) Optionally: similar proteins (ESM-2) and similar compounds (Morgan fingerprints). "
                 "Use this for questions like 'What drugs are available for glioblastoma?'"
             )
         )
         self.client = client
+        self.qdrant = qdrant_client
 
     def get_definition(self) -> ToolDefinition:
         """Get tool definition for LLM function calling."""
@@ -102,6 +114,29 @@ class DiseaseDrugDiscoveryTool(Tool):
                             "Include FDA-approved drugs from PubChem targeting disease-associated genes (default: true)."
                         ),
                         "default": True
+                    },
+                    "include_similar_proteins": {
+                        "type": "boolean",
+                        "description": (
+                            "Find proteins similar to disease targets using ESM-2 embeddings. "
+                            "Searches 573K SwissProt proteins. (default: false)"
+                        ),
+                        "default": False
+                    },
+                    "include_similar_compounds": {
+                        "type": "boolean",
+                        "description": (
+                            "Find compounds similar to discovered drugs using Morgan fingerprints. "
+                            "Searches 30.8M patent compounds. (default: false)"
+                        ),
+                        "default": False
+                    },
+                    "similarity_limit": {
+                        "type": "integer",
+                        "description": (
+                            "Number of similar proteins/compounds to return per query (default: 5)."
+                        ),
+                        "default": 5
                     }
                 },
                 "required": ["disease"]
@@ -959,6 +994,158 @@ class DiseaseDrugDiscoveryTool(Tool):
 
         return drugs_by_gene
 
+    async def _find_similar_proteins(
+        self,
+        protein_ids: List[str],
+        limit: int = 5
+    ) -> Dict[str, List[Dict]]:
+        """
+        PATH 8: Find proteins similar to disease-associated targets using ESM-2 embeddings.
+
+        Args:
+            protein_ids: List of UniProt accession IDs
+            limit: Number of similar proteins per query
+
+        Returns:
+            Dict mapping source protein ID to list of similar proteins
+        """
+        if not self.qdrant or not protein_ids:
+            return {}
+
+        similar_by_protein = {}
+
+        for protein_id in protein_ids[:10]:  # Limit to 10 query proteins
+            try:
+                similar = await self.qdrant.search_proteins_by_id(
+                    protein_id=protein_id,
+                    limit=limit,
+                    include_self=False
+                )
+
+                if similar:
+                    # Enrich with BioBTree annotations
+                    enriched = []
+                    for p in similar:
+                        pid = p.get("protein_id")
+                        entry = {
+                            "protein_id": pid,
+                            "similarity_score": round(p.get("score", 0), 4),
+                            "source": "esm2_embedding"
+                        }
+
+                        # Try to get gene name from BioBTree
+                        try:
+                            await self.client.connect()
+                            result = await self.client.map_query(
+                                terms=[pid],
+                                mapfilter=">>uniprot",
+                                mode="full"
+                            )
+                            results_list = result.get("results", {}).get("results", [])
+                            if results_list:
+                                source = results_list[0].get("source", {})
+                                uniprot = source.get("uniprot", {})
+                                entry["gene_name"] = uniprot.get("geneName") or uniprot.get("gene_name")
+                                names = uniprot.get("names", [])
+                                if names:
+                                    entry["protein_name"] = names[0]
+                        except Exception:
+                            pass
+
+                        enriched.append(entry)
+
+                    similar_by_protein[protein_id] = enriched
+
+            except Exception:
+                continue
+
+        return similar_by_protein
+
+    async def _find_similar_compounds(
+        self,
+        drugs: List[Dict],
+        limit: int = 5
+    ) -> Dict[str, List[Dict]]:
+        """
+        PATH 9: Find compounds similar to discovered drugs using Morgan fingerprints.
+
+        Args:
+            drugs: List of drug dicts (must have 'smiles' or 'id' that can be resolved)
+            limit: Number of similar compounds per query
+
+        Returns:
+            Dict mapping source drug ID to list of similar compounds
+        """
+        if not self.qdrant or not drugs:
+            return {}
+
+        # Import fingerprint generation
+        try:
+            from .compound_similarity_tool import smiles_to_fingerprint
+        except ImportError:
+            return {}
+
+        similar_by_drug = {}
+
+        for drug in drugs[:10]:  # Limit to 10 query drugs
+            drug_id = drug.get("id", "")
+            smiles = drug.get("smiles")
+
+            # Try to get SMILES if not present
+            if not smiles and drug_id:
+                try:
+                    await self.client.connect()
+                    # Try ChEMBL lookup
+                    result = await self.client.search([drug_id], dataset="chembl_molecule")
+                    results = result.get("results", {}).get("results", [])
+                    if results:
+                        chembl = results[0].get("chembl", {}).get("molecule", {})
+                        smiles = chembl.get("smiles")
+                except Exception:
+                    pass
+
+            if not smiles:
+                continue
+
+            # Generate fingerprint
+            fingerprint = smiles_to_fingerprint(smiles)
+            if not fingerprint:
+                continue
+
+            try:
+                similar = await self.qdrant.search_similar_compounds(
+                    query_vector=fingerprint,
+                    limit=limit + 1,  # Extra to filter out exact match
+                    score_threshold=0.5
+                )
+
+                # Filter out exact match and format
+                enriched = []
+                for c in similar:
+                    if c.get("smiles") == smiles:
+                        continue
+                    if len(enriched) >= limit:
+                        break
+
+                    enriched.append({
+                        "surechembl_id": c.get("surechembl_id"),
+                        "smiles": c.get("smiles"),
+                        "molecular_weight": c.get("molecular_weight"),
+                        "similarity_score": round(c.get("score", 0), 3),
+                        "source": "morgan_fingerprint"
+                    })
+
+                if enriched:
+                    similar_by_drug[drug_id] = {
+                        "query_smiles": smiles,
+                        "similar_compounds": enriched
+                    }
+
+            except Exception:
+                continue
+
+        return similar_by_drug
+
     async def execute(
         self,
         disease: str,
@@ -968,6 +1155,9 @@ class DiseaseDrugDiscoveryTool(Tool):
         include_reactome: bool = True,
         include_uniprot: bool = True,
         include_pubchem: bool = True,
+        include_similar_proteins: bool = False,
+        include_similar_compounds: bool = False,
+        similarity_limit: int = 5,
         **kwargs
     ) -> ToolResult:
         """
@@ -976,6 +1166,7 @@ class DiseaseDrugDiscoveryTool(Tool):
         Uses two-step approach for gene-based sources:
         1. Get genes/proteins from each source (GWAS, ClinVar, Reactome, UniProt)
         2. Map those genes/proteins to drugs via ChEMBL
+        3. Optionally find similar proteins (ESM-2) and compounds (Morgan FP)
 
         Args:
             disease: Disease name or ID
@@ -984,6 +1175,10 @@ class DiseaseDrugDiscoveryTool(Tool):
             include_clinvar: Include ClinVar variant-based targets (default: True)
             include_reactome: Include Reactome pathway-based targets (default: True)
             include_uniprot: Include UniProt disease-associated proteins (default: True)
+            include_pubchem: Include PubChem FDA-approved drugs (default: True)
+            include_similar_proteins: Find similar proteins via ESM-2 (default: False)
+            include_similar_compounds: Find similar compounds via Morgan FP (default: False)
+            similarity_limit: Number of similar items per query (default: 5)
             **kwargs: Additional parameters
 
         Returns:
@@ -1134,6 +1329,77 @@ class DiseaseDrugDiscoveryTool(Tool):
                                 }
 
             # ========================================
+            # PHASE 5: Similarity search (optional)
+            # ========================================
+            similar_proteins_data = None
+            similar_compounds_data = None
+
+            if self.qdrant and (include_similar_proteins or include_similar_compounds):
+                phase5_tasks = []
+                phase5_labels = []
+
+                # PATH 8: Find similar proteins to disease targets
+                if include_similar_proteins:
+                    # Collect UniProt IDs from UniProt targets
+                    protein_ids = []
+                    if protein_sources.get("uniprot"):
+                        protein_ids = [p["accession"] for p in protein_sources["uniprot"][:10]]
+
+                    # Also try to get proteins from genes via BioBTree
+                    if not protein_ids and all_genes_list:
+                        try:
+                            await self.client.connect()
+                            result = await self.client.map_query(
+                                terms=all_genes_list[:5],
+                                mapfilter=">>ensembl>>uniprot[uniprot.reviewed==true]",
+                                mode="lite"
+                            )
+                            mappings = result.get("results_lite", {}).get("mappings", [])
+                            for m in mappings:
+                                for t in m.get("targets", []):
+                                    if t.get("d") == "uniprot":
+                                        protein_ids.append(t.get("id"))
+                                        if len(protein_ids) >= 10:
+                                            break
+                                if len(protein_ids) >= 10:
+                                    break
+                        except Exception:
+                            pass
+
+                    if protein_ids:
+                        phase5_tasks.append(self._find_similar_proteins(protein_ids, similarity_limit))
+                        phase5_labels.append("similar_proteins")
+
+                # PATH 9: Find similar compounds to discovered drugs
+                if include_similar_compounds and direct_drugs:
+                    # Use top direct indication drugs
+                    phase5_tasks.append(self._find_similar_compounds(direct_drugs[:10], similarity_limit))
+                    phase5_labels.append("similar_compounds")
+
+                if phase5_tasks:
+                    phase5_results = await asyncio.gather(*phase5_tasks)
+
+                    for label, result in zip(phase5_labels, phase5_results):
+                        if label == "similar_proteins" and result:
+                            similar_proteins_data = {
+                                "query_proteins": list(result.keys()),
+                                "similar_by_protein": result,
+                                "query_count": len(result),
+                                "total_similar": sum(len(v) for v in result.values()),
+                                "method": "ESM-2 embedding similarity (1280-dim)",
+                                "database": "SwissProt (573K proteins)"
+                            }
+                        elif label == "similar_compounds" and result:
+                            similar_compounds_data = {
+                                "query_drugs": list(result.keys()),
+                                "similar_by_drug": result,
+                                "query_count": len(result),
+                                "total_similar": sum(len(v.get("similar_compounds", [])) for v in result.values()),
+                                "method": "Morgan fingerprint similarity (2048-bit)",
+                                "database": "SureChEMBL patents (30.8M compounds)"
+                            }
+
+            # ========================================
             # Build response
             # ========================================
             response_data = {
@@ -1213,12 +1479,30 @@ class DiseaseDrugDiscoveryTool(Tool):
                     "note": "Reactome pathways (no results)"
                 }
 
+            # Add similarity search results
+            similar_proteins_count = 0
+            similar_compounds_count = 0
+
+            if similar_proteins_data:
+                response_data["similar_proteins"] = similar_proteins_data
+                similar_proteins_count = similar_proteins_data["total_similar"]
+                queries_run.append("similar_proteins")
+
+            if similar_compounds_data:
+                response_data["similar_compounds"] = similar_compounds_data
+                similar_compounds_count = similar_compounds_data["total_similar"]
+                queries_run.append("similar_compounds")
+
             # Add summary
             sources_with_results = list(drugs_by_source.keys())
             if pubchem_data:
                 sources_with_results.append("pubchem")
             if reactome_data:
                 sources_with_results.append("reactome_pathways")
+            if similar_proteins_data:
+                sources_with_results.append("similar_proteins")
+            if similar_compounds_data:
+                sources_with_results.append("similar_compounds")
 
             response_data["summary"] = {
                 "direct_indication_drugs": len(direct_drugs),
@@ -1226,6 +1510,8 @@ class DiseaseDrugDiscoveryTool(Tool):
                 "total_gene_based_drugs": total_gene_drugs,
                 "pubchem_fda_drugs": pubchem_drug_count,
                 "reactome_pathways": reactome_pathway_count,
+                "similar_proteins": similar_proteins_count,
+                "similar_compounds": similar_compounds_count,
                 "sources_queried": task_labels + (["pubchem"] if include_pubchem else []) + ["reactome_pathways"],
                 "sources_with_results": sources_with_results,
                 "queries_run": queries_run
@@ -1255,6 +1541,16 @@ class DiseaseDrugDiscoveryTool(Tool):
                     f"{reactome_data['pathway_count']} Reactome pathways for {reactome_data['gene_count']} genes"
                 )
 
+            # Add similarity search to summary
+            if similar_proteins_data:
+                summary_parts.append(
+                    f"{similar_proteins_data['total_similar']} similar proteins (ESM-2) for {similar_proteins_data['query_count']} targets"
+                )
+            if similar_compounds_data:
+                summary_parts.append(
+                    f"{similar_compounds_data['total_similar']} similar compounds (Morgan FP) for {similar_compounds_data['query_count']} drugs"
+                )
+
             summary_text = ", ".join(summary_parts)
 
             return ToolResult(
@@ -1268,8 +1564,11 @@ class DiseaseDrugDiscoveryTool(Tool):
                         "clinvar": include_clinvar,
                         "reactome": include_reactome,
                         "uniprot": include_uniprot,
-                        "pubchem": include_pubchem
+                        "pubchem": include_pubchem,
+                        "similar_proteins": include_similar_proteins,
+                        "similar_compounds": include_similar_compounds
                     },
+                    "similarity_limit": similarity_limit,
                     "summary": summary_text
                 }
             )

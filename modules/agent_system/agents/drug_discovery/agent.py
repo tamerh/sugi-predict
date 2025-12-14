@@ -73,7 +73,7 @@ class DrugDiscoveryAgent(Agent):
             description="Finds drugs, compounds, and therapeutic targets for genes/proteins",
             llm=llm,
             tool_registry=tool_registry,
-            tools=["disease_drug_discovery", "biobtree_query"],  # Specialized + general tools
+            tools=["disease_drug_discovery", "biobtree_query", "protein_similarity_search", "compound_similarity_search"],
             max_iterations=3,  # Reduced - specialized tool does the work
             system_prompt=system_prompt
         )

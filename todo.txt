@@ -89,6 +89,27 @@ functional enrichments.
 
 
 
+  Where we left off:
+  - Integrated similarity search (PATH 8 & 9) into the drug discovery agent
+  - Created comprehensive 1-month strategic plan
+  - Decided on parallel approach: limited beta + preprint together
+
+  Week 1 Tasks from the Plan (starting now):
+
+  | Task                                   | Priority | Notes                            |
+  |----------------------------------------|----------|----------------------------------|
+  | Response formatting (markdown reports) | Critical | Raw JSON looks unprofessional    |
+  | Drug name resolution                   | High     | Prefer common names via altNames |
+  | Export functionality (CSV, JSON)       | Medium   | Users need portable data         |
+  | Error handling improvements            | Medium   | Graceful failures                |
+  | 3 showcase analyses                    | High     | Glioblastoma, T2 Diabetes, NSCLC |
+
+  Paper tasks (parallel):
+  - Paper outline and abstract draft
+  - Methods: BioBTree architecture diagram
+  - Methods: 9-path drug discovery flowchart
+
+
 
 
 biobtree simple test system like bioyoda....

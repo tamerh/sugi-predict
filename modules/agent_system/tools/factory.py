@@ -32,7 +32,7 @@ def create_default_tools() -> List[Tool]:
     tools = [
         BioBTreeQueryTool(biobtree_client),
         BioBTreeSearchTool(biobtree_client),
-        DiseaseDrugDiscoveryTool(biobtree_client),  # Specialized disease-drug tool
+        DiseaseDrugDiscoveryTool(biobtree_client, qdrant_client),  # Specialized disease-drug tool with similarity search
         ProteinSimilarityTool(qdrant_client, biobtree_client),  # ESM-2 protein similarity
         CompoundSimilarityTool(qdrant_client, biobtree_client),  # Morgan fingerprint similarity
     ]
