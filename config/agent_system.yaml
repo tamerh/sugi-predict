@@ -11,15 +11,15 @@ gateway:
 # Integration settings
 integrations:
   biobtree:
-    protocol: "grpc"  # "grpc" (default) or "rest"
+    protocol: "rest"  # "grpc" (default) or "rest"
     grpc:
       host: "scc2"  # BioBTree running on scc2
       port: 7777
       max_connections: 50
       keepalive_time: 30  # seconds
       timeout: 30  # seconds
-    rest:  # Optional fallback for debugging
-      host: "localhost"
+    rest:
+      host: "scc2"  # BioBTree REST on scc2:9292
       port: 9292
       timeout: 30
     retry_attempts: 3

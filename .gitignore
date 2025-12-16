@@ -15,6 +15,7 @@ config/test_config.yaml
 
 # Other directories
 biobtreev2/
+web/
 vibe/
 old/
 bkp
