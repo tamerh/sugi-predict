@@ -299,6 +299,77 @@ Month 2: Wider launch with preprint credibility
 2. **9-Path Drug Discovery** - Most comprehensive evidence gathering
 3. **30-Second Analysis** - Speed vs weeks of manual work
 4. **Deterministic + AI** - Accurate data with intelligent reasoning
+5. **Full Reproducibility** - Every result traceable to exact data versions
+
+---
+
+## Reproducibility & Data Provenance
+
+**Vision:** Every query result can be reproduced exactly. Users know precisely which data versions produced their findings - critical for regulatory submissions and scientific publications.
+
+**Why This Matters:**
+- Pharma companies need audit trails for regulatory submissions
+- Academic users need reproducibility for publications
+- Differentiates from black-box AI tools
+- Builds trust with enterprise customers
+
+### BioBTree Reproducibility
+
+Track and store:
+| Item | Storage | Notes |
+|------|---------|-------|
+| BioBTree git commit/tag | `manifest.json` | Exact code version used |
+| Build timestamp | `manifest.json` | When data was generated |
+| Dataset versions | `manifest.json` | Per-source version info |
+| Source file checksums | `manifest.json` | MD5/SHA256 of inputs |
+| Small source files | `sources/` | Local copy if <10MB |
+
+**manifest.json example:**
+```json
+{
+  "biobtree_version": "v2.1.0",
+  "biobtree_commit": "a1b2c3d",
+  "build_timestamp": "2025-01-15T10:30:00Z",
+  "datasets": {
+    "uniprot": {
+      "version": "2025_01",
+      "source_url": "https://ftp.uniprot.org/...",
+      "checksum": "sha256:abc123...",
+      "record_count": 573000
+    },
+    "chembl": {
+      "version": "34",
+      "source_url": "https://ftp.ebi.ac.uk/...",
+      "checksum": "sha256:def456..."
+    }
+  }
+}
+```
+
+### BioYoda Query Reproducibility
+
+Each query response includes:
+```json
+{
+  "query_id": "uuid",
+  "timestamp": "2025-01-15T14:22:00Z",
+  "data_versions": {
+    "biobtree": "v2.1.0 (a1b2c3d)",
+    "qdrant_pubmed": "2025-01-10",
+    "qdrant_patents": "2025-01-05"
+  },
+  "results": { ... }
+}
+```
+
+### Implementation Priority
+
+| Phase | Task | Notes |
+|-------|------|-------|
+| Month 1 | BioBTree manifest.json generation | During build process |
+| Month 1 | Version info in API responses | Simple metadata field |
+| Month 2 | Source file archiving (small files) | <10MB threshold |
+| Month 2 | Query result archiving | Optional, for enterprise |
 
 ---
 

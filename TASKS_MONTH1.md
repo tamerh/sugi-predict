@@ -122,6 +122,125 @@ Graceful failures with clear messages.
 
 ---
 
+### 1.7 Reproducibility & Data Provenance [C]
+Full traceability of data versions for regulatory compliance and scientific reproducibility.
+
+#### 1.7.1 BioBTree Manifest System [C]
+
+| Subtask | Owner | Effort | Parallel |
+|---------|-------|--------|----------|
+| 1.7.1.1 Design manifest.json schema | [C] | 1h | parallel:1.1-1.5 |
+| 1.7.1.2 Auto-capture git commit/tag during build | [C] | 1h | - |
+| 1.7.1.3 Extract dataset versions from source URLs | [C] | 2h | - |
+| 1.7.1.4 Calculate checksums for source files | [C] | 1h | - |
+| 1.7.1.5 Record build timestamp and duration | [C] | 30m | - |
+| 1.7.1.6 Generate manifest.json in output dir | [C] | 1h | - |
+| 1.7.1.7 Add record counts per dataset | [C] | 1h | - |
+
+**Output:** `biobtreev2/scripts/generate_manifest.py` or integrate into `gen.sh`
+
+**manifest.json fields:**
+```json
+{
+  "biobtree_version": "tag or v0.0.0-dev",
+  "biobtree_commit": "full sha",
+  "biobtree_branch": "main",
+  "build_timestamp": "ISO8601",
+  "build_duration_seconds": 3600,
+  "build_host": "hostname",
+  "datasets": {
+    "<dataset_name>": {
+      "version": "extracted or unknown",
+      "source_url": "original URL",
+      "source_file": "local filename",
+      "checksum_sha256": "hash of source",
+      "download_date": "ISO8601",
+      "record_count": 12345,
+      "local_copy": true/false
+    }
+  }
+}
+```
+
+---
+
+#### 1.7.2 Dataset Version Detection [C]
+
+| Subtask | Owner | Effort | Parallel |
+|---------|-------|--------|----------|
+| 1.7.2.1 UniProt version from filename/URL | [C] | 30m | parallel:1.7.1 |
+| 1.7.2.2 ChEMBL version from filename | [C] | 30m | - |
+| 1.7.2.3 PubChem version (date-based) | [C] | 30m | - |
+| 1.7.2.4 DrugBank version from file | [C] | 30m | - |
+| 1.7.2.5 Reactome version detection | [C] | 30m | - |
+| 1.7.2.6 EFO/Mondo version detection | [C] | 30m | - |
+| 1.7.2.7 SureChEMBL/Patents version | [C] | 30m | - |
+| 1.7.2.8 Fallback: use download date if no version | [C] | 30m | - |
+
+**Output:** `biobtreev2/scripts/version_detection.py`
+
+---
+
+#### 1.7.3 Source File Archiving [C]
+
+| Subtask | Owner | Effort | Parallel |
+|---------|-------|--------|----------|
+| 1.7.3.1 Define size threshold (e.g., <10MB) | [C] | 15m | parallel:1.7.1,1.7.2 |
+| 1.7.3.2 Create sources/ archive directory | [C] | 15m | - |
+| 1.7.3.3 Copy small source files during build | [C] | 1h | - |
+| 1.7.3.4 Compress archived sources (gzip) | [C] | 30m | - |
+| 1.7.3.5 Record archive status in manifest | [C] | 30m | - |
+| 1.7.3.6 Add .gitignore for large archives | [C] | 15m | - |
+
+**Small files to archive:** config files, mapping files, ontology subsets, version files
+
+**Large files (skip):** UniProt XML, PubChem SDF, ChEMBL SQL dumps
+
+---
+
+#### 1.7.4 BioYoda API Version Metadata [C]
+
+| Subtask | Owner | Effort | Parallel |
+|---------|-------|--------|----------|
+| 1.7.4.1 Load BioBTree manifest.json at startup | [C] | 30m | parallel:1.7.1-3 |
+| 1.7.4.2 Track Qdrant collection build dates | [C] | 1h | - |
+| 1.7.4.3 Add `data_versions` to API responses | [C] | 1h | - |
+| 1.7.4.4 Create `/v1/versions` endpoint | [C] | 30m | - |
+| 1.7.4.5 Add version info to export files | [C] | 30m | - |
+
+**API response addition:**
+```json
+{
+  "results": { ... },
+  "metadata": {
+    "query_id": "uuid",
+    "timestamp": "ISO8601",
+    "data_versions": {
+      "biobtree": "v2.1.0 (a1b2c3d4)",
+      "biobtree_build": "2025-01-15",
+      "qdrant_pubmed": "2025-01-10",
+      "qdrant_clinical_trials": "2025-01-10",
+      "qdrant_patents": "2025-01-05"
+    }
+  }
+}
+```
+
+---
+
+#### 1.7.5 Reproducibility Documentation [C]
+
+| Subtask | Owner | Effort | Parallel |
+|---------|-------|--------|----------|
+| 1.7.5.1 Document manifest.json format | [C] | 30m | blocked:1.7.1 |
+| 1.7.5.2 Add reproducibility section to README | [C] | 30m | - |
+| 1.7.5.3 Create REPRODUCIBILITY.md guide | [C] | 1h | - |
+| 1.7.5.4 Add to paper methods section | [C] | 30m | - |
+
+**Output:** `REPRODUCIBILITY.md` in both biobtree and bioyoda repos
+
+---
+
 ## Week 2: API & Infrastructure
 
 ### 2.1 Hetzner Server Setup [U]
@@ -448,4 +567,18 @@ JWT auth, rate limiting, usage logging to Postgres."
 "Create SvelteKit components: QueryInput (disease autocomplete),
 ResultsDisplay (collapsible evidence paths), DrugTable (sortable),
 ExportButtons. Use Tailwind CSS."
+```
+
+**Reproducibility:**
+```
+"Create manifest.json generation for BioBTree builds. Track:
+git commit/tag, build timestamp, dataset versions (UniProt, ChEMBL,
+PubChem, etc.), source file checksums. Auto-detect versions from
+filenames/URLs. Archive small source files (<10MB) in sources/ dir."
+```
+
+```
+"Add data_versions metadata to all BioYoda API responses. Load
+BioBTree manifest.json at startup. Track Qdrant collection build
+dates. Create /v1/versions endpoint showing all data provenance."
 ```
