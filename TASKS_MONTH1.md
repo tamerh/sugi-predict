@@ -1,6 +1,8 @@
-# BioYoda: Month 1 Task Breakdown
+# Sugi: Month 1 Task Breakdown
 
 Detailed task breakdown for parallel execution. Use this to assign work to Claude or track your own progress.
+
+**Domain:** sugi.bio (purchased)
 
 ---
 
@@ -124,6 +126,7 @@ Graceful failures with clear messages.
 
 ### 1.7 Reproducibility & Data Provenance [C]
 Full traceability of data versions for regulatory compliance and scientific reproducibility.
+**Key selling point:** Differentiates from black-box AI tools, critical for pharma regulatory submissions.
 
 #### 1.7.1 BioBTree Manifest System [C]
 
@@ -139,7 +142,7 @@ Full traceability of data versions for regulatory compliance and scientific repr
 
 **Output:** `biobtreev2/scripts/generate_manifest.py` or integrate into `gen.sh`
 
-**manifest.json fields:**
+**manifest.json schema:**
 ```json
 {
   "biobtree_version": "tag or v0.0.0-dev",
@@ -193,12 +196,11 @@ Full traceability of data versions for regulatory compliance and scientific repr
 | 1.7.3.6 Add .gitignore for large archives | [C] | 15m | - |
 
 **Small files to archive:** config files, mapping files, ontology subsets, version files
-
 **Large files (skip):** UniProt XML, PubChem SDF, ChEMBL SQL dumps
 
 ---
 
-#### 1.7.4 BioYoda API Version Metadata [C]
+#### 1.7.4 Sugi API Version Metadata [C]
 
 | Subtask | Owner | Effort | Parallel |
 |---------|-------|--------|----------|
@@ -237,7 +239,7 @@ Full traceability of data versions for regulatory compliance and scientific repr
 | 1.7.5.3 Create REPRODUCIBILITY.md guide | [C] | 1h | - |
 | 1.7.5.4 Add to paper methods section | [C] | 30m | - |
 
-**Output:** `REPRODUCIBILITY.md` in both biobtree and bioyoda repos
+**Output:** `REPRODUCIBILITY.md` in both biobtree and sugi repos
 
 ---
 
@@ -259,97 +261,113 @@ Physical server provisioning and hardening.
 
 ---
 
-### 2.2 Cloudflare Setup [U]
+### 2.2 Sugi.bio Domain Setup [U]
+Domain purchased: sugi.bio (rebranding from BioYoda)
 
 | Subtask | Owner | Effort | Parallel |
 |---------|-------|--------|----------|
-| 2.2.1 Add domain to Cloudflare | [U] | 15m | parallel:2.1 |
+| 2.2.1 Add sugi.bio to Cloudflare | [U] | 15m | parallel:2.1 |
 | 2.2.2 Update nameservers at registrar | [U] | 15m | - |
-| 2.2.3 DNS records (A, CNAME) | [U] | 15m | blocked:2.1.2 |
+| 2.2.3 DNS records (A, CNAME for app, api, www) | [U] | 15m | blocked:2.1.2 |
 | 2.2.4 SSL mode: Full (Strict) | [U] | 5m | - |
 | 2.2.5 Generate origin certificate | [U] | 15m | - |
 | 2.2.6 Enable WAF rules | [U] | 15m | - |
 | 2.2.7 Configure rate limiting | [U] | 15m | - |
+| 2.2.8 Set up Cloudflare Email Routing | [U] | 30m | - |
+| 2.2.9 Create email aliases (hello@, support@) | [U] | 15m | blocked:2.2.8 |
 
 ---
 
-### 2.3 Business Registration (Germany) [U]
+### 2.3 Branding Update [C]
+Update codebase from BioYoda to Sugi branding.
+
+| Subtask | Owner | Effort | Parallel |
+|---------|-------|--------|----------|
+| 2.3.1 Update landing page title/branding | [C] | 30m | parallel:2.2 |
+| 2.3.2 Update meta tags and SEO | [C] | 15m | - |
+| 2.3.3 Create Sugi logo/favicon | [C/U] | 1h | parallel:2.3.1 |
+| 2.3.4 Update header/footer branding | [C] | 15m | - |
+| 2.3.5 Update API documentation branding | [C] | 15m | - |
+
+---
+
+### 2.4 Business Registration (Germany) [U]
 Gewerbeanmeldung for legal compliance.
 
 | Subtask | Owner | Effort | Parallel |
 |---------|-------|--------|----------|
-| 2.3.1 Gewerbeanmeldung at local Gewerbeamt | [U] | 1h | parallel:2.1,2.2 |
-| 2.3.2 Receive Finanzamt questionnaire (1-2 weeks) | [U] | - | - |
-| 2.3.3 Fill out, elect Kleinunternehmerregelung | [U] | 30m | - |
-| 2.3.4 Set up Stripe with Steuer-ID | [U] | 30m | blocked:2.3.1 |
+| 2.4.1 Gewerbeanmeldung at local Gewerbeamt | [U] | 1h | parallel:2.1,2.2 |
+| 2.4.2 Receive Finanzamt questionnaire (1-2 weeks) | [U] | - | - |
+| 2.4.3 Fill out, elect Kleinunternehmerregelung | [U] | 30m | - |
+| 2.4.4 Set up Stripe with Steuer-ID | [U] | 30m | blocked:2.4.1 |
 
 **Cost:** ~€30 registration fee
 **Note:** Do Gewerbeanmeldung early Week 2 - Finanzamt response takes 1-2 weeks.
 
 ---
 
-### 2.4 Docker Configuration [C]
+### 2.5 Docker Configuration [C]
 
 | Subtask | Owner | Effort | Parallel |
 |---------|-------|--------|----------|
-| 2.4.1 Create `docker-compose.yml` | [C] | 2h | parallel:2.1,2.2,2.3 |
-| 2.4.2 Dockerfile for FastAPI | [C] | 1h | - |
-| 2.4.3 Dockerfile for BioBTree | [C] | 30m | - |
-| 2.4.4 Qdrant container config | [C] | 30m | - |
-| 2.4.5 Postgres container config | [C] | 30m | - |
-| 2.4.6 Volume mounts for data persistence | [C] | 30m | - |
-| 2.4.7 Environment variables / secrets | [C] | 30m | - |
-| 2.4.8 Caddyfile for reverse proxy | [C] | 1h | - |
-| 2.4.9 Health check endpoints | [C] | 30m | - |
+| 2.5.1 Create `docker-compose.yml` | [C] | 2h | parallel:2.1,2.2,2.3 |
+| 2.5.2 Dockerfile for FastAPI | [C] | 1h | - |
+| 2.5.3 Dockerfile for BioBTree | [C] | 30m | - |
+| 2.5.4 Qdrant container config | [C] | 30m | - |
+| 2.5.5 Postgres container config | [C] | 30m | - |
+| 2.5.6 Volume mounts for data persistence | [C] | 30m | - |
+| 2.5.7 Environment variables / secrets | [C] | 30m | - |
+| 2.5.8 Caddyfile for reverse proxy | [C] | 1h | - |
+| 2.5.9 Health check endpoints | [C] | 30m | - |
 
 **Output:** `infrastructure/` directory
 
 ---
 
-### 2.5 GitHub Actions CI/CD [C]
+### 2.6 GitHub Actions CI/CD [C]
 
 | Subtask | Owner | Effort | Parallel |
 |---------|-------|--------|----------|
-| 2.5.1 Create deploy workflow | [C] | 1h | parallel:2.4 |
-| 2.5.2 SSH key secrets setup | [U] | 15m | - |
-| 2.5.3 Build and push to server | [C] | 1h | - |
-| 2.5.4 Zero-downtime deploy script | [C] | 1h | - |
-| 2.5.5 Test full deployment | [C/U] | 1h | blocked:2.1,2.2,2.4 |
+| 2.6.1 Create deploy workflow | [C] | 1h | parallel:2.5 |
+| 2.6.2 SSH key secrets setup | [U] | 15m | - |
+| 2.6.3 Build and push to server | [C] | 1h | - |
+| 2.6.4 Zero-downtime deploy script | [C] | 1h | - |
+| 2.6.5 Test full deployment | [C/U] | 1h | blocked:2.1,2.2,2.5 |
 
 **Output:** `.github/workflows/deploy.yml`
 
 ---
 
-### 2.6 FastAPI Development [C]
+### 2.7 FastAPI Development [C]
 
 | Subtask | Owner | Effort | Parallel |
 |---------|-------|--------|----------|
-| 2.6.1 Project structure setup | [C] | 1h | parallel:2.1-2.5 |
-| 2.6.2 Pydantic models (request/response) | [C] | 2h | - |
-| 2.6.3 `/v1/drug-discovery` endpoint | [C] | 2h | - |
-| 2.6.4 `/v1/id-mapping` endpoint | [C] | 1h | parallel:2.6.3 |
-| 2.6.5 `/v1/protein-similarity` endpoint | [C] | 1h | parallel:2.6.3 |
-| 2.6.6 `/v1/compound-similarity` endpoint | [C] | 1h | parallel:2.6.3 |
-| 2.6.7 JWT authentication middleware | [C] | 2h | - |
-| 2.6.8 API key generation/validation | [C] | 1h | - |
-| 2.6.9 Rate limiting middleware | [C] | 1h | - |
-| 2.6.10 Usage logging to Postgres | [C] | 1h | - |
-| 2.6.11 OpenAPI customization | [C] | 30m | - |
-| 2.6.12 Integration tests | [C] | 2h | - |
+| 2.7.1 Project structure setup | [C] | 1h | parallel:2.1-2.6 |
+| 2.7.2 Pydantic models (request/response) | [C] | 2h | - |
+| 2.7.3 `/v1/drug-discovery` endpoint | [C] | 2h | - |
+| 2.7.4 `/v1/id-mapping` endpoint | [C] | 1h | parallel:2.7.3 |
+| 2.7.5 `/v1/protein-similarity` endpoint | [C] | 1h | parallel:2.7.3 |
+| 2.7.6 `/v1/compound-similarity` endpoint | [C] | 1h | parallel:2.7.3 |
+| 2.7.7 JWT authentication middleware | [C] | 2h | - |
+| 2.7.8 API key generation/validation | [C] | 1h | - |
+| 2.7.9 Rate limiting middleware | [C] | 1h | - |
+| 2.7.10 Usage logging to Postgres | [C] | 1h | - |
+| 2.7.11 OpenAPI customization | [C] | 30m | - |
+| 2.7.12 Integration tests | [C] | 2h | - |
 
-**Output:** `api/` directory (or `bioyoda-api/` repo)
+**Output:** `api/` directory (or `sugi-api/` repo)
 
 ---
 
-### 2.7 Paper Tasks Week 2 [C/U]
+### 2.8 Paper Tasks Week 2 [C/U]
 
 | Subtask | Owner | Effort | Parallel |
 |---------|-------|--------|----------|
-| 2.7.1 Complete methods section | [C] | 2h | parallel:2.1-2.6 |
-| 2.7.2 Run 3 disease analyses (final) | [C] | 1h | blocked:Week1 |
-| 2.7.3 Document analysis outputs | [C] | 1h | - |
-| 2.7.4 Compare to DrugBank/ChEMBL | [C] | 2h | - |
-| 2.7.5 Results section draft | [C] | 3h | blocked:2.7.2-4 |
+| 2.8.1 Complete methods section | [C] | 2h | parallel:2.1-2.7 |
+| 2.8.2 Run 3 disease analyses (final) | [C] | 1h | blocked:Week1 |
+| 2.8.3 Document analysis outputs | [C] | 1h | - |
+| 2.8.4 Compare to DrugBank/ChEMBL | [C] | 2h | - |
+| 2.8.5 Results section draft | [C] | 3h | blocked:2.8.2-4 |
 
 ---
 
@@ -509,11 +527,15 @@ While you're doing server setup (Week 2), Claude can:
 - Write FastAPI endpoints
 - Write paper sections
 - Draft blog post
+- Build BioBTree manifest system
+- Create version detection scripts
 
 While you're doing frontend (Week 3), Claude can:
 - Write component code for you to integrate
 - Prepare marketing content
 - Finalize paper
+- Add API version metadata
+- Write REPRODUCIBILITY.md documentation
 
 ### Maximum Parallel Tracks
 
@@ -524,6 +546,7 @@ While you're doing frontend (Week 3), Claude can:
 | **Frontend** | [U] | - | - | SvelteKit | Iterate |
 | **Paper** | [C] | Outline, methods | Results | Intro, discussion | Submit |
 | **Business** | [U] | - | - | Stripe, marketing | Beta users |
+| **Reproducibility** | [C] | BioBTree manifest | API metadata | Documentation | - |
 
 ---
 
@@ -578,7 +601,7 @@ filenames/URLs. Archive small source files (<10MB) in sources/ dir."
 ```
 
 ```
-"Add data_versions metadata to all BioYoda API responses. Load
+"Add data_versions metadata to all Sugi API responses. Load
 BioBTree manifest.json at startup. Track Qdrant collection build
 dates. Create /v1/versions endpoint showing all data provenance."
 ```
