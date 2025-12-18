@@ -23,6 +23,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(workflow.snakefile))
 # BASE_DIR: where outputs go (can be ./out or ./test_out)
 # PROJECT_ROOT: where code lives (always the project directory)
 BASE_DIR = config["base_dir"]
+
+# Handle relative paths: if base_dir is relative, make it absolute relative to PROJECT_ROOT
+if not os.path.isabs(BASE_DIR):
+    BASE_DIR = os.path.join(PROJECT_ROOT, BASE_DIR)
+    config["base_dir"] = BASE_DIR  # Update config with absolute path
 config["data_dir"] = os.path.join(BASE_DIR, "data")
 config["scripts_dir"] = os.path.join(PROJECT_ROOT, "modules")  # Scripts in project root
 config["logs_dir"] = os.path.join(BASE_DIR, "logs")

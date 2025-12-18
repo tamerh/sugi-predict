@@ -10,8 +10,9 @@ project_name: "bioyoda"
 conda_env: "bioyoda"
 
 # Base Paths - CHANGE THIS FOR DIFFERENT ENVIRONMENTS
-# All outputs (raw_data/, data/, logs/) will be created under: base_dir/out/
-base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/out"
+# All outputs (raw_data/, data/, logs/) will be created under: base_dir/
+# Supports both relative paths (relative to project root) and absolute paths
+base_dir: "out"
 
 # PubMed Module Configuration
 pubmed:
@@ -159,7 +160,9 @@ patents:
   # USPTO INTEGRATION (NEW!) - Enriches US patents with full text
   # Adds abstracts, claims, descriptions to US patents (SureChEMBL only has titles)
   enable_uspto: true            # Enable USPTO enrichment (false = SureChEMBL title-only)
-  uspto_historical_json_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto"  # USPTO-Chem historical JSON directory (2001-2025)
+  # USPTO-Chem historical JSON directory - relative to base_dir/raw_data/patents/
+  # Default: raw_data/patents/historical_uspto (relative to base_dir)
+  uspto_historical_json_dir: "raw_data/patents/historical_uspto"
 
   # Job resources - PRODUCTION
   download_memory_mb: 65536     # 64GB for downloading SureChEMBL files

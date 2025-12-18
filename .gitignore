@@ -42,6 +42,8 @@ htmlcov/
 *.egg-info/
 .tox/
 
+web/
+
 benchmark/qdrant_bench/results
 benchmark/qdrant_bench/results2
 benchmark/qdrant_bench/qdrant_data

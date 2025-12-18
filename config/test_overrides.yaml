@@ -5,8 +5,8 @@
 #
 ##############################################################################
 
-# Override base directory for test mode
-base_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/test_out"
+# Override base directory for test mode (relative to project root)
+base_dir: "test_out"
 
 # PubMed test overrides
 pubmed:
@@ -66,9 +66,11 @@ patents:
 
   compounds_per_chunk: 100      # 100 compounds per chunk for testing (vs 1M production in production)
 
-  # USPTO test settings (NEW!)
-  enable_uspto: true                 # Test USPTO integration
-  uspto_historical_json_dir: "/data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/raw_data/patents/historical_uspto"  # Use same historical JSON for testing
+  # USPTO test settings
+  # Disabled for local testing - USPTO historical data not available locally
+  # To enable, copy historical USPTO data to test_out/raw_data/patents/historical_uspto/
+  enable_uspto: false
+  uspto_historical_json_dir: "raw_data/patents/historical_uspto"
 
   # Smaller batches for testing
   batch_size: 100              # Patents per batch (vs 10000 production)

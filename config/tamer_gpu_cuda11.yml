@@ -47,5 +47,6 @@ dependencies:
   - pip:
     - snakemake-executor-plugin-cluster-generic
     - python-multipart>=0.0.6  # FastAPI file uploads (API)
+    - datasets>=3.0.0  # HuggingFace datasets (required by sentence-transformers, needs pyarrow compat)
     # Protein similarity modules
     - fair-esm  # Meta AI's ESM-2 protein language model

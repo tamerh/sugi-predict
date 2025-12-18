@@ -1,3 +1,12 @@
+patent creation...
+
+python modules/patents/scripts/convert_to_biobtree_json.py \
+  --input /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/prod_latest_patent/raw_data/patents/surechembl/2025-12-01 \
+  --output /data/scc/ag-gruber/GROUP/tgur/x/bioyoda_dev2/snapshots/prod_latest_patent/raw_data/patents/biobtree \
+  --verbose
+
+
+
 
 "http://scc2:9292/ws/?i=BEVACIZUMAB&s=antibody"
 
