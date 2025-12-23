@@ -13,6 +13,10 @@ dependencies:
   - gcc_linux-64
   - gxx_linux-64
 
+  # Protocol Buffers compiler (protoc 25.1)
+  # Required for compiling .proto files in src/pbuf/
+  - libprotobuf=4.25.1
+
   # Version control
   - git
 
@@ -23,3 +27,8 @@ dependencies:
   # Useful utilities
   - curl
   - jq
+
+# After creating the environment, install these Go tools:
+#   go install github.com/golang/protobuf/protoc-gen-go@v1.3.2
+#   go install github.com/pquerna/ffjson@latest
+# Then run: make proto
