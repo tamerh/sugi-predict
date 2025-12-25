@@ -74,6 +74,22 @@ PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 SCRIPT_DIR="${PIPELINE_DIR}/scripts"
 export PIPELINE_DIR SCRIPT_DIR USER_DIR
 
+# Conda/Mamba setup - ensure conda command is available in non-interactive shells
+# Clear any stale conda environment state from previous sessions
+unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PROMPT_MODIFIER
+export CONDA_SHLVL=0
+# Remove any stale micromamba paths from PATH
+export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/data/micromamba' | tr '\n' ':' | sed 's/:$//')
+if [[ -d "/data/miniconda3/bin" ]]; then
+    export PATH="/data/miniconda3/bin:$PATH"
+    # Source conda initialization for proper environment handling
+    if [[ -f "/data/miniconda3/etc/profile.d/conda.sh" ]]; then
+        source "/data/miniconda3/etc/profile.d/conda.sh"
+        # Activate the bioyoda environment
+        conda activate bioyoda 2>/dev/null || true
+    fi
+fi
+
 # Change to pipeline directory for consistent relative paths
 cd "$PIPELINE_DIR"
 

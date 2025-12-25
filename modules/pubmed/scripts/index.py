@@ -9,6 +9,13 @@ from sentence_transformers import SentenceTransformer
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
+# Limit threads to avoid contention when running multiple processes
+# Each process should use 1 thread since we parallelize at process level
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+import torch
+torch.set_num_threads(1)
+
 # --- Configuration ---
 # Will be set from command-line arguments in main()
 MODEL_NAME = None
@@ -36,6 +43,9 @@ def load_deleted_pmids(path):
     return deleted_set
 
 # --- Main Processing Function ---
+# Batch size for encoding (64 optimal for CPU, 128-256 for GPU)
+ENCODE_BATCH_SIZE = 64
+
 def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_dim, limit=None):
     """
     Processes a single gzipped PubMed XML file, creates a FAISS index and metadata file,
@@ -71,8 +81,34 @@ def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_d
     vector_count = 0
     skipped_count = 0
 
-    log_with_timestamp(f"Streaming and processing XML from {input_path}...")
+    # Batching: accumulate texts before encoding
+    batch_texts = []
+    batch_pmids = []
 
+    def flush_batch():
+        """Encode and add accumulated batch to index."""
+        nonlocal vector_count
+        if not batch_texts:
+            return
+
+        # Encode entire batch at once (10-30x faster than one-by-one)
+        vectors = model.encode(batch_texts, show_progress_bar=False)
+
+        # Add all vectors to FAISS index
+        index.add(np.array(vectors, dtype='float32'))
+
+        # Store metadata for each vector
+        for i, (pmid, chunk_text) in enumerate(zip(batch_pmids, batch_texts)):
+            metadata[vector_count + i] = {'pmid': pmid, 'chunk_text': chunk_text}
+
+        vector_count += len(batch_texts)
+        batch_texts.clear()
+        batch_pmids.clear()
+
+    log_with_timestamp(f"Streaming and processing XML from {input_path}...")
+    log_with_timestamp(f"Using batch size: {ENCODE_BATCH_SIZE} for encoding")
+
+    hit_limit = False
     with gzip.open(input_path, 'rb') as f:
         context = ET.iterparse(f, events=('end',))
         for event, elem in tqdm(context, desc=f"Parsing {base_name}", mininterval=300.0):
@@ -81,10 +117,10 @@ def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_d
                     pmid_element = elem.find('.//PMID')
                     pmid = pmid_element.text if pmid_element is not None else None
 
-                    # <<< --- THE CORE OPTIMIZATION IS HERE --- >>>
+                    # Skip deleted PMIDs
                     if pmid and pmid in deleted_pmids_set:
                         skipped_count += 1
-                        elem.clear() # IMPORTANT: Still clear the element from memory
+                        elem.clear()
                         continue
 
                     title_element = elem.find('.//ArticleTitle')
@@ -95,19 +131,25 @@ def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_d
 
                     if pmid and abstract:
                         chunk_text = f"Title: {title}\nAbstract: {abstract}"
-                        vector = model.encode([chunk_text])[0]
-                        index.add(np.array([vector], dtype='float32'))
-                        metadata[vector_count] = {'pmid': pmid, 'chunk_text': chunk_text}
-                        vector_count += 1
+                        batch_texts.append(chunk_text)
+                        batch_pmids.append(pmid)
+
+                        # Flush batch when full
+                        if len(batch_texts) >= ENCODE_BATCH_SIZE:
+                            flush_batch()
 
                         # Check limit for test mode
-                        if limit and vector_count >= limit:
+                        if limit and vector_count + len(batch_texts) >= limit:
                             log_with_timestamp(f"Reached test limit of {limit} abstracts. Stopping processing.")
+                            hit_limit = True
                             elem.clear()
                             break
                 except Exception:
                     pass
                 elem.clear()
+
+    # Flush any remaining items in the batch
+    flush_batch()
 
     log_with_timestamp(f"Processed {index.ntotal} chunks. Skipped {skipped_count} deleted PMIDs. Saving assets...")
     faiss.write_index(index, faiss_output_path)

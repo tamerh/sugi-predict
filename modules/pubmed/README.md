@@ -16,12 +16,17 @@ This module downloads and processes PubMed abstracts to create semantic search i
 
 ### Production Run
 ```bash
-# Process all PubMed data
+# On cluster (SGE/SLURM)
 ./bioyoda.sh run pubmed --cluster --bg --jobs 100
+
+# On single CPU machine (local server)
+./bioyoda.sh run pubmed --local --cores 16 --bg
 
 # Monitor progress
 tail -f logs/bioyoda_pubmed_main.log
 ```
+
+**Note:** Use `--jobs` for cluster mode (parallel cluster jobs), use `--cores` for local mode (parallel CPU cores).
 
 ### Incremental Update (Daily Updates)
 ```bash
@@ -48,6 +53,68 @@ python modules/pubmed/scripts/tracking.py \
 # Faster local testing
 ./bioyoda.sh run pubmed --config config/test_config.yaml --cores 4
 ```
+
+### GPU Processing (Google Colab)
+
+For initial full dataset processing, GPU acceleration on Google Colab Pro+ is recommended:
+
+**Speed Comparison:**
+| Platform | Speed | Full Dataset Time |
+|----------|-------|-------------------|
+| CPU (24 cores) | ~360 texts/sec | ~40 hours |
+| Colab T4 (free) | ~115 texts/sec | ~120 hours |
+| Colab A100 (Pro+) | ~800-1500 texts/sec | ~10-20 hours |
+
+**Setup:**
+
+1. **Upload raw data from server to Google Drive:**
+```bash
+# From Hetzner/local server
+rclone sync /data/bioyoda/snapshots/raw_data/pubmed/ gdrive:bioyoda/raw_data/pubmed --progress --transfers 8
+
+# Upload GPU scripts
+rclone copy /data/bioyoda/modules/pubmed/scripts/index_gpu.py gdrive:bioyoda/modules/pubmed/scripts/
+rclone copy /data/bioyoda/modules/pubmed/scripts/batch_gpu.py gdrive:bioyoda/modules/pubmed/scripts/
+```
+
+2. **Run in Google Colab (Pro+ recommended for background execution):**
+```python
+# Cell 1: Setup
+!pip install -q sentence-transformers faiss-cpu tqdm
+from google.colab import drive
+drive.mount('/content/drive')
+
+# Copy scripts to Colab runtime
+!cp "/content/drive/MyDrive/bioyoda/modules/pubmed/scripts/batch_gpu.py" .
+!cp "/content/drive/MyDrive/bioyoda/modules/pubmed/scripts/index_gpu.py" .
+```
+
+```python
+# Cell 2: Start processing (runs in background)
+!nohup python batch_gpu.py \
+    --input-dir /content/drive/MyDrive/bioyoda/raw_data/pubmed \
+    --output-dir /content/drive/MyDrive/bioyoda/processed/pubmed \
+    --deleted-pmids /content/drive/MyDrive/bioyoda/raw_data/pubmed/deleted.pmids.sorted.gz \
+    > /content/drive/MyDrive/bioyoda/pubmed_processing.log 2>&1 &
+```
+
+```python
+# Cell 3: Monitor progress
+!tail -f /content/drive/MyDrive/bioyoda/pubmed_processing.log
+```
+
+3. **Download processed results back to server:**
+```bash
+rclone sync gdrive:bioyoda/processed/pubmed /data/bioyoda/snapshots/data/processed/pubmed --progress
+```
+
+**Resume Capability:**
+- If Colab session disconnects, simply re-run the same cells
+- `batch_gpu.py` automatically detects completed files and continues from where it stopped
+
+**GPU Scripts:**
+- `index_gpu.py` - Core processor with GPU acceleration, auto batch size based on GPU type
+- `batch_gpu.py` - Batch orchestrator with resume capability, progress tracking
 
 ## Pipeline Steps
 
@@ -292,5 +359,5 @@ python modules/pubmed/scripts/index.py \
 
 ---
 
-**Module Version**: 0.2.0
-**Last Updated**: October 2025
+**Module Version**: 0.3.0
+**Last Updated**: December 2025

@@ -3,6 +3,9 @@
 #   BioYoda Configuration File
 #   Central configuration for all pipeline modules
 #
+#   LOCAL SERVER SETUP: 16 CPU / 32 threads / 128GB RAM
+#   Run with: ./bioyoda.sh run <module> --local --cores 32
+#
 ##############################################################################
 
 # Project Settings
@@ -26,11 +29,12 @@ pubmed:
   # Processing settings
   batch_size: 1000
 
-  # Job resources
-  process_memory_mb: 12288  # 12GB
-  process_runtime: 10080     # 168 hours in minutes
-  merge_memory_mb: 262144    # 256GB
-  merge_runtime: 10080       # 168 hours in minutes
+  # Job resources - LOCAL SERVER (16 CPU / 32 threads / 128GB RAM)
+  # Actual usage ~1GB per job, 2GB allocation for safety margin
+  process_memory_mb: 2048    # 2GB per job (actual ~1GB, allows 32+ parallel jobs)
+  process_runtime: 604800    # 7 days in seconds
+  merge_memory_mb: 32768     # 32GB for merge
+  merge_runtime: 86400       # 24 hours in seconds
 
   # Incremental update settings
   update:
@@ -88,13 +92,13 @@ clinical_trials:
   exclude_withdrawn: true
   include_conditions: true
 
-  # Job resources - PRODUCTION
+  # Job resources - LOCAL SERVER (16 CPU / 128GB RAM)
   download_memory_mb: 16384    # 16GB for download + extraction
   download_runtime: 240        # 4 hours
   extract_memory_mb: 16384     # 16GB for table joins
   extract_runtime: 240         # 4 hours
-  process_memory_mb: 12288     # 12GB per chunk (reduced from 20GB since processing smaller chunks)
-  process_runtime: 480         # 8 hours per chunk (reduced from 7 days)
+  process_memory_mb: 10240     # 10GB per chunk (allows ~12 parallel jobs in 128GB)
+  process_runtime: 480         # 8 hours per chunk
   merge_memory_mb: 32768       # 32GB for merging all chunks
   merge_runtime: 240           # 4 hours for merge
 
@@ -164,10 +168,10 @@ patents:
   # Default: raw_data/patents/historical_uspto (relative to base_dir)
   uspto_historical_json_dir: "raw_data/patents/historical_uspto"
 
-  # Job resources - PRODUCTION
-  download_memory_mb: 65536     # 64GB for downloading SureChEMBL files
-  process_memory_mb: 32768      # 32GB for text processing (increased for full 43M patents + USPTO enrichment)
-  process_compounds_memory_mb: 262144  # 256GB for compounds processing (30M compounds × 2048-bit fingerprints)
+  # Job resources - LOCAL SERVER (16 CPU / 128GB RAM)
+  download_memory_mb: 32768     # 32GB for downloading SureChEMBL files (was 64GB)
+  process_memory_mb: 16384      # 16GB per text chunk (allows ~7 parallel jobs)
+  process_compounds_memory_mb: 16384   # 16GB per compound chunk (chunked processing, was 256GB for monolithic)
   
   # Release management
   cleanup_old: true             # Cleanup old releases after processing
