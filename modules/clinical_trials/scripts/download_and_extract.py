@@ -383,15 +383,17 @@ class AACTTextExtractor:
             log_with_timestamp(f"ERROR: Failed to load table {table_name}: {e}")
             return None
 
-    def extract_adverse_events_summary(self, nct_id: str, events_df: pd.DataFrame) -> Dict[str, Any]:
+    def extract_adverse_events_summary(self, nct_id: str, trial_events: pd.DataFrame) -> Dict[str, Any]:
         """
         Extract summary adverse events data for a trial.
 
         Returns lightweight summary suitable for filtering/RAG.
         Includes counts, top common events, and affected organ systems.
-        """
-        trial_events = events_df[events_df['nct_id'] == nct_id]
 
+        Args:
+            nct_id: Trial NCT ID
+            trial_events: Pre-filtered DataFrame containing only this trial's events
+        """
         if len(trial_events) == 0:
             return {
                 'has_events': False,
@@ -675,11 +677,25 @@ class AACTTextExtractor:
                 trials_with_events = reported_events['nct_id'].unique()
                 log_with_timestamp(f"Found {len(trials_with_events):,} trials with adverse events data")
 
-                # Extract summary for each trial
-                for nct_id in trials_with_events:
-                    adverse_events_dict[nct_id] = self.extract_adverse_events_summary(
-                        nct_id, reported_events
-                    )
+                # Pre-group events by nct_id for O(1) lookup instead of O(n) scan
+                log_with_timestamp("Pre-grouping adverse events by trial (this is fast)...")
+                grouped_events = reported_events.groupby('nct_id')
+                log_with_timestamp("Grouping complete. Extracting summaries...")
+
+                # Extract summary for each trial using pre-grouped data
+                for i, nct_id in enumerate(trials_with_events):
+                    try:
+                        trial_events = grouped_events.get_group(nct_id)
+                        adverse_events_dict[nct_id] = self.extract_adverse_events_summary(
+                            nct_id, trial_events
+                        )
+                    except KeyError:
+                        # No events for this trial (shouldn't happen but be safe)
+                        pass
+
+                    # Progress every 10K trials
+                    if (i + 1) % 10000 == 0:
+                        log_with_timestamp(f"  Processed {i + 1:,}/{len(trials_with_events):,} adverse event summaries...")
 
                 log_with_timestamp(f"Extracted adverse events summaries for {len(adverse_events_dict):,} trials")
 

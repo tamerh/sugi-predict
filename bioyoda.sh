@@ -53,9 +53,10 @@
 #   # Google Drive sync (for Colab GPU processing)
 #   ./bioyoda.sh push patents                           # Push data + code to Drive
 #   ./bioyoda.sh push patents --code-only              # Push only scripts (fast)
+#   ./bioyoda.sh push clinical_trials --code-only      # Push clinical trials scripts
 #   ./bioyoda.sh push pubmed --dry-run                 # Preview what would sync
 #   ./bioyoda.sh pull patents                           # Pull processed results
-#   ./bioyoda.sh pull pubmed                            # Pull PubMed results
+#   ./bioyoda.sh pull clinical_trials                   # Pull clinical trials results
 #
 #   # Maintenance
 #   ./bioyoda.sh status                                 # Pipeline status

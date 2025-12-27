@@ -576,6 +576,155 @@ snakemake --snakefile modules/clinical_trials/Snakefile \
 - **Single file**: Disable chunking → maximum batch size
 - **Test mode**: Tiny chunks (50) → fast validation
 
+## GPU Processing (Google Colab)
+
+For processing 554K+ trials efficiently, use GPU acceleration on Google Colab.
+
+### Prerequisites
+
+1. **Push data to Google Drive:**
+```bash
+# Push clinical trials data and scripts
+./bioyoda.sh push clinical_trials
+
+# Or manually with rclone:
+rclone copy snapshots/ct_latest/raw_data/clinical_trials/chunked/ \
+    gdrive:bioyoda/raw_data/clinical_trials/chunked/ --progress
+
+rclone copy modules/clinical_trials/scripts/process_trials_gpu.py \
+    gdrive:bioyoda/scripts/clinical_trials/ --progress
+rclone copy modules/clinical_trials/scripts/batch_trials_gpu.py \
+    gdrive:bioyoda/scripts/clinical_trials/ --progress
+```
+
+2. **Data layout on Drive:**
+```
+MyDrive/bioyoda/
+├── raw_data/clinical_trials/
+│   └── chunked/
+│       ├── trials_chunk_0001.json   # 111 chunks × 5K trials
+│       ├── trials_chunk_0002.json
+│       └── ...
+├── processed/clinical_trials/text/   # Output directory (created)
+└── scripts/clinical_trials/
+    ├── process_trials_gpu.py
+    └── batch_trials_gpu.py
+```
+
+### Step 1: Setup Colab Environment
+
+```python
+# Cell 1: Mount Drive and install dependencies
+from google.colab import drive
+drive.mount('/content/drive')
+
+!pip install -q sentence-transformers faiss-cpu torch
+
+# Verify GPU
+import torch
+print(f"GPU: {torch.cuda.get_device_name(0)}")
+print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+
+# Copy scripts to Colab runtime
+!cp "/content/drive/MyDrive/bioyoda/scripts/clinical_trials/batch_trials_gpu.py" .
+!cp "/content/drive/MyDrive/bioyoda/scripts/clinical_trials/process_trials_gpu.py" .
+!ls -la *.py
+```
+
+### Step 2: Check Progress and Create Directories
+
+```python
+# Cell 2: Setup directories and check progress
+import os
+
+# Create required directories
+os.makedirs("/content/drive/MyDrive/bioyoda/processed/clinical_trials/text", exist_ok=True)
+os.makedirs("/content/drive/MyDrive/bioyoda/state/clinical_trials", exist_ok=True)
+
+# Check chunks
+chunk_dir = "/content/drive/MyDrive/bioyoda/raw_data/clinical_trials/chunked"
+out_dir = "/content/drive/MyDrive/bioyoda/processed/clinical_trials/text"
+
+chunks = sorted([f for f in os.listdir(chunk_dir) if f.endswith('.json')])
+done = len([f for f in os.listdir(out_dir) if f.endswith('.index')])
+print(f"Total chunks: {len(chunks)}")
+print(f"Already processed: {done}")
+print(f"Remaining: {len(chunks) - done}")
+```
+
+### Step 3: Run Batch Processing (with nohup)
+
+```python
+# Cell 3: Start processing in background with logging to Drive
+!nohup python batch_trials_gpu.py \
+    --input-dir "/content/drive/MyDrive/bioyoda/raw_data/clinical_trials/chunked" \
+    --output-dir "/content/drive/MyDrive/bioyoda/processed/clinical_trials/text" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/gpu_progress.json" \
+    --model-name pritamdeka/S-BioBERT-snli-multinli-stsb \
+    > /content/drive/MyDrive/bioyoda/clinical_trials_processing.log 2>&1 &
+
+print("Processing started in background!")
+print("Log: /content/drive/MyDrive/bioyoda/clinical_trials_processing.log")
+```
+
+If model loading hangs, add `--no-fp16`:
+```python
+!nohup python batch_trials_gpu.py \
+    --input-dir "/content/drive/MyDrive/bioyoda/raw_data/clinical_trials/chunked" \
+    --output-dir "/content/drive/MyDrive/bioyoda/processed/clinical_trials/text" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/gpu_progress.json" \
+    --model-name pritamdeka/S-BioBERT-snli-multinli-stsb \
+    --no-fp16 \
+    > /content/drive/MyDrive/bioyoda/clinical_trials_processing.log 2>&1 &
+```
+
+### Step 4: Monitor Progress
+
+```python
+# Cell 4: Monitor log file
+!tail -f /content/drive/MyDrive/bioyoda/clinical_trials_processing.log
+```
+
+Or check from local machine:
+```bash
+rclone cat gdrive:bioyoda/clinical_trials_processing.log | tail -50
+```
+
+### Step 5: Pull Results Back
+
+```bash
+# Sync processed indices back to server
+./bioyoda.sh pull clinical_trials
+
+# Or manually:
+rclone copy gdrive:bioyoda/processed/clinical_trials/text/ \
+    snapshots/ct_latest/data/processed/clinical_trials/text/ --progress
+```
+
+### Resume After Disconnect
+
+The batch script automatically resumes from where it left off:
+- Checks existing `.index` files in output directory
+- Skips completed chunks
+- Simply re-run the same command to continue
+
+```python
+# Just re-run - it will skip completed chunks
+!nohup python batch_trials_gpu.py \
+    --input-dir "/content/drive/MyDrive/bioyoda/raw_data/clinical_trials/chunked" \
+    --output-dir "/content/drive/MyDrive/bioyoda/processed/clinical_trials/text" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/gpu_progress.json" \
+    --model-name pritamdeka/S-BioBERT-snli-multinli-stsb \
+    > /content/drive/MyDrive/bioyoda/clinical_trials_processing.log 2>&1 &
+```
+
+### Performance Estimates
+
+| GPU Type | Speed | 111 Chunks Time |
+|----------|-------|-----------------|
+| T4 (free) | ~800 texts/sec | ~4-6 hours |
+| A100 (Pro+) | ~2000 texts/sec | ~1-2 hours |
+
 ## Related Documentation
 
 - **Root README**: `../../README.md` - Overall system architecture
@@ -585,6 +734,6 @@ snakemake --snakefile modules/clinical_trials/Snakefile \
 
 ---
 
-**Module Version**: 0.3.0
-**Last Updated**: January 2025
-**Major Changes**: Added flexible chunking strategy (like PubMed)
+**Module Version**: 0.4.0
+**Last Updated**: December 2025
+**Major Changes**: Added GPU processing support for Google Colab

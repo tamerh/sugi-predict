@@ -178,6 +178,58 @@ pull_patents() {
     log_info "Patents pull complete!"
 }
 
+# Push Clinical Trials data to Drive
+push_clinical_trials() {
+    local base_dir="$1"
+    local remote="$2"
+    local log_file="$3"
+    local dry_run="$4"
+    local code_only="${5:-false}"
+
+    log_info "Pushing Clinical Trials data to Google Drive..."
+
+    if [[ "$code_only" != "true" ]]; then
+        # Chunked clinical trials JSON files
+        rclone_sync "${base_dir}/raw_data/clinical_trials/chunked" "${remote}/raw_data/clinical_trials/chunked" \
+            "Clinical Trials chunks (JSON)" "$log_file" "$dry_run"
+
+        # State files
+        rclone_sync "${base_dir}/state/clinical_trials" "${remote}/state/clinical_trials" \
+            "Clinical Trials state files" "$log_file" "$dry_run"
+    else
+        log_info "Code-only mode: skipping data files"
+    fi
+
+    # GPU scripts (always synced)
+    local script_dir="${COMMANDS_DIR}/../../modules/clinical_trials/scripts"
+    rclone_sync "${script_dir}/process_trials_gpu.py" "${remote}/scripts/clinical_trials/" \
+        "Clinical Trials GPU scripts" "$log_file" "$dry_run"
+    rclone_sync "${script_dir}/batch_trials_gpu.py" "${remote}/scripts/clinical_trials/" \
+        "Clinical Trials batch GPU scripts" "$log_file" "$dry_run"
+
+    log_info "Clinical Trials push complete!"
+}
+
+# Pull Clinical Trials results from Drive
+pull_clinical_trials() {
+    local base_dir="$1"
+    local remote="$2"
+    local log_file="$3"
+    local dry_run="$4"
+
+    log_info "Pulling Clinical Trials results from Google Drive..."
+
+    # Processed text indices
+    rclone_sync "${remote}/processed/clinical_trials/text" "${base_dir}/data/processed/clinical_trials/text" \
+        "Clinical Trials text indices" "$log_file" "$dry_run"
+
+    # State files
+    rclone_sync "${remote}/state/clinical_trials" "${base_dir}/state/clinical_trials" \
+        "Clinical Trials state files" "$log_file" "$dry_run"
+
+    log_info "Clinical Trials pull complete!"
+}
+
 # Run sync in background
 # Usage: run_in_background <command> <log_file> <pid_file>
 run_sync_background() {
@@ -232,7 +284,7 @@ cmd_push() {
     if [[ -z "$module" ]]; then
         log_error "No module specified"
         echo "Usage: ./bioyoda.sh push <module> [--code-only] [--dry-run] [--bg]"
-        echo "Modules: pubmed, patents"
+        echo "Modules: pubmed, patents, clinical_trials"
         echo ""
         echo "Options:"
         echo "  --code-only, -c   Only sync scripts (fast, for code changes)"
@@ -273,9 +325,12 @@ cmd_push() {
         patents)
             sync_func="push_patents"
             ;;
+        clinical_trials)
+            sync_func="push_clinical_trials"
+            ;;
         *)
             log_error "Unknown module: $module"
-            echo "Supported modules: pubmed, patents"
+            echo "Supported modules: pubmed, patents, clinical_trials"
             exit 1
             ;;
     esac
@@ -328,7 +383,7 @@ cmd_pull() {
     if [[ -z "$module" ]]; then
         log_error "No module specified"
         echo "Usage: ./bioyoda.sh pull <module> [--dry-run] [--bg]"
-        echo "Modules: pubmed, patents"
+        echo "Modules: pubmed, patents, clinical_trials"
         exit 1
     fi
 
@@ -360,9 +415,12 @@ cmd_pull() {
         patents)
             sync_func="pull_patents"
             ;;
+        clinical_trials)
+            sync_func="pull_clinical_trials"
+            ;;
         *)
             log_error "Unknown module: $module"
-            echo "Supported modules: pubmed, patents"
+            echo "Supported modules: pubmed, patents, clinical_trials"
             exit 1
             ;;
     esac
