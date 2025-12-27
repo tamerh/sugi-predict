@@ -190,11 +190,11 @@ def main():
         sys.exit(1)
 
     # ========================================================================
-    # STEP 2: Process USPTO Historical JSON Data (if USPTO enabled)
+    # STEP 2a: Download USPTO-Chem Historical Data (if USPTO enabled)
     # ========================================================================
     if args.enable_uspto:
         log("\n" + "="*60)
-        log("STEP 2: Process USPTO Historical JSON Data")
+        log("STEP 2a: Download USPTO-Chem Historical Data")
         log("="*60)
 
         # Validate USPTO historical JSON directory
@@ -203,9 +203,48 @@ def main():
             sys.exit(1)
 
         json_dir = Path(args.uspto_historical_json_dir)
-        if not json_dir.exists():
-            log(f"ERROR: USPTO historical JSON directory not found: {json_dir}")
-            sys.exit(1)
+
+        # Create directory if it doesn't exist
+        json_dir.mkdir(parents=True, exist_ok=True)
+
+        # Tracking file for USPTO-Chem downloads
+        uspto_tracking_file = Path(args.state_dir) / 'uspto_historical_download.json'
+
+        # Build arguments for download_uspto_chem.py
+        download_args = [
+            '--output-dir', str(json_dir),
+            '--tracking-file', str(uspto_tracking_file)
+        ]
+
+        # Add limit for test mode
+        if args.uspto_limit_files:
+            download_args.extend(['--limit-files', str(args.uspto_limit_files)])
+
+        # Add debug flag in test mode
+        if args.uspto_test_mode:
+            download_args.append('--debug')
+
+        log(f"Downloading USPTO-Chem data from eloyfelix/uspto-chem...")
+        log(f"Output directory: {json_dir}")
+        log(f"Tracking file: {uspto_tracking_file}")
+
+        run_script(
+            str(script_dir / 'download_uspto_chem.py'),
+            download_args,
+            'USPTO-Chem download'
+        )
+
+        log(f"USPTO-Chem download complete")
+
+    # ========================================================================
+    # STEP 2b: Process USPTO Historical JSON Data (if USPTO enabled)
+    # ========================================================================
+    if args.enable_uspto:
+        log("\n" + "="*60)
+        log("STEP 2b: Process USPTO Historical JSON to Parquet")
+        log("="*60)
+
+        json_dir = Path(args.uspto_historical_json_dir)
 
         # Check if parquet file already exists
         uspto_parquet_file = json_dir / 'uspto_historical.parquet'

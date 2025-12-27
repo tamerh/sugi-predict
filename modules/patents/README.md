@@ -1,7 +1,7 @@
 # Patents Module
 
 **Status**: ✅ **WORKING** - SureChEMBL + USPTO-Chem Enrichment
-**Last Updated**: October 21, 2025
+**Last Updated**: December 2025
 **Version**: 2.0
 
 ## Overview
@@ -135,16 +135,33 @@ Split large files into chunks for parallel processing:
 - compounds.parquet → compounds_chunk_0001.parquet, etc.
 ```
 
-### Manual Setup Required (One-Time)
+### USPTO Historical Data (Automatic)
 
-**USPTO Historical Data**: Must be downloaded manually before first run:
+The pipeline **automatically downloads** USPTO-Chem historical data from https://eloyfelix.github.io/uspto-chem/ when `enable_uspto: true` is set in config.
+
+**What gets downloaded:**
+- ~3,500 JSON files containing patent abstracts (2001-2025)
+- Used to enrich SureChEMBL data which only has titles
+- Incremental: only downloads new files on subsequent runs
+
+**First run:** Downloads all ~3,500 files (~15 minutes)
+**Update runs:** Downloads only new weekly files (~30 seconds)
+
+**Manual download (optional):**
+If you need to download manually before running the pipeline:
 ```bash
-# Download USPTO-Chem JSON files (~3,400 files, 2001-2025)
-# Source: https://eloyfelix.github.io/uspto-chem/
-# Place at: snapshots/raw_data/patents/historical_uspto/*.json
+python modules/patents/scripts/download_uspto_chem.py \
+    --output-dir /data/bioyoda/snapshots/raw_data/patents/historical_uspto \
+    --tracking-file /data/bioyoda/snapshots/state/patents/uspto_historical_download.json
 ```
 
-After manual download, pipeline automatically converts JSON → parquet on first run.
+**Verify download:**
+```bash
+# Check tracking file
+cat /data/bioyoda/snapshots/state/patents/uspto_historical_download.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"Downloaded: {d['stats']['downloaded']}/{d['stats']['total_files']}\")"
+```
+
+After download, the pipeline automatically converts JSON → parquet on first run.
 
 ### Running the Pipeline
 
@@ -386,11 +403,28 @@ patents:
 ./bioyoda.sh run patents --config config/test_overrides.yaml --local
 ```
 
-### Production Run
+### Production Run (Full Pipeline)
 ```bash
-# Process all 43M patents + 30M compounds
+# Cluster mode: use --jobs for parallel SGE jobs
 ./bioyoda.sh run patents --cluster --bg --jobs 50
+
+# Local mode: use --cores for parallel CPU jobs
+./bioyoda.sh run patents --local --cores 8
 ```
+
+### Separate Processing (Text vs Compounds)
+
+Patent text and compounds can be processed independently:
+
+```bash
+# Compounds only (CPU, RDKit fingerprints) - run locally
+./bioyoda.sh run patents --local --cores 8 -- patents_compounds_only
+
+# Text only (neural network embeddings) - run locally or use GPU scripts on Colab
+./bioyoda.sh run patents --local --cores 4 -- patents_text_only
+```
+
+This allows running compounds on local CPU while text runs on Colab GPU.
 
 ### Monitor Progress
 ```bash
@@ -465,18 +499,147 @@ results = qdrant.search(
 )
 ```
 
+## GPU Processing (Google Colab)
+
+For processing 44M patents efficiently, use GPU acceleration on Google Colab.
+
+### Prerequisites
+
+1. **Upload data to Google Drive:**
+```bash
+# Copy chunked patents to Drive
+rclone copy snapshots/patents_latest/raw_data/patents/chunked/ \
+    gdrive:bioyoda/raw_data/patents/chunked/ --progress
+
+# Copy USPTO enrichment data
+rclone copy snapshots/patents_latest/raw_data/patents/historical_uspto/uspto_historical.parquet \
+    gdrive:bioyoda/raw_data/patents/historical_uspto/ --progress
+
+# Copy state file
+rclone copy snapshots/patents_latest/state/patents/processed_chunks.json \
+    gdrive:bioyoda/state/patents/ --progress
+
+# Copy GPU scripts
+rclone copy modules/patents/scripts/process_patents_gpu.py \
+    gdrive:bioyoda/scripts/patents/ --progress
+rclone copy modules/patents/scripts/batch_patents_gpu.py \
+    gdrive:bioyoda/scripts/patents/ --progress
+```
+
+2. **Data layout on Drive:**
+```
+MyDrive/bioyoda/
+├── raw_data/patents/
+│   ├── chunked/
+│   │   ├── patents_chunk_0001.parquet  # 176 chunks × 250K patents
+│   │   ├── patents_chunk_0002.parquet
+│   │   └── ...
+│   └── historical_uspto/
+│       └── uspto_historical.parquet     # USPTO enrichment data
+├── processed/patents/text/              # Output directory (created)
+├── state/patents/
+│   └── processed_chunks.json            # State tracking
+└── scripts/patents/
+    ├── process_patents_gpu.py
+    └── batch_patents_gpu.py
+```
+
+### Step 1: Setup Colab Environment
+
+```python
+# Mount Google Drive
+from google.colab import drive
+drive.mount('/content/drive')
+
+# Install dependencies
+!pip install -q sentence-transformers faiss-cpu pyarrow pandas tqdm
+
+# Verify GPU
+import torch
+print(f"GPU: {torch.cuda.get_device_name(0)}")
+print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+```
+
+### Step 2: Run Batch Processing
+
+```python
+# Set paths
+BASE = "/content/drive/MyDrive/bioyoda"
+INPUT_DIR = f"{BASE}/raw_data/patents/chunked"
+OUTPUT_DIR = f"{BASE}/processed/patents/text"
+STATE_FILE = f"{BASE}/state/patents/processed_chunks.json"
+USPTO_DATA = f"{BASE}/raw_data/patents/historical_uspto/uspto_historical.parquet"
+SCRIPTS = f"{BASE}/scripts/patents"
+
+# Run batch processing (all pending chunks)
+!python {SCRIPTS}/batch_patents_gpu.py \
+    --input-dir {INPUT_DIR} \
+    --output-dir {OUTPUT_DIR} \
+    --state-file {STATE_FILE} \
+    --uspto-data {USPTO_DATA}
+```
+
+### Step 3: Process Specific Range (Optional)
+
+```python
+# Process chunks 50-100 only
+!python {SCRIPTS}/batch_patents_gpu.py \
+    --input-dir {INPUT_DIR} \
+    --output-dir {OUTPUT_DIR} \
+    --state-file {STATE_FILE} \
+    --uspto-data {USPTO_DATA} \
+    --start 50 --end 100
+```
+
+### Step 4: Test with Single Chunk
+
+```python
+# Test with first chunk, limit 1000 patents
+!python {SCRIPTS}/process_patents_gpu.py \
+    {INPUT_DIR}/patents_chunk_0001.parquet \
+    {OUTPUT_DIR} \
+    --uspto-data {USPTO_DATA} \
+    --limit 1000
+```
+
+### Step 5: Download Results
+
+```bash
+# Sync processed indices back to server
+rclone copy gdrive:bioyoda/processed/patents/text/ \
+    snapshots/patents_latest/data/processed/patents/text/ --progress
+
+# Sync updated state
+rclone copy gdrive:bioyoda/state/patents/processed_chunks.json \
+    snapshots/patents_latest/state/patents/ --progress
+```
+
+### Resume After Disconnect
+
+The batch script automatically resumes from where it left off:
+- State file tracks completed chunks
+- Output files are checked on startup
+- Simply re-run the same command to continue
+
+```python
+# Just re-run - it will skip completed chunks
+!python {SCRIPTS}/batch_patents_gpu.py \
+    --input-dir {INPUT_DIR} \
+    --output-dir {OUTPUT_DIR} \
+    --state-file {STATE_FILE} \
+    --uspto-data {USPTO_DATA}
+```
+
 ## Performance
 
 ### Test Mode
 - **Data**: 500 patents, 1K compounds
-- **Time**: 2-3 minutes
-- **Memory**: 2GB peak
+- **Memory**: ~2GB peak
 
 ### Production Mode
-- **Data**: 43M patents, 30M compounds
-- **Time**: 6-8 hours (parallel on cluster)
-- **Memory**: 12-20GB per job
-- **Storage**: ~200GB total
+- **Data**: 44M patents (176 chunks), 31M compounds (62 chunks)
+- **Patent text**: GPU recommended (S-BioBERT neural network)
+- **Compounds**: CPU only (RDKit fingerprints)
 
 ## Troubleshooting
 
@@ -515,8 +678,11 @@ conda run -n bioyoda python3 modules/patents/scripts/process_patents.py \
 ```
 modules/patents/scripts/
 ├── download_and_prepare_patents.py    # Unified download pipeline
-├── process_patents.py                 # Text processing + embeddings
-├── process_compounds.py               # Chemical fingerprints
+├── download_uspto_chem.py             # Download USPTO-Chem historical data
+├── process_patents.py                 # Text processing + embeddings (CPU)
+├── process_patents_gpu.py             # Text processing + embeddings (GPU)
+├── batch_patents_gpu.py               # Batch GPU processing for Colab
+├── process_compounds.py               # Chemical fingerprints (RDKit, CPU-only)
 ├── process_uspto_json.py              # Convert USPTO JSON to parquet
 └── convert_to_biobtree_json.py        # Convert parquet to JSON for biobtree
 
@@ -532,4 +698,4 @@ tests/
 
 ---
 
-**Last Updated**: October 21, 2025
+**Last Updated**: December 2025

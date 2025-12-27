@@ -16,6 +16,8 @@ COMMANDS:
     clean [module]            Clean intermediate files
     dryrun <module>           Show what would be executed
     dag <module>              Generate workflow DAG visualization
+    push <module>             Sync data/code to Google Drive (for Colab GPU)
+    pull <module>             Pull processed results from Google Drive
     unlock                    Unlock working directory after crash
     help                      Show this help message
     version                   Show version information
@@ -67,6 +69,11 @@ API START OPTIONS:
     --bg, -b                  Run in background
     --reload                  Auto-reload on code changes
 
+PUSH/PULL OPTIONS:
+    --code-only, -c           Only sync scripts (fast, for code changes)
+    --dry-run, -n             Show what would be synced without syncing
+    --bg, -b                  Run in background
+
 EXAMPLES:
     # Quick start/stop servers
     bioyoda.sh start
@@ -103,6 +110,12 @@ EXAMPLES:
     bioyoda.sh snapshot --name prod_v1.0
     cd snapshots/prod_v1.0/code
     ./bioyoda.sh run all --cluster --bg
+
+    # Google Drive sync (for Colab GPU processing)
+    bioyoda.sh push patents                    # Push data + code to Drive
+    bioyoda.sh push patents --code-only        # Push only scripts (fast)
+    bioyoda.sh push pubmed --dry-run           # Preview what would sync
+    bioyoda.sh pull patents                    # Pull processed results
 
     # Maintenance
     bioyoda.sh status

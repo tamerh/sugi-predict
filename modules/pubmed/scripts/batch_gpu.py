@@ -1,17 +1,18 @@
 """
 Batch PubMed Processing for Google Colab GPU
-Processes multiple files with resume capability.
+Processes multiple files with resume capability and tracking.
 
 Usage in Colab:
     # Mount drive first
     from google.colab import drive
     drive.mount('/content/drive')
 
-    # Run in background
+    # Run in background with tracking
     !nohup python batch_gpu.py \
         --input-dir /content/drive/MyDrive/bioyoda/raw_data/pubmed \
         --output-dir /content/drive/MyDrive/bioyoda/processed/pubmed \
         --deleted-pmids /content/drive/MyDrive/bioyoda/raw_data/pubmed/deleted.pmids.sorted.gz \
+        --tracking-file /content/drive/MyDrive/bioyoda/state/pubmed/processed_files.json \
         > processing.log 2>&1 &
 """
 import os
@@ -45,6 +46,11 @@ def get_pending_files(input_dir, output_dir):
 
     return pending
 
+def get_relative_path(input_path, input_dir):
+    """Convert absolute path to relative path for tracking (e.g., baseline/pubmed25n0001.xml.gz)."""
+    rel_path = os.path.relpath(input_path, input_dir)
+    return rel_path
+
 def main():
     parser = argparse.ArgumentParser(description="Batch GPU processing for PubMed")
     parser.add_argument("--input-dir", required=True, help="Base input directory")
@@ -56,11 +62,23 @@ def main():
     parser.add_argument("--end", type=int, default=None, help="End index (exclusive)")
     parser.add_argument("--limit", type=int, default=None, help="Limit per file (testing)")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
+    parser.add_argument("--tracking-file", type=str, default=None,
+                        help="Path to tracking JSON file (updates after each file)")
 
     args = parser.parse_args()
 
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
+
+    # Initialize tracker if tracking file provided
+    tracker = None
+    if args.tracking_file:
+        try:
+            from tracking import PubMedTracker
+            tracker = PubMedTracker(args.tracking_file)
+            log(f"Tracking enabled: {args.tracking_file}")
+        except Exception as e:
+            log(f"Warning: Could not initialize tracker: {e}")
 
     # Get pending files
     log(f"Scanning for pending files in {args.input_dir}...")
@@ -115,10 +133,21 @@ def main():
             # Count vectors from output
             base_name = os.path.basename(input_path).replace('.xml.gz', '')
             faiss_path = os.path.join(args.output_dir, f"{base_name}.index")
+            vectors_count = 0
             if os.path.exists(faiss_path):
                 import faiss
                 idx = faiss.read_index(faiss_path)
-                total_vectors += idx.ntotal
+                vectors_count = idx.ntotal
+                total_vectors += vectors_count
+
+            # Update tracking file
+            if tracker:
+                try:
+                    relative_path = get_relative_path(input_path, args.input_dir)
+                    tracker.mark_processed(relative_path, vectors_count=vectors_count)
+                    log(f"Tracked: {relative_path} ({vectors_count} vectors)")
+                except Exception as e:
+                    log(f"Warning: Could not update tracking: {e}")
 
             completed += 1
 

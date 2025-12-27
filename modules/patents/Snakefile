@@ -211,7 +211,7 @@ checkpoint patents_download_checkpoint:
         limit_flag = f"--surechembl-limit-files {patents_config.get('test_limit_files', 4)}" if patents_config.get("test_mode", False) else "",
         # USPTO options
         enable_uspto = "--enable-uspto" if patents_config.get("enable_uspto", False) else "",
-        uspto_historical_json_dir = patents_config.get("uspto_historical_json_dir", ""),
+        uspto_historical_json_dir = os.path.join(BASE_DIR, patents_config.get("uspto_historical_json_dir", "")) if patents_config.get("uspto_historical_json_dir") else "",
         uspto_limit_flag = f"--uspto-limit-files {patents_config.get('test_limit_files', 4)}" if patents_config.get("test_mode", False) else "",
         uspto_test_flag = "--uspto-test-mode" if patents_config.get("test_mode", False) else "",
         # Chunking options
@@ -279,7 +279,8 @@ def get_downloaded_release_files(wildcards):
 
     # USPTO historical parquet path (single file, not release-specific)
     # This is auto-generated from JSON files if it doesn't exist
-    uspto_historical_dir = patents_config.get("uspto_historical_json_dir", "")
+    uspto_historical_dir_config = patents_config.get("uspto_historical_json_dir", "")
+    uspto_historical_dir = os.path.join(BASE_DIR, uspto_historical_dir_config) if uspto_historical_dir_config else ""
     uspto_historical_file = os.path.join(uspto_historical_dir, "uspto_historical.parquet") if uspto_historical_dir else ""
 
     return {
@@ -299,6 +300,18 @@ rule patents_all:
         checkpoint_done = os.path.join(STATE_DIR, ".download_complete"),
         indices = aggregate_patent_chunk_indices,
         compounds_indices = aggregate_compound_chunk_indices  # Changed to chunked processing
+
+# Compounds-only rule (for CPU processing while text runs on GPU)
+rule patents_compounds_only:
+    input:
+        checkpoint_done = os.path.join(STATE_DIR, ".download_complete"),
+        compounds_indices = aggregate_compound_chunk_indices
+
+# Text-only rule (for GPU processing on Colab)
+rule patents_text_only:
+    input:
+        checkpoint_done = os.path.join(STATE_DIR, ".download_complete"),
+        indices = aggregate_patent_chunk_indices
 
 # Rule 2a: Process individual patent chunk (text embeddings with USPTO enrichment)
 rule patents_process_chunk:

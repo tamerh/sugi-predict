@@ -50,6 +50,13 @@
 #   ./bioyoda.sh snapshot --name prod_v1.0
 #   cd snapshots/prod_v1.0/code && ./bioyoda.sh run all --cluster --bg
 #
+#   # Google Drive sync (for Colab GPU processing)
+#   ./bioyoda.sh push patents                           # Push data + code to Drive
+#   ./bioyoda.sh push patents --code-only              # Push only scripts (fast)
+#   ./bioyoda.sh push pubmed --dry-run                 # Preview what would sync
+#   ./bioyoda.sh pull patents                           # Pull processed results
+#   ./bioyoda.sh pull pubmed                            # Pull PubMed results
+#
 #   # Maintenance
 #   ./bioyoda.sh status                                 # Pipeline status
 #   ./bioyoda.sh validate pubmed                        # Validate outputs
@@ -150,6 +157,17 @@ main() {
         run)
             source "${SCRIPT_DIR}/commands/run.sh"
             cmd_run "$@"
+            ;;
+
+        # Google Drive sync (for GPU processing)
+        push)
+            source "${SCRIPT_DIR}/commands/sync.sh"
+            cmd_push "$@"
+            ;;
+
+        pull)
+            source "${SCRIPT_DIR}/commands/sync.sh"
+            cmd_pull "$@"
             ;;
 
         # Qdrant management

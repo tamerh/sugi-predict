@@ -12,6 +12,11 @@
 project_name: "bioyoda"
 conda_env: "bioyoda"
 
+# Google Drive Sync (for GPU processing on Colab)
+# Use: ./bioyoda.sh push <module> | ./bioyoda.sh pull <module>
+gdrive:
+  remote: "gdrive:bioyoda"  # rclone remote:path
+
 # Base Paths - CHANGE THIS FOR DIFFERENT ENVIRONMENTS
 # All outputs (raw_data/, data/, logs/) will be created under: base_dir/
 # Supports both relative paths (relative to project root) and absolute paths
