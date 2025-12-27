@@ -230,6 +230,60 @@ pull_clinical_trials() {
     log_info "Clinical Trials pull complete!"
 }
 
+# Push ESM2 data to Drive
+push_esm2() {
+    local base_dir="$1"
+    local remote="$2"
+    local log_file="$3"
+    local dry_run="$4"
+    local code_only="${5:-false}"
+
+    log_info "Pushing ESM2 data to Google Drive..."
+
+    if [[ "$code_only" != "true" ]]; then
+        # FASTA chunks
+        rclone_sync "${base_dir}/raw_data/esm2/chunks" "${remote}/raw_data/esm2/chunks" \
+            "ESM2 FASTA chunks" "$log_file" "$dry_run"
+
+        # State files
+        rclone_sync "${base_dir}/state/esm2" "${remote}/state/esm2" \
+            "ESM2 state files" "$log_file" "$dry_run"
+    else
+        log_info "Code-only mode: skipping data files"
+    fi
+
+    # GPU scripts (always synced)
+    local script_dir="${COMMANDS_DIR}/../../modules/esm2/scripts"
+    rclone_sync "${script_dir}/batch_esm2_gpu.py" "${remote}/scripts/esm2/" \
+        "ESM2 batch GPU script" "$log_file" "$dry_run"
+    rclone_sync "${script_dir}/generate_embeddings.py" "${remote}/scripts/esm2/" \
+        "ESM2 embeddings script" "$log_file" "$dry_run"
+    rclone_sync "${script_dir}/h5_to_faiss.py" "${remote}/scripts/esm2/" \
+        "ESM2 H5 to FAISS script" "$log_file" "$dry_run"
+
+    log_info "ESM2 push complete!"
+}
+
+# Pull ESM2 results from Drive
+pull_esm2() {
+    local base_dir="$1"
+    local remote="$2"
+    local log_file="$3"
+    local dry_run="$4"
+
+    log_info "Pulling ESM2 results from Google Drive..."
+
+    # Processed indices
+    rclone_sync "${remote}/processed/esm2" "${base_dir}/data/processed/esm2" \
+        "ESM2 FAISS indices" "$log_file" "$dry_run"
+
+    # State files
+    rclone_sync "${remote}/state/esm2" "${base_dir}/state/esm2" \
+        "ESM2 state files" "$log_file" "$dry_run"
+
+    log_info "ESM2 pull complete!"
+}
+
 # Run sync in background
 # Usage: run_in_background <command> <log_file> <pid_file>
 run_sync_background() {
@@ -284,7 +338,7 @@ cmd_push() {
     if [[ -z "$module" ]]; then
         log_error "No module specified"
         echo "Usage: ./bioyoda.sh push <module> [--code-only] [--dry-run] [--bg]"
-        echo "Modules: pubmed, patents, clinical_trials"
+        echo "Modules: pubmed, patents, clinical_trials, esm2"
         echo ""
         echo "Options:"
         echo "  --code-only, -c   Only sync scripts (fast, for code changes)"
@@ -328,9 +382,12 @@ cmd_push() {
         clinical_trials)
             sync_func="push_clinical_trials"
             ;;
+        esm2)
+            sync_func="push_esm2"
+            ;;
         *)
             log_error "Unknown module: $module"
-            echo "Supported modules: pubmed, patents, clinical_trials"
+            echo "Supported modules: pubmed, patents, clinical_trials, esm2"
             exit 1
             ;;
     esac
@@ -383,7 +440,7 @@ cmd_pull() {
     if [[ -z "$module" ]]; then
         log_error "No module specified"
         echo "Usage: ./bioyoda.sh pull <module> [--dry-run] [--bg]"
-        echo "Modules: pubmed, patents, clinical_trials"
+        echo "Modules: pubmed, patents, clinical_trials, esm2"
         exit 1
     fi
 
@@ -418,9 +475,12 @@ cmd_pull() {
         clinical_trials)
             sync_func="pull_clinical_trials"
             ;;
+        esm2)
+            sync_func="pull_esm2"
+            ;;
         *)
             log_error "Unknown module: $module"
-            echo "Supported modules: pubmed, patents, clinical_trials"
+            echo "Supported modules: pubmed, patents, clinical_trials, esm2"
             exit 1
             ;;
     esac

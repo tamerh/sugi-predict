@@ -15,6 +15,7 @@ source "${COMMANDS_DIR}/../lib/snakemake.sh"
 # Usage: cmd_run [module] [options]
 cmd_run() {
     local module="all"
+    local target=""
 
     # Parse arguments
     parse_common_args "$@"
@@ -24,16 +25,17 @@ cmd_run() {
         module="${REMAINING_ARGS[0]}"
     fi
 
+    # Get target from PROCESS_TARGET (--compounds-only, --text-only) or REMAINING_ARGS[1] (-- target)
+    if [[ -n "$PROCESS_TARGET" ]]; then
+        target="$PROCESS_TARGET"
+        log_info "Using snakemake target: ${target}"
+    elif [[ ${#REMAINING_ARGS[@]} -gt 1 ]]; then
+        target="${REMAINING_ARGS[1]}"
+        log_info "Using snakemake target: ${target}"
+    fi
+
     # Resolve configuration
     local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-
-    # Auto-select GPU config if on cluster and not test mode
-    if [[ "$USE_TEST" != "true" ]] && [[ "$EXECUTION_MODE" == "cluster" ]]; then
-        active_config=$(auto_select_gpu_config "$active_config" "$EXECUTION_MODE")
-        if [[ "$active_config" == "config/config_gpu.yaml" ]]; then
-            log_info "Auto-selected GPU config: config_gpu.yaml (queue=gpu detected)"
-        fi
-    fi
 
     log_info "Running BioYoda pipeline: module=${module}, mode=${EXECUTION_MODE}, update_mode=${UPDATE_MODE}, config=${active_config}"
 
@@ -66,23 +68,24 @@ cmd_run() {
     # Log execution info
     local queue=$(get_queue_from_config "$active_config")
     if [[ "$EXECUTION_MODE" == "cluster" ]]; then
-        log_cluster_info "$queue" "$CUDA_VERSION" "$JOBS"
+        log_cluster_info "$queue" "$JOBS"
     else
         log_local_info "$CORES"
     fi
 
     # Build Snakemake command
+    # If target is specified (via -- separator), use that; otherwise use module
+    local snakemake_target="${target:-$module}"
     local snakemake_cmd=$(build_pipeline_command \
         "$DEFAULT_SNAKEFILE" \
         "$active_config" \
         "$EXECUTION_MODE" \
         "$JOBS" \
         "$CORES" \
-        "$CUDA_VERSION" \
         "$USE_TEST" \
         "$UPDATE_MODE" \
         "$DRYRUN" \
-        "$module"
+        "$snakemake_target"
     )
 
     # Execute with tracking

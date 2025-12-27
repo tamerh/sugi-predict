@@ -397,6 +397,145 @@ snakemake --snakefile modules/esm2/Snakefile \
 - **t33 (650M)**: **Recommended** - best quality/speed tradeoff
 - **t36 (3B)**: Maximum accuracy, requires more GPU memory
 
+## GPU Processing (Google Colab)
+
+For processing 570K+ proteins efficiently, use GPU acceleration on Google Colab.
+
+### Prerequisites
+
+1. **Push data to Google Drive:**
+```bash
+# Push ESM2 data and scripts
+./bioyoda.sh push esm2
+
+# Or manually with rclone:
+rclone copy snapshots/esm2_latest/raw_data/esm2/chunks/ \
+    gdrive:bioyoda/raw_data/esm2/chunks/ --progress
+
+rclone copy modules/esm2/scripts/batch_esm2_gpu.py \
+    gdrive:bioyoda/scripts/esm2/ --progress
+```
+
+2. **Data layout on Drive:**
+```
+MyDrive/bioyoda/
+├── raw_data/esm2/
+│   └── chunks/
+│       ├── chunk_001.fasta   # 100 chunks × ~5.7K proteins
+│       ├── chunk_002.fasta
+│       └── ...
+├── processed/esm2/            # Output directory (created)
+├── state/esm2/                # State tracking
+└── scripts/esm2/
+    └── batch_esm2_gpu.py
+```
+
+### Step 1: Setup Colab Environment
+
+```python
+# Cell 1: Mount Drive and install dependencies
+from google.colab import drive
+drive.mount('/content/drive')
+
+!pip install -q fair-esm biopython h5py faiss-cpu torch
+
+# Verify GPU
+import torch
+print(f"GPU: {torch.cuda.get_device_name(0)}")
+print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+
+# Copy scripts to Colab runtime
+!cp "/content/drive/MyDrive/bioyoda/scripts/esm2/batch_esm2_gpu.py" .
+!ls -la *.py
+```
+
+### Step 2: Check Progress and Create Directories
+
+```python
+# Cell 2: Setup directories and check progress
+import os
+
+# Create required directories
+os.makedirs("/content/drive/MyDrive/bioyoda/processed/esm2", exist_ok=True)
+os.makedirs("/content/drive/MyDrive/bioyoda/state/esm2", exist_ok=True)
+
+# Check chunks
+chunk_dir = "/content/drive/MyDrive/bioyoda/raw_data/esm2/chunks"
+out_dir = "/content/drive/MyDrive/bioyoda/processed/esm2"
+
+chunks = sorted([f for f in os.listdir(chunk_dir) if f.endswith('.fasta')])
+done = len([f for f in os.listdir(out_dir) if f.endswith('.index')])
+print(f"Total chunks: {len(chunks)}")
+print(f"Already processed: {done}")
+print(f"Remaining: {len(chunks) - done}")
+```
+
+### Step 3: Run Batch Processing (with nohup)
+
+```python
+# Cell 3: Start processing in background with logging to Drive
+!nohup python batch_esm2_gpu.py \
+    --input-dir "/content/drive/MyDrive/bioyoda/raw_data/esm2/chunks" \
+    --output-dir "/content/drive/MyDrive/bioyoda/processed/esm2" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/esm2/gpu_progress.json" \
+    --model esm2_t33_650M_UR50D \
+    --skip-existing \
+    > /content/drive/MyDrive/bioyoda/esm2_processing.log 2>&1 &
+
+print("Processing started in background!")
+print("Log: /content/drive/MyDrive/bioyoda/esm2_processing.log")
+```
+
+### Step 4: Monitor Progress
+
+```python
+# Cell 4: Monitor log file
+!tail -f /content/drive/MyDrive/bioyoda/esm2_processing.log
+```
+
+Or check from local machine:
+```bash
+rclone cat gdrive:bioyoda/esm2_processing.log | tail -50
+```
+
+### Step 5: Pull Results Back
+
+```bash
+# Sync processed indices back to server
+./bioyoda.sh pull esm2
+
+# Or manually:
+rclone copy gdrive:bioyoda/processed/esm2/ \
+    snapshots/esm2_latest/data/processed/esm2/ --progress
+```
+
+### Resume After Disconnect
+
+The batch script automatically resumes from where it left off:
+- Checks existing `.index` files in output directory
+- Skips completed chunks (use `--skip-existing`)
+- Simply re-run the same command to continue
+
+```python
+# Just re-run - it will skip completed chunks
+!nohup python batch_esm2_gpu.py \
+    --input-dir "/content/drive/MyDrive/bioyoda/raw_data/esm2/chunks" \
+    --output-dir "/content/drive/MyDrive/bioyoda/processed/esm2" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/esm2/gpu_progress.json" \
+    --model esm2_t33_650M_UR50D \
+    --skip-existing \
+    > /content/drive/MyDrive/bioyoda/esm2_processing.log 2>&1 &
+```
+
+### Performance Estimates
+
+| GPU Type | Speed | 100 Chunks Time |
+|----------|-------|-----------------|
+| T4 (free) | ~50 seq/sec | ~30 hours |
+| A100 (Pro+) | ~200 seq/sec | ~8 hours |
+
+**Note**: ESM-2 650M model requires ~2.5GB VRAM. A100 is strongly recommended for faster processing.
+
 ## Related Documentation
 
 - **Root README**: `../../README.md` - Overall system architecture
@@ -406,6 +545,7 @@ snakemake --snakefile modules/esm2/Snakefile \
 
 ---
 
-**Module Version**: 1.0.0
-**Last Updated**: January 2025
+**Module Version**: 1.1.0
+**Last Updated**: December 2025
 **Model**: ESM-2 650M (esm2_t33_650M_UR50D)
+**Major Changes**: Added GPU batch processing for Google Colab

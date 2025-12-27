@@ -54,7 +54,8 @@ RUN OPTIONS:
     --test                    Use test configuration
     --mode <full|update>      Processing mode (default: full)
     --dryrun                  Show what would be executed
-    --cuda11.4                Use CUDA 11.4 nodes (scc116, scc117, scc066)
+    --compounds-only          Process only compounds (patents module, CPU optimized)
+    --text-only               Process only text embeddings (patents module)
 
 QDRANT START OPTIONS:
     --mode <local|cluster>    Run mode (default: local)
@@ -86,8 +87,9 @@ EXAMPLES:
     # Test with small dataset
     bioyoda.sh run pubmed --test --local
 
-    # GPU cluster with CUDA 11.4 nodes
-    bioyoda.sh run pubmed --cluster --bg --cuda11.4
+    # Patents: separate text vs compounds processing
+    bioyoda.sh run patents --local --cores 8 --compounds-only   # CPU (RDKit fingerprints)
+    bioyoda.sh run patents --local --cores 4 --text-only        # Or use Colab GPU
 
     # Qdrant operations
     bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
@@ -112,16 +114,18 @@ EXAMPLES:
     ./bioyoda.sh run all --cluster --bg
 
     # Google Drive sync (for Colab GPU processing)
-    bioyoda.sh push patents                    # Push data + code to Drive
-    bioyoda.sh push patents --code-only        # Push only scripts (fast)
-    bioyoda.sh push clinical_trials --code-only # Push clinical trials scripts
-    bioyoda.sh push pubmed --dry-run           # Preview what would sync
-    bioyoda.sh pull patents                    # Pull processed results
-    bioyoda.sh pull clinical_trials            # Pull clinical trials results
+    bioyoda.sh push patents                     # Push data + code to Drive
+    bioyoda.sh push patents --code-only         # Push only scripts (fast)
+    bioyoda.sh push clinical_trials             # Push clinical trials data
+    bioyoda.sh push esm2                        # Push ESM2 protein data
+    bioyoda.sh push pubmed --dry-run            # Preview what would sync
+    bioyoda.sh pull patents                     # Pull processed results
+    bioyoda.sh pull clinical_trials             # Pull clinical trials results
+    bioyoda.sh pull esm2                        # Pull ESM2 embeddings
 
     # Maintenance
     bioyoda.sh status
     bioyoda.sh stop pubmed --clean
     bioyoda.sh unlock
 
-For more information: https://github.com/yourusername/bioyoda
+For more information: https://github.com/tamerh/bioyoda

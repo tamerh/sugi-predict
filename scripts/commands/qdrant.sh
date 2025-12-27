@@ -43,7 +43,6 @@ Insert Options:
     --bg, -b                  Run in background
     --jobs N                  Max parallel jobs (for cluster mode)
     --cores N                 Number of cores (for local mode)
-    --cuda11.4                Use CUDA 11.4 nodes
     --test                    Use test configuration
 
 Datasets:
@@ -353,7 +352,7 @@ qdrant_insert() {
     # Log execution info
     local queue=$(get_queue_from_config "$active_config")
     if [[ "$EXECUTION_MODE" == "cluster" ]]; then
-        log_cluster_info "$queue" "$CUDA_VERSION" "$JOBS"
+        log_cluster_info "$queue" "$JOBS"
     else
         log_local_info "$CORES"
     fi
@@ -364,7 +363,6 @@ qdrant_insert() {
         "$EXECUTION_MODE" \
         "$JOBS" \
         "$CORES" \
-        "$CUDA_VERSION" \
         "$USE_TEST" \
         "$dataset"
     )

@@ -23,14 +23,13 @@ declare -g JOBS=100
 declare -g CUSTOM_CONFIG=""
 declare -g USE_TEST=false
 declare -g BACKGROUND=false
-declare -g CUDA_VERSION=""
 declare -g UPDATE_MODE="full"
 declare -g DRYRUN=""
 declare -g REMAINING_ARGS=()
 
 # Parse common arguments used across multiple commands
 # Usage: parse_common_args "$@"
-# Sets global variables: EXECUTION_MODE, CORES, JOBS, CUSTOM_CONFIG, USE_TEST, BACKGROUND, CUDA_VERSION, UPDATE_MODE, DRYRUN, REMAINING_ARGS
+# Sets global variables: EXECUTION_MODE, CORES, JOBS, CUSTOM_CONFIG, USE_TEST, BACKGROUND, UPDATE_MODE, DRYRUN, REMAINING_ARGS, PROCESS_TARGET
 parse_common_args() {
     # Reset globals
     EXECUTION_MODE="local"
@@ -39,9 +38,9 @@ parse_common_args() {
     CUSTOM_CONFIG=""
     USE_TEST=false
     BACKGROUND=false
-    CUDA_VERSION=""
     UPDATE_MODE="full"
     DRYRUN=""
+    PROCESS_TARGET=""
     REMAINING_ARGS=()
 
     while [[ $# -gt 0 ]]; do
@@ -74,10 +73,6 @@ parse_common_args() {
                 BACKGROUND=true
                 shift
                 ;;
-            --cuda11.4)
-                CUDA_VERSION="11.4"
-                shift
-                ;;
             --mode)
                 UPDATE_MODE="$2"
                 shift 2
@@ -85,6 +80,23 @@ parse_common_args() {
             --dryrun|--dry-run|-n)
                 DRYRUN="-n"
                 shift
+                ;;
+            --compounds-only)
+                PROCESS_TARGET="patents_compounds_only"
+                shift
+                ;;
+            --text-only)
+                PROCESS_TARGET="patents_text_only"
+                shift
+                ;;
+            --)
+                # Stop parsing options, collect rest as remaining args
+                shift
+                while [[ $# -gt 0 ]]; do
+                    REMAINING_ARGS+=("$1")
+                    shift
+                done
+                break
                 ;;
             *)
                 REMAINING_ARGS+=("$1")
