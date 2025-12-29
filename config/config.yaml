@@ -357,12 +357,11 @@ qdrant:
   # NOTE: Directories are constructed from base_dir in Snakefile
   # NOTE: Collection-specific settings (HNSW, segments, batch_size) are in each collection's config above
 
-  # Storage configuration (production - uses local scratch for 10-60x faster performance!)
+  # Storage configuration
   storage:
-    local_scratch_base: "/localscratch/tgur"  # Local scratch base path
-    # When set: Uses /localscratch/tgur/qdrant_<hostname>_<YYYYMMDD>/ (node-specific)
-    # When empty: Uses NFS storage at {base_dir}/data/qdrant (accessible from all nodes)
-    # NOTE: test_overrides.yaml sets this to empty for development/testing
+    path: "/data/bioyoda/snapshots/qdrant_latest"  # Shared Qdrant storage (absolute path)
+    # All snapshots insert to this shared Qdrant instance
+    # Use --out-dir flag to override with a different location
 
   # Server settings (for auto-start via Snakemake)
   server:

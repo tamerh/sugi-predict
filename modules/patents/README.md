@@ -294,7 +294,12 @@ data/processed/patents/biobtree/
 └── conversion_summary.json
 ```
 
-**Usage**:
+**Usage (via pipeline)**:
+```bash
+./bioyoda.sh run patents --local --biobtree
+```
+
+**Usage (manual)**:
 ```bash
 python modules/patents/scripts/convert_to_biobtree_json.py \
   --input raw_data/patents/surechembl/2025-10-01 \
@@ -418,13 +423,23 @@ Patent text and compounds can be processed independently:
 
 ```bash
 # Compounds only (CPU, RDKit fingerprints) - run locally
-./bioyoda.sh run patents --local --cores 8 -- patents_compounds_only
+./bioyoda.sh run patents --local --cores 8 --compounds-only
 
 # Text only (neural network embeddings) - run locally or use GPU scripts on Colab
-./bioyoda.sh run patents --local --cores 4 -- patents_text_only
+./bioyoda.sh run patents --local --cores 4 --text-only
 ```
 
 This allows running compounds on local CPU while text runs on Colab GPU.
+
+### Biobtree JSON Conversion
+
+Convert parquet files to JSON for biobtree ingestion:
+
+```bash
+./bioyoda.sh run patents --local --biobtree
+```
+
+This is a separate step that runs after the main processing is complete.
 
 ### Monitor Progress
 ```bash

@@ -56,6 +56,7 @@ RUN OPTIONS:
     --dryrun                  Show what would be executed
     --compounds-only          Process only compounds (patents module, CPU optimized)
     --text-only               Process only text embeddings (patents module)
+    --biobtree                Convert patents to JSON for biobtree ingestion
 
 QDRANT START OPTIONS:
     --mode <local|cluster>    Run mode (default: local)
@@ -90,6 +91,7 @@ EXAMPLES:
     # Patents: separate text vs compounds processing
     bioyoda.sh run patents --local --cores 8 --compounds-only   # CPU (RDKit fingerprints)
     bioyoda.sh run patents --local --cores 4 --text-only        # Or use Colab GPU
+    bioyoda.sh run patents --local --biobtree                   # Convert to biobtree JSON
 
     # Qdrant operations
     bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168

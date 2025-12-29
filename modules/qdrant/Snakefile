@@ -36,7 +36,8 @@ QDRANT_MODULE_DIR = os.path.join(PROJECT_ROOT, "modules", "qdrant")  # Scripts i
 QDRANT_SCRIPTS = os.path.join(QDRANT_MODULE_DIR, "scripts")
 
 # Storage and log paths
-QDRANT_STORAGE = os.path.join(BASE_DIR, "data", "qdrant")
+# Qdrant storage from config (shared across all snapshots - use absolute path)
+QDRANT_STORAGE = config.get("qdrant", {}).get("storage", {}).get("path", "/data/bioyoda/snapshots/qdrant_latest")
 QDRANT_LOG_DIR = os.path.join(BASE_DIR, "logs", "qdrant")
 CONNECTION_INFO = os.path.join(QDRANT_STORAGE, "connection_info.txt")
 

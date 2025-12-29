@@ -3,7 +3,7 @@
 ##############################################################################
 #
 #   Stop Qdrant Server
-#   Stops both local and cluster-based Qdrant servers
+#   Stops local Qdrant server
 #
 ##############################################################################
 
@@ -17,12 +17,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 if [ -n "$QDRANT_STORAGE_PATH" ]; then
     STORAGE="$QDRANT_STORAGE_PATH"
 else
-    STORAGE="${PROJECT_ROOT}/out/data/qdrant"
+    STORAGE="${PROJECT_ROOT}/snapshots/qdrant_latest"
 fi
 
 PID_FILE="${STORAGE}/qdrant.pid"
 CONNECTION_INFO="${STORAGE}/connection_info.txt"
-JOB_NAME="q_server"
 
 # Colors
 RED='\033[0;31m'
@@ -59,33 +58,6 @@ if [ -f "$PID_FILE" ]; then
     fi
 
     rm -f "$PID_FILE"
-
-    # Clean up mock cgroups directory if it exists
-    MOCK_CGROUPS_PATH_FILE="${STORAGE}/mock_cgroups.path"
-    if [ -f "$MOCK_CGROUPS_PATH_FILE" ]; then
-        MOCK_CGROUPS_DIR=$(cat "$MOCK_CGROUPS_PATH_FILE")
-        if [ -d "$MOCK_CGROUPS_DIR" ]; then
-            echo "Cleaning up mock cgroups directory: $MOCK_CGROUPS_DIR"
-            rm -rf "$MOCK_CGROUPS_DIR"
-            echo -e "${GREEN}✓ Mock cgroups directory cleaned up${NC}"
-        fi
-        rm -f "$MOCK_CGROUPS_PATH_FILE"
-    fi
-fi
-
-# Check for cluster job
-if command -v qstat &> /dev/null; then
-    QDRANT_JOBS=$(qstat -u $(whoami) 2>/dev/null | grep "$JOB_NAME" | awk '{print $1}' || true)
-
-    if [ -n "$QDRANT_JOBS" ]; then
-        echo -e "${YELLOW}Found Qdrant cluster job(s)${NC}"
-        for JOB_ID in $QDRANT_JOBS; do
-            echo "Cancelling job: $JOB_ID"
-            qdel $JOB_ID 2>/dev/null || true
-        done
-        echo -e "${GREEN}✓ Qdrant cluster job(s) cancelled${NC}"
-        FOUND_SOMETHING=true
-    fi
 fi
 
 # Clean up connection info
@@ -93,11 +65,6 @@ if [ -f "$CONNECTION_INFO" ]; then
     rm -f "$CONNECTION_INFO"
     echo "✓ Removed connection info file"
     FOUND_SOMETHING=true
-fi
-
-# Clean up .qdrant-initialized marker if exists
-if [ -f "${PROJECT_ROOT}/.qdrant-initialized" ]; then
-    rm -f "${PROJECT_ROOT}/.qdrant-initialized"
 fi
 
 if [ "$FOUND_SOMETHING" = false ]; then

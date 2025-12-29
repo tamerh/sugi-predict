@@ -534,39 +534,45 @@ rule patents_process_compounds_chunk:
         echo "==================== PROCESS COMPOUNDS CHUNK {wildcards.chunk_name} COMPLETED: $(date) ====================" >> {log}
         """
 
-# Optional: Prepare biobtree cross-reference data
-rule patents_prepare_biobtree:
+# Convert parquet to JSON for biobtree ingestion
+# Run: ./bioyoda.sh run patents --biobtree
+rule patents_biobtree:
+    input:
+        checkpoint_done = os.path.join(STATE_DIR, ".download_complete")
     output:
-        xrefs = os.path.join(BIOBTREE_DIR, "patent_xrefs.tsv"),
-        families = os.path.join(BIOBTREE_DIR, "patent_families.tsv"),
-        metadata = os.path.join(BIOBTREE_DIR, "patent_metadata.tsv")
+        patents_json = os.path.join(BIOBTREE_DIR, "patents.json"),
+        compounds_json = os.path.join(BIOBTREE_DIR, "compounds.json"),
+        mapping_json = os.path.join(BIOBTREE_DIR, "mapping.json")
     params:
-        patents_file = lambda wildcards, input: get_downloaded_release_files(wildcards)['patents'],
-        compounds_file = lambda wildcards, input: get_downloaded_release_files(wildcards)['compounds'],
-        map_file = lambda wildcards, input: get_downloaded_release_files(wildcards)['map_file'],
-        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "patents_prepare_biobtree.log")
+        script = os.path.join(MODULE_SCRIPTS, "convert_to_biobtree_json.py"),
+        input_dir = lambda wildcards: os.path.join(RAW_DIR, get_latest_release()) if get_latest_release() else RAW_DIR,
+        output_dir = BIOBTREE_DIR,
+        LOG_cluster_log = os.path.join(config["logs_dir"], "cluster", "patents_biobtree.log")
     log:
-        os.path.join(LOG_DIR, f"prepare_biobtree_{RUN_TIMESTAMP}.log")
+        os.path.join(LOG_DIR, f"biobtree_{RUN_TIMESTAMP}.log")
     conda:
         config["conda_env"]
     threads: 1
     resources:
-        mem_mb=8192
+        mem_mb=16384
     shell:
         """
-        echo "==================== BIOBTREE PREP STARTED: $(date) ====================" > {log}
+        echo "==================== BIOBTREE CONVERSION STARTED: $(date) ====================" > {log}
 
-        # Placeholder for biobtree preparation script
-        # TODO: Implement prepare_biobtree_data.py when biobtree integration is ready
+        python {params.script} \
+            --input {params.input_dir} \
+            --output {params.output_dir} \
+            --verbose \
+            >> {log} 2>&1
 
-        echo "Biobtree preparation not yet implemented" >> {log}
-        echo "Creating placeholder files..." >> {log}
+        EXIT_CODE=$?
 
-        touch {output.xrefs}
-        touch {output.families}
-        touch {output.metadata}
+        if [ $EXIT_CODE -ne 0 ]; then
+            echo "ERROR: Biobtree conversion failed with exit code $EXIT_CODE" >> {log}
+            exit 1
+        fi
 
-        echo "==================== BIOBTREE PREP COMPLETED: $(date) ====================" >> {log}
+        echo "==================== BIOBTREE CONVERSION COMPLETED: $(date) ====================" >> {log}
         """
 
 # Completion marker for Qdrant dependency

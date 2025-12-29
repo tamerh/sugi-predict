@@ -1,6 +1,7 @@
 name: biobtree
 channels:
   - conda-forge
+  - bioconda
   - defaults
 dependencies:
   # Go compiler and tools
@@ -27,6 +28,9 @@ dependencies:
   # Useful utilities
   - curl
   - jq
+
+  # Genomic tools
+  - tabix
 
 # After creating the environment, install these Go tools:
 #   go install github.com/golang/protobuf/protoc-gen-go@v1.3.2

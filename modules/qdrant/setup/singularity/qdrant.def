@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: qdrant/qdrant:latest
+From: qdrant/qdrant:v1.16.3
 
 %help
     Qdrant vector database for BioYoda project
@@ -25,5 +25,5 @@ From: qdrant/qdrant:latest
 
 %labels
     Author BioYoda Team
-    Version 1.0.0
-    Description Qdrant vector database container for HPC cluster
+    Version 1.16.3
+    Description Qdrant vector database container

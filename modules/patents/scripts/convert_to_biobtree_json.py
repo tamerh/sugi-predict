@@ -7,15 +7,85 @@ to JSON format with the wrapped structure that biobtree's jsparser expects:
 - {"patents": [...]}
 - {"compounds": [...]}
 - {"mappings": [...]}
+
+Optimized for low memory usage via streaming (reads/writes in chunks).
 """
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
-import pandas as pd
 from datetime import datetime
+import pyarrow.parquet as pq
+
+# Chunk size for streaming (number of rows per batch)
+BATCH_SIZE = 50000
+
+
+def convert_value(val):
+    """Convert pyarrow/numpy types to JSON-serializable Python types."""
+    if val is None:
+        return None
+    if hasattr(val, 'as_py'):  # pyarrow scalar
+        return val.as_py()
+    if hasattr(val, 'item'):  # numpy scalar
+        return val.item()
+    if isinstance(val, (datetime,)):
+        return val.isoformat()
+    return val
+
+
+def stream_parquet_to_json(input_file: Path, output_file: Path, wrapper_key: str, verbose: bool = False):
+    """
+    Stream parquet file to JSON without loading everything into memory.
+
+    Returns:
+        Number of records written
+    """
+    parquet_file = pq.ParquetFile(input_file)
+    total_rows = parquet_file.metadata.num_rows
+    columns = [col.name for col in parquet_file.schema_arrow]
+
+    if verbose:
+        print(f"  Records: {total_rows:,}")
+        print(f"  Columns: {', '.join(columns)}")
+        print(f"  Writing: {output_file}")
+
+    record_count = 0
+
+    with open(output_file, 'w') as f:
+        # Write opening structure
+        f.write('{"' + wrapper_key + '":[')
+
+        first_record = True
+        batches_processed = 0
+
+        # Stream through parquet file in batches
+        for batch in parquet_file.iter_batches(batch_size=BATCH_SIZE):
+            # Convert batch to Python dicts
+            batch_dict = batch.to_pydict()
+            batch_len = len(batch_dict[columns[0]])
+
+            for i in range(batch_len):
+                record = {col: convert_value(batch_dict[col][i]) for col in columns}
+
+                if not first_record:
+                    f.write(',')
+                first_record = False
+
+                # Write record as compact JSON (no indent for speed/size)
+                json.dump(record, f, separators=(',', ':'), default=str)
+                record_count += 1
+
+            batches_processed += 1
+            if verbose and batches_processed % 20 == 0:
+                progress = (record_count / total_rows) * 100
+                print(f"    Progress: {record_count:,}/{total_rows:,} ({progress:.1f}%)")
+
+        # Write closing structure
+        f.write(']}')
+
+    return record_count
 
 
 def convert_parquet_to_json(input_dir: Path, output_dir: Path, verbose: bool = False):
@@ -30,10 +100,11 @@ def convert_parquet_to_json(input_dir: Path, output_dir: Path, verbose: bool = F
 
     if verbose:
         print(f"\n{'='*80}")
-        print(f"Converting SureChEMBL Parquet to Biobtree JSON")
+        print(f"Converting SureChEMBL Parquet to Biobtree JSON (Streaming)")
         print(f"{'='*80}")
         print(f"Input directory:  {input_dir}")
         print(f"Output directory: {output_dir}")
+        print(f"Batch size: {BATCH_SIZE:,} rows")
         print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Create output directory
@@ -68,41 +139,26 @@ def convert_parquet_to_json(input_dir: Path, output_dir: Path, verbose: bool = F
         output_file = output_dir / conversion['output']
 
         if not input_file.exists():
-            print(f"⚠️  WARNING: {conversion['input']} not found, skipping...")
+            print(f"  WARNING: {conversion['input']} not found, skipping...")
             continue
 
         if verbose:
             print(f"\n{conversion['description']}:")
             print(f"  Reading: {input_file}")
 
-        # Read parquet file
-        df = pd.read_parquet(input_file)
-
-        if verbose:
-            print(f"  Records: {len(df):,}")
-            print(f"  Columns: {', '.join(df.columns)}")
-
-        # Convert to list of dictionaries
-        records = df.to_dict(orient='records')
-
-        # Wrap with the expected key for jsparser
-        wrapped_data = {conversion['wrapper_key']: records}
-
-        # Write JSON file
-        if verbose:
-            print(f"  Writing: {output_file}")
-
-        with open(output_file, 'w') as f:
-            json.dump(wrapped_data, f, indent=2, default=str)
+        # Stream convert parquet to JSON
+        record_count = stream_parquet_to_json(
+            input_file, output_file, conversion['wrapper_key'], verbose
+        )
 
         # Collect statistics
         stats[conversion['wrapper_key']] = {
-            'records': len(records),
+            'records': record_count,
             'file_size_mb': output_file.stat().st_size / (1024 * 1024)
         }
 
         if verbose:
-            print(f"  ✓ Completed ({stats[conversion['wrapper_key']]['file_size_mb']:.2f} MB)")
+            print(f"  Completed ({stats[conversion['wrapper_key']]['file_size_mb']:.2f} MB)")
 
     # Write summary
     summary_file = output_dir / 'conversion_summary.json'
@@ -122,8 +178,8 @@ def convert_parquet_to_json(input_dir: Path, output_dir: Path, verbose: bool = F
         print(f"{'='*80}")
         for key, stat in stats.items():
             print(f"  {key:15s}: {stat['records']:8,} records ({stat['file_size_mb']:8.2f} MB)")
-        print(f"\n✓ Summary written to: {summary_file}")
-        print(f"✓ Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"\nSummary written to: {summary_file}")
+        print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*80}\n")
 
     return stats

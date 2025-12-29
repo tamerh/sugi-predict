@@ -63,14 +63,23 @@ get_queue_from_config() {
     get_nested_config_value "cluster" "default_queue" "$config_file" "scc"
 }
 
-# Get scratch base from qdrant config
-# Usage: get_scratch_base [config_file]
-get_scratch_base() {
+# Get Qdrant storage path from config
+# Usage: get_qdrant_storage_path [config_file]
+# Returns: absolute path to Qdrant storage directory
+get_qdrant_storage_path() {
     local config_file="${1:-$DEFAULT_CONFIG}"
     local value
 
     if [[ -f "$config_file" ]]; then
-        value=$(grep -A20 "^qdrant:" "$config_file" | grep "local_scratch_base:" | sed 's/.*local_scratch_base:\s*//' | sed 's/#.*//' | xargs)
+        value=$(grep -A10 "^qdrant:" "$config_file" | grep -A5 "storage:" | grep "path:" | sed 's/.*path:\s*"\?\([^"#]*\)"\?.*/\1/' | xargs)
+    fi
+
+    # Default to snapshots/qdrant_latest if not set
+    value="${value:-snapshots/qdrant_latest}"
+
+    # Make absolute if relative
+    if [[ ! "$value" = /* ]]; then
+        value="$(pwd)/$value"
     fi
 
     echo "$value"

@@ -89,6 +89,10 @@ parse_common_args() {
                 PROCESS_TARGET="patents_text_only"
                 shift
                 ;;
+            --biobtree)
+                PROCESS_TARGET="patents_biobtree"
+                shift
+                ;;
             --)
                 # Stop parsing options, collect rest as remaining args
                 shift

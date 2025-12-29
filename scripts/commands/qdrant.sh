@@ -27,13 +27,10 @@ Subcommands:
     stop-insert   Stop a running insertion job
 
 Start Options:
-    --mode <local|cluster>    Run mode (default: local)
-    --queue <name>            SGE queue name (default: scc, can use: gpu)
+    --mode local              Run mode (only local supported)
     --runtime <hours>         Runtime in hours (default: 48)
     --memory <mb>             Memory in MB (default: 32000)
-    --out-dir <path>          Use existing storage directory
-    --mock-cgroups            Force enable cgroups mocking
-    --no-mock-cgroups         Force disable cgroups mocking
+    --out-dir <path>          Use specific storage directory
     --test                    Use test configuration
     --config <file>           Use custom config file
 
@@ -95,10 +92,8 @@ cmd_qdrant() {
 # Start Qdrant server
 qdrant_start() {
     local mode="local"
-    local queue="scc"
     local runtime_hours=48
     local memory_mb=32000
-    local mock_cgroups="auto"
     local out_dir=""
 
     # Parse arguments
@@ -110,10 +105,6 @@ qdrant_start() {
         case ${REMAINING_ARGS[$i]} in
             --mode)
                 mode="${REMAINING_ARGS[$((i+1))]}"
-                ((i+=2))
-                ;;
-            --queue)
-                queue="${REMAINING_ARGS[$((i+1))]}"
                 ((i+=2))
                 ;;
             --runtime)
@@ -128,14 +119,6 @@ qdrant_start() {
                 out_dir="${REMAINING_ARGS[$((i+1))]}"
                 ((i+=2))
                 ;;
-            --mock-cgroups)
-                mock_cgroups="true"
-                ((i++))
-                ;;
-            --no-mock-cgroups)
-                mock_cgroups="false"
-                ((i++))
-                ;;
             *)
                 ((i++))
                 ;;
@@ -145,82 +128,62 @@ qdrant_start() {
     # Resolve config
     local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
 
-    # Validate out_dir if provided
+    # Validate/prepare out_dir if provided
     if [[ -n "$out_dir" ]]; then
         # Make absolute path
         if [[ ! "$out_dir" = /* ]]; then
             out_dir="$(pwd)/$out_dir"
         fi
 
-        if [[ ! -d "$out_dir" ]]; then
-            log_error "Output directory does not exist: $out_dir"
-            exit 1
-        fi
-
-        # Validate structure
+        # Handle existing directory with subdirectories
         if [[ -d "$out_dir/storage" ]] && [[ -d "$out_dir/snapshots" ]]; then
             log_info "Using existing Qdrant storage: $out_dir"
         elif [[ "$(basename $out_dir)" == "storage" ]]; then
             out_dir="$(dirname $out_dir)"
             log_info "Adjusted path to parent directory: $out_dir"
         else
-            log_error "Invalid Qdrant directory structure: $out_dir"
-            log_error "Expected: storage/ and snapshots/ subdirectories"
-            exit 1
+            # Create directory structure for new storage
+            log_info "Creating Qdrant storage directory: $out_dir"
+            mkdir -p "$out_dir/storage"
+            mkdir -p "$out_dir/snapshots"
         fi
     fi
 
-    log_info "Starting Qdrant server (mode=${mode}, queue=${queue})"
+    log_info "Starting Qdrant server (mode=${mode})"
 
     local base_dir=$(get_base_dir "$active_config")
     ensure_directories "$active_config"
 
     local timestamp=$(get_timestamp)
-    local scratch_base=$(get_scratch_base "$active_config")
 
-    # Log storage mode
-    if [[ -n "$scratch_base" ]]; then
-        log_info "Production mode: Using local scratch at ${scratch_base}"
-    else
-        log_info "Development mode: Using NFS storage at ${base_dir}/data/qdrant"
-    fi
-
-    # Build mock cgroups flag
-    local mock_cgroups_flag=""
-    if [[ "$mock_cgroups" == "true" ]]; then
-        mock_cgroups_flag="--mock-cgroups"
-        log_info "Mock cgroups enabled"
-    elif [[ "$mock_cgroups" == "false" ]]; then
-        mock_cgroups_flag="--no-mock-cgroups"
-    fi
-
-    # Build out-dir flag
-    local out_dir_flag=""
+    # Get storage path from config (or use --out-dir if provided)
+    local storage_path
     if [[ -n "$out_dir" ]]; then
-        out_dir_flag="--out-dir ${out_dir}"
+        storage_path="$out_dir"
+        log_info "Using specified storage: ${storage_path}"
+    else
+        storage_path=$(get_qdrant_storage_path "$active_config")
+        log_info "Using configured storage: ${storage_path}"
     fi
 
     # Call start_server.sh
     bash modules/qdrant/scripts/start_server.sh \
         --container modules/qdrant/setup/singularity/qdrant.sif \
         --config config/qdrant_config.yaml \
-        --storage "${base_dir}/data/qdrant" \
+        --storage "${storage_path}" \
         --memory-mb "${memory_mb}" \
         --runtime "$((runtime_hours * 3600))" \
         --job-name q_server \
         --mode "${mode}" \
-        --connection-info "${base_dir}/data/qdrant/connection_info.txt" \
+        --connection-info "${storage_path}/connection_info.txt" \
         --log "${base_dir}/logs/qdrant/server_${timestamp}.log" \
-        --queue "${queue}" \
-        --scratch-base "${scratch_base}" \
-        ${mock_cgroups_flag} \
-        ${out_dir_flag}
+        --out-dir "${storage_path}"
 
     if [[ $? -eq 0 ]]; then
         log_success "Qdrant server started successfully"
-        if [[ -f "${base_dir}/data/qdrant/connection_info.txt" ]]; then
+        if [[ -f "${storage_path}/connection_info.txt" ]]; then
             echo ""
-            cat "${base_dir}/data/qdrant/connection_info.txt"
+            cat "${storage_path}/connection_info.txt"
         fi
     else
         log_error "Failed to start Qdrant server"
@@ -232,11 +195,11 @@ qdrant_start() {
 qdrant_stop() {
     parse_common_args "$@"
     local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-    local base_dir=$(get_base_dir "$active_config")
+    local storage_path=$(get_qdrant_storage_path "$active_config")
 
-    log_info "Stopping Qdrant server (base_dir=${base_dir})..."
+    log_info "Stopping Qdrant server (storage=${storage_path})..."
 
-    QDRANT_STORAGE_PATH="${base_dir}/data/qdrant" \
+    QDRANT_STORAGE_PATH="${storage_path}" \
     bash modules/qdrant/scripts/stop_server.sh
 }
 
@@ -244,41 +207,20 @@ qdrant_stop() {
 qdrant_restart() {
     local storage_path="$1"
 
-    # Get scratch_base from config
-    local scratch_base=$(get_scratch_base)
-
-    # Auto-detect if no path provided
+    # Use configured path if not provided
     if [[ -z "$storage_path" ]]; then
-        if [[ -z "$scratch_base" ]]; then
-            log_error "Cannot auto-detect: local_scratch_base not configured"
-            log_error "Please provide storage path explicitly"
-            exit 1
-        fi
-
-        local hostname_val=$(hostname)
-        local latest_dir=$(ls -dt ${scratch_base}/qdrant_${hostname_val}_* 2>/dev/null | head -1)
-
-        if [[ -z "$latest_dir" ]]; then
-            log_error "No existing storage found at ${scratch_base}/qdrant_${hostname_val}_*"
-            exit 1
-        fi
-
-        storage_path="$latest_dir"
-        log_info "Auto-detected latest storage: $storage_path"
-
-        if ! confirm_action "Restart with this storage?"; then
-            log_info "Cancelled"
-            exit 0
-        fi
+        storage_path=$(get_qdrant_storage_path)
+        log_info "Using configured storage: $storage_path"
     fi
 
-    # Validate path
+    # Validate path exists
     if [[ ! -d "$storage_path" ]]; then
         log_error "Storage directory not found: $storage_path"
+        log_error "Run './bioyoda.sh qdrant start' first to create it"
         exit 1
     fi
 
-    log_info "Restarting Qdrant with existing storage: $storage_path"
+    log_info "Restarting Qdrant with storage: $storage_path"
 
     # Stop current instance
     log_info "Stopping current Qdrant instance (if any)..."
@@ -293,9 +235,9 @@ qdrant_restart() {
 qdrant_status() {
     parse_common_args "$@"
     local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-    local base_dir=$(get_base_dir "$active_config")
+    local storage_path=$(get_qdrant_storage_path "$active_config")
 
-    QDRANT_STORAGE_PATH="${base_dir}/data/qdrant" \
+    QDRANT_STORAGE_PATH="${storage_path}" \
     bash modules/qdrant/scripts/check_status.sh
 }
 
