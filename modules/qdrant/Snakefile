@@ -56,7 +56,7 @@ PROTEIN_ESM2_FAISS_DIR = os.path.join(BASE_DIR, "data", "processed", "esm2", "em
 # Tracking files
 STATE_DIR = os.path.join(BASE_DIR, "state")
 PUBMED_TRACKING_FILE = os.path.join(STATE_DIR, "pubmed", "processed_files.json")
-CLINICAL_TRIALS_TRACKING_FILE = os.path.join(STATE_DIR, "clinical_trials", "processed_files.json")
+CLINICAL_TRIALS_TRACKING_FILE = os.path.join(STATE_DIR, "clinical_trials", "processed_chunks.json")
 PATENTS_TEXT_TRACKING_FILE = os.path.join(STATE_DIR, "patents", "processed_chunks.json")
 PATENTS_COMPOUNDS_TRACKING_FILE = os.path.join(STATE_DIR, "patents", "processed_compounds_chunks.json")
 PROTEIN_ESM2_TRACKING_FILE = os.path.join(STATE_DIR, "esm2", "processed_chunks.json")

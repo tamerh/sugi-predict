@@ -659,7 +659,7 @@ print(f"Remaining: {len(chunks) - done}")
 !nohup python batch_trials_gpu.py \
     --input-dir "/content/drive/MyDrive/bioyoda/raw_data/clinical_trials/chunked" \
     --output-dir "/content/drive/MyDrive/bioyoda/processed/clinical_trials/text" \
-    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/gpu_progress.json" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/processed_chunks.json" \
     --model-name pritamdeka/S-BioBERT-snli-multinli-stsb \
     > /content/drive/MyDrive/bioyoda/clinical_trials_processing.log 2>&1 &
 
@@ -672,7 +672,7 @@ If model loading hangs, add `--no-fp16`:
 !nohup python batch_trials_gpu.py \
     --input-dir "/content/drive/MyDrive/bioyoda/raw_data/clinical_trials/chunked" \
     --output-dir "/content/drive/MyDrive/bioyoda/processed/clinical_trials/text" \
-    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/gpu_progress.json" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/processed_chunks.json" \
     --model-name pritamdeka/S-BioBERT-snli-multinli-stsb \
     --no-fp16 \
     > /content/drive/MyDrive/bioyoda/clinical_trials_processing.log 2>&1 &
@@ -713,7 +713,7 @@ The batch script automatically resumes from where it left off:
 !nohup python batch_trials_gpu.py \
     --input-dir "/content/drive/MyDrive/bioyoda/raw_data/clinical_trials/chunked" \
     --output-dir "/content/drive/MyDrive/bioyoda/processed/clinical_trials/text" \
-    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/gpu_progress.json" \
+    --state-file "/content/drive/MyDrive/bioyoda/state/clinical_trials/processed_chunks.json" \
     --model-name pritamdeka/S-BioBERT-snli-multinli-stsb \
     > /content/drive/MyDrive/bioyoda/clinical_trials_processing.log 2>&1 &
 ```

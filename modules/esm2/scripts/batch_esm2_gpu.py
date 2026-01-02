@@ -5,6 +5,8 @@ Batch ESM-2 GPU Processing for Google Colab
 Processes all FASTA chunks to generate embeddings and FAISS indices.
 Supports resume capability - skips already processed chunks.
 
+Output is written to {output-dir}/embeddings/ to match local Snakefile structure.
+
 Usage in Colab:
     !python batch_esm2_gpu.py \
         --input-dir /content/drive/MyDrive/bioyoda/raw_data/esm2/chunks \
@@ -245,6 +247,11 @@ def main():
     log_with_timestamp(f"Batch size: {batch_size}")
     log_with_timestamp(f"Model: {args.model}")
 
+    # Output goes to embeddings/ subdirectory to match local Snakefile structure
+    output_dir = os.path.join(args.output_dir, "embeddings")
+    os.makedirs(output_dir, exist_ok=True)
+    log_with_timestamp(f"Output directory: {output_dir}")
+
     # Load model once
     model, alphabet, repr_layer = load_esm_model(args.model, device)
 
@@ -276,7 +283,7 @@ def main():
         pending_chunks = []
         for chunk in all_chunks:
             base_name = Path(chunk).stem
-            index_path = os.path.join(args.output_dir, f"{base_name}.index")
+            index_path = os.path.join(output_dir, f"{base_name}.index")
             if not os.path.exists(index_path):
                 pending_chunks.append(chunk)
         log_with_timestamp(f"Skipping {len(all_chunks) - len(pending_chunks)} existing, {len(pending_chunks)} remaining")
@@ -295,7 +302,7 @@ def main():
         try:
             vectors = process_chunk(
                 chunk_path,
-                args.output_dir,
+                output_dir,
                 model, alphabet, repr_layer,
                 device, batch_size,
                 args.max_seq_len
@@ -326,7 +333,7 @@ def main():
     log_with_timestamp("=" * 60)
     log_with_timestamp("BATCH PROCESSING COMPLETE")
     log_with_timestamp(f"Total vectors: {total_vectors:,}")
-    log_with_timestamp(f"Output: {args.output_dir}")
+    log_with_timestamp(f"Output: {output_dir}")
     log_with_timestamp("=" * 60)
 
     return 0

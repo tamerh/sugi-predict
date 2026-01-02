@@ -28,6 +28,14 @@ def log(msg):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {msg}", flush=True)
 
+def get_subdir(input_path):
+    """Extract subdirectory (baseline or updatefiles) from input path."""
+    if '/baseline/' in input_path or '\\baseline\\' in input_path:
+        return 'baseline'
+    elif '/updatefiles/' in input_path or '\\updatefiles\\' in input_path:
+        return 'updatefiles'
+    return ''
+
 def get_pending_files(input_dir, output_dir):
     """Find files that haven't been processed yet."""
     # Find all input files
@@ -38,8 +46,12 @@ def get_pending_files(input_dir, output_dir):
     pending = []
     for input_path in all_files:
         base_name = os.path.basename(input_path).replace('.xml.gz', '')
-        faiss_path = os.path.join(output_dir, f"{base_name}.index")
-        meta_path = os.path.join(output_dir, f"{base_name}.json")
+        subdir = get_subdir(input_path)
+
+        # Output preserves baseline/updatefiles subdirectory structure
+        output_subdir = os.path.join(output_dir, subdir) if subdir else output_dir
+        faiss_path = os.path.join(output_subdir, f"{base_name}.index")
+        meta_path = os.path.join(output_subdir, f"{base_name}.json")
 
         if not (os.path.exists(faiss_path) and os.path.exists(meta_path)):
             pending.append(input_path)
@@ -117,10 +129,15 @@ def main():
     for i, input_path in enumerate(pending):
         log(f"Processing file {i+1}/{len(pending)}: {os.path.basename(input_path)}")
 
+        # Determine output subdirectory (baseline or updatefiles)
+        subdir = get_subdir(input_path)
+        output_subdir = os.path.join(args.output_dir, subdir) if subdir else args.output_dir
+        os.makedirs(output_subdir, exist_ok=True)
+
         try:
             process_file(
                 input_path,
-                args.output_dir,
+                output_subdir,  # Pass subdirectory-aware output path
                 deleted_pmids,
                 args.model_name,
                 args.vector_dim,
@@ -132,7 +149,7 @@ def main():
 
             # Count vectors from output
             base_name = os.path.basename(input_path).replace('.xml.gz', '')
-            faiss_path = os.path.join(args.output_dir, f"{base_name}.index")
+            faiss_path = os.path.join(output_subdir, f"{base_name}.index")
             vectors_count = 0
             if os.path.exists(faiss_path):
                 import faiss

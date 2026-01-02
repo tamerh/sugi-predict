@@ -105,8 +105,14 @@ drive.mount('/content/drive')
 
 3. **Download processed results back to server:**
 ```bash
+# Using bioyoda CLI (recommended - handles paths correctly)
+./bioyoda.sh pull pubmed
+
+# Or manually with rclone
 rclone sync gdrive:bioyoda/processed/pubmed /data/bioyoda/snapshots/data/processed/pubmed --progress
 ```
+
+**Note:** The GPU processing preserves the `baseline/` and `updatefiles/` subdirectory structure, matching the local Snakemake workflow expectations.
 
 **Resume Capability:**
 - If Colab session disconnects, simply re-run the same cells

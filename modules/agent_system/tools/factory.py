@@ -4,7 +4,6 @@ from typing import List
 
 from .base import Tool
 from .biobtree_tool import BioBTreeQueryTool, BioBTreeSearchTool
-from .disease_drug_tool import DiseaseDrugDiscoveryTool
 from .protein_similarity_tool import ProteinSimilarityTool
 from .compound_similarity_tool import CompoundSimilarityTool
 from .registry import ToolRegistry, get_registry
@@ -16,6 +15,10 @@ from ..integrations.qdrant_client import create_qdrant_client
 def create_default_tools() -> List[Tool]:
     """
     Create default set of tools for agent system.
+
+    Note: DiseaseDrugDiscoveryTool has been removed. The DrugDiscoveryAgent
+    now orchestrates phases directly (GatherPhase, EvidenceScorer) instead
+    of delegating to a mega-tool.
 
     Returns:
         List of initialized tools
@@ -29,10 +32,10 @@ def create_default_tools() -> List[Tool]:
     qdrant_client = create_qdrant_client(config.integrations.qdrant)
 
     # Create tools sharing the same client connections
+    # Note: Atomic tools only - agents orchestrate complex workflows
     tools = [
         BioBTreeQueryTool(biobtree_client),
         BioBTreeSearchTool(biobtree_client),
-        DiseaseDrugDiscoveryTool(biobtree_client, qdrant_client),  # Specialized disease-drug tool with similarity search
         ProteinSimilarityTool(qdrant_client, biobtree_client),  # ESM-2 protein similarity
         CompoundSimilarityTool(qdrant_client, biobtree_client),  # Morgan fingerprint similarity
     ]

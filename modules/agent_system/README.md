@@ -85,6 +85,23 @@ Main config: `config/agent_system.yaml`
 - **Qdrant**: `scc2:6333` (collections: esm2, patents_compounds)
 - **LLM**: Configurable provider (default: OpenRouter with Claude Haiku for reliability)
 
+## Maintenance
+
+### Regenerating BioBTree Protobuf Files
+
+When BioBTree adds new datasets or attributes (e.g., BindingDB, Antibody), the Python protobuf files need to be regenerated from the latest proto definitions.
+
+```bash
+# From bioyoda root:
+python modules/agent_system/integrations/biobtree_pb/regenerate_protobuf.py
+```
+
+The script:
+1. Reads proto files from `biobtreev2/src/pbuf/`
+2. Generates Python protobuf files using `grpc_tools.protoc`
+3. Fixes import statements for package usage
+4. Clears `__pycache__` and verifies key message types
+
 ## Running Tests
 
 From `modules/agent_system/` directory:

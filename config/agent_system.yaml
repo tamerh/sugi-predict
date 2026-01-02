@@ -13,20 +13,20 @@ integrations:
   biobtree:
     protocol: "rest"  # "grpc" (default) or "rest"
     grpc:
-      host: "scc2"  # BioBTree running on scc2
+      host: "localhost"  # BioBTree running locally
       port: 7777
       max_connections: 50
       keepalive_time: 30  # seconds
       timeout: 30  # seconds
     rest:
-      host: "scc2"  # BioBTree REST on scc2:9292
+      host: "localhost"  # BioBTree REST on localhost:9292
       port: 9292
       timeout: 30
     retry_attempts: 3
     retry_delay: 1  # seconds
 
   qdrant:
-    host: "scc2"  # Qdrant running on scc2 (same as BioBTree)
+    host: "localhost"  # Qdrant running locally
     port: 6333
     timeout: 30
     collections:

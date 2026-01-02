@@ -1,31 +1,73 @@
-"""Drug Discovery Agent for finding drugs, targets, and mechanisms."""
+"""Drug Discovery Agent - Six-Phase Reasoning Loop.
+
+This agent orchestrates the drug discovery workflow directly using phases,
+rather than delegating to a mega-tool. The agent IS the orchestrator.
+
+Six-Phase Loop:
+1. Understand - Parse user intent (detect disease query vs ad-hoc)
+2. Gather - Run BioBTree paths in parallel (GatherPhase)
+3. Score - Evidence scoring and pattern detection (EvidenceScorer)
+4. Reason - LLM reasoning about results
+5. Follow-up - Qdrant validation (future)
+6. Synthesize - Generate final response
+"""
 
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
-from ..base import Agent, AgentContext, AgentResult
-from ...llm.base import LLMProvider
+from ..base import Agent, AgentContext, AgentResult, AgentStatus
+from ...llm.base import LLMProvider, Message
 from ...tools.registry import ToolRegistry
+from ...core.config import get_config
+from ...integrations.biobtree_client import create_biobtree_client
+
+# Import phases
+from .phases import GatherPhase, GatherOptions, EvidenceScorer
 
 
 class DrugDiscoveryAgent(Agent):
     """
     Agent specialized for drug discovery queries.
 
+    Uses phase-based orchestration for disease drug queries:
+    - "What drugs for glioblastoma?" → Phase-based (Gather → Score → Synthesize)
+    - "What is EGFR?" → ReAct loop with biobtree_query tool
+
     Handles queries like:
+    - "What drugs for glioblastoma?"
+    - "Find treatments for type 2 diabetes"
     - "What drugs target EGFR?"
-    - "Find inhibitors for TP53"
-    - "What compounds bind to BRCA1?"
-    - "Show me drugs for these genes: EGFR, KRAS, BRAF"
+    - "Show me drugs for breast cancer"
     """
 
     AGENT_DIR = Path(__file__).parent
 
-    # Class-level cache for prompt (loaded once, not per instance)
+    # Class-level cache for prompt
     _cached_prompt: Optional[str] = None
 
-    # Keywords that suggest drug discovery queries
+    # Disease query patterns (trigger phase-based flow)
+    DISEASE_PATTERNS = [
+        r"drugs?\s+for\s+",           # "drugs for X"
+        r"treatment[s]?\s+for\s+",    # "treatments for X"
+        r"therap(?:y|ies)\s+for\s+",  # "therapy for X"
+        r"what\s+drugs?\s+",          # "what drugs..."
+        r"find\s+drugs?\s+",          # "find drugs..."
+        r"compounds?\s+for\s+",       # "compounds for X"
+    ]
+
+    # Disease keywords (boost confidence)
+    DISEASE_KEYWORDS = [
+        "cancer", "tumor", "carcinoma", "lymphoma", "leukemia", "melanoma",
+        "diabetes", "alzheimer", "parkinson", "huntington",
+        "glioblastoma", "glioma", "neuroblastoma",
+        "arthritis", "lupus", "sclerosis", "fibrosis",
+        "asthma", "copd", "hypertension", "obesity",
+        "hiv", "hepatitis", "tuberculosis", "malaria",
+        "disease", "disorder", "syndrome", "condition"
+    ]
+
+    # Drug keywords (for routing confidence)
     DRUG_KEYWORDS = [
         "drug", "drugs", "compound", "compounds", "molecule", "molecules",
         "inhibitor", "inhibitors", "target", "targets", "targeting",
@@ -33,17 +75,6 @@ class DrugDiscoveryAgent(Agent):
         "chembl", "drugbank", "pharmaceutical",
         "mechanism", "action", "binding", "bind", "binds",
         "agonist", "antagonist", "modulator", "blocker"
-    ]
-
-    # Drug-related patterns
-    DRUG_PATTERNS = [
-        r"chembl\d+",      # ChEMBL compound ID
-        r"db\d{5}",        # DrugBank ID
-        r"what.+drug",     # "what drugs..."
-        r"find.+drug",     # "find drugs..."
-        r"drug.+for",      # "drugs for..."
-        r"target.+by",     # "targeted by..."
-        r"inhibit",        # inhibitor-related
     ]
 
     def __init__(
@@ -56,11 +87,11 @@ class DrugDiscoveryAgent(Agent):
         Initialize Drug Discovery Agent.
 
         Args:
-            llm: LLM provider
-            tool_registry: Tool registry
+            llm: LLM provider for reasoning phases
+            tool_registry: Tool registry (for ad-hoc queries)
             system_prompt: Optional custom system prompt
         """
-        # Load prompt from file if not provided (cached at class level)
+        # Load prompt from file if not provided
         if system_prompt is None:
             if DrugDiscoveryAgent._cached_prompt is None:
                 prompt_file = self.AGENT_DIR / "prompt.txt"
@@ -70,58 +101,81 @@ class DrugDiscoveryAgent(Agent):
 
         super().__init__(
             name="drug_discovery",
-            description="Finds drugs, compounds, and therapeutic targets for genes/proteins",
+            description="Finds drugs, compounds, and therapeutic targets for diseases and genes",
             llm=llm,
             tool_registry=tool_registry,
-            tools=["disease_drug_discovery", "biobtree_query", "protein_similarity_search", "compound_similarity_search"],
-            max_iterations=3,  # Reduced - specialized tool does the work
+            # Tools for ad-hoc queries (ReAct fallback)
+            tools=["biobtree_query", "protein_similarity_search", "compound_similarity_search"],
+            max_iterations=3,
             system_prompt=system_prompt
         )
 
+        # Create BioBTree client for phase-based queries
+        config = get_config()
+        self._biobtree = create_biobtree_client(config.integrations.biobtree)
+
+        # Initialize phases
+        self._gather_phase = GatherPhase(self._biobtree)
+        self._scorer = EvidenceScorer()
+
     def _default_system_prompt(self) -> str:
         """Return default system prompt for drug discovery."""
-        return """You are a drug discovery assistant. Your role is to help users find drugs, compounds, and therapeutic relationships for biological targets.
+        return """You are a drug discovery assistant. You help users find drugs, compounds, and therapeutic relationships for diseases and biological targets.
 
-## Your Capabilities
-You can find:
-- Drugs/compounds that target specific genes or proteins
-- Drug targets for known compounds
-- Mechanism of action relationships
-- ChEMBL compound information
+When presented with drug discovery results, synthesize the information into a clear, actionable response:
+1. Highlight the most promising drugs (highest evidence scores)
+2. Explain the evidence sources (direct indications, GWAS, ClinVar, etc.)
+3. Note any patterns (novel targets, therapeutic gaps)
+4. Suggest next steps if appropriate
 
-## BioBTree Query Syntax for Drug Discovery
+Be concise but comprehensive. Focus on clinically relevant insights."""
 
-### Gene/Protein to Drugs (most common)
-To find drugs targeting a gene, chain through the full ChEMBL path:
-```
-GENE >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule
-```
+    def _is_disease_query(self, query: str) -> tuple[bool, Optional[str]]:
+        """
+        Detect if query is a disease drug discovery request.
 
-Examples:
-- Single gene: "EGFR >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
-- Multiple genes: "EGFR,KRAS,BRAF >> ensembl >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule"
+        Returns:
+            Tuple of (is_disease_query, extracted_disease_name)
+        """
+        query_lower = query.lower()
 
-### Gene to ChEMBL Targets only (faster, no molecules)
-If you just need to confirm drug target status:
-```
-GENE >> ensembl >> uniprot >> chembl_target_component >> chembl_target
-```
+        # First, try to find "for DISEASE" pattern (most reliable)
+        for_match = re.search(r'\bfor\s+([a-z0-9\s\-]+?)(?:\?|$|\.)', query_lower)
+        if for_match:
+            disease = for_match.group(1).strip()
+            # Check if it looks like a disease (contains disease keyword or is simple noun phrase)
+            if disease and len(disease) > 2:
+                return True, disease
 
-### Protein to Drugs (if starting with UniProt ID)
-```
-P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >> chembl_activity >> chembl_molecule
-```
+        # Check for disease query patterns like "drugs for X", "what drugs X"
+        for pattern in self.DISEASE_PATTERNS:
+            match = re.search(pattern, query_lower, re.IGNORECASE)
+            if match:
+                # Look for "for DISEASE" after the pattern
+                remainder = query_lower[match.end():].strip()
+                # Try to find "for X" in remainder
+                for_in_remainder = re.search(r'\bfor\s+([a-z0-9\s\-]+?)(?:\?|$|\.)', remainder)
+                if for_in_remainder:
+                    disease = for_in_remainder.group(1).strip()
+                    if disease:
+                        return True, disease
+                # Otherwise take the remainder (for patterns like "drugs for X")
+                disease = re.split(r'[?.!]', remainder)[0].strip()
+                if disease and len(disease) > 2:
+                    return True, disease
 
-## Important Rules
-1. For gene symbols (EGFR, TP53), start from ensembl
-2. For UniProt IDs (P00533), start from uniprot
-3. The ChEMBL chain is: target_component → target → assay → activity → molecule
-4. chembl_molecule contains the actual drug/compound information
+        # Check for disease keywords without explicit pattern
+        for keyword in self.DISEASE_KEYWORDS:
+            if keyword in query_lower:
+                # Try to extract the disease context
+                # Look for "X disease" or "X cancer" patterns
+                pattern = rf'(\w+\s+)?{keyword}'
+                match = re.search(pattern, query_lower)
+                if match:
+                    disease = match.group(0).strip()
+                    return True, disease
 
-## Response Guidelines
-- List the drugs/compounds found with their ChEMBL IDs
-- If no drugs found, suggest the target may not have known drug interactions
-- For multiple targets, summarize which have drug hits"""
+        return False, None
 
     def can_handle(self, query: str) -> float:
         """
@@ -136,50 +190,240 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
         query_lower = query.lower()
         score = 0.0
 
-        # Check for drug keywords (strong signal)
-        drug_keyword_count = 0
-        for keyword in self.DRUG_KEYWORDS:
-            if keyword in query_lower:
-                drug_keyword_count += 1
-
-        if drug_keyword_count >= 2:
+        # Check for disease query patterns (strong signal)
+        is_disease, _ = self._is_disease_query(query)
+        if is_disease:
             score += 0.5
+
+        # Check for drug keywords
+        drug_keyword_count = sum(1 for kw in self.DRUG_KEYWORDS if kw in query_lower)
+        if drug_keyword_count >= 2:
+            score += 0.3
         elif drug_keyword_count == 1:
+            score += 0.2
+
+        # Check for disease keywords
+        disease_keyword_count = sum(1 for kw in self.DISEASE_KEYWORDS if kw in query_lower)
+        if disease_keyword_count >= 1:
+            score += 0.2
+
+        # Check for ChEMBL IDs
+        if re.search(r'chembl\d+', query_lower, re.IGNORECASE):
             score += 0.3
 
-        # Check for drug-related patterns
-        for pattern in self.DRUG_PATTERNS:
-            if re.search(pattern, query_lower, re.IGNORECASE):
-                score += 0.3
-                break
-
-        # Check for ChEMBL IDs (very strong signal)
-        if re.search(r'chembl\d+', query_lower, re.IGNORECASE):
-            score += 0.4
-
-        # Check for common gene symbols with drug context
-        common_drug_targets = ["egfr", "kras", "braf", "her2", "vegf", "bcr-abl", "jak", "mtor"]
-        for target in common_drug_targets:
-            if target in query_lower:
-                score += 0.1
-                break
-
-        # Cap at 1.0
         return min(score, 1.0)
+
+    async def run(
+        self,
+        query: str,
+        context: Optional[AgentContext] = None
+    ) -> AgentResult:
+        """
+        Execute agent using phase-based or ReAct approach.
+
+        For disease queries: Uses six-phase loop (Gather → Score → Synthesize)
+        For ad-hoc queries: Falls back to ReAct loop with tools
+
+        Args:
+            query: User query
+            context: Optional execution context
+
+        Returns:
+            Agent execution result
+        """
+        context = context or AgentContext()
+
+        # Phase 1: Understand - Detect query type
+        is_disease, disease_name = self._is_disease_query(query)
+
+        if is_disease and disease_name:
+            # Use phase-based flow for disease queries
+            return await self._run_phase_based(query, disease_name, context)
+        else:
+            # Fall back to ReAct loop for ad-hoc queries
+            return await super().run(query, context)
+
+    async def _run_phase_based(
+        self,
+        query: str,
+        disease: str,
+        context: AgentContext
+    ) -> AgentResult:
+        """
+        Execute six-phase drug discovery workflow.
+
+        Args:
+            query: Original user query
+            disease: Extracted disease name
+            context: Execution context
+
+        Returns:
+            AgentResult with synthesized response
+        """
+        reasoning = []
+        tool_calls = []
+
+        try:
+            # ========================================
+            # Phase 2: Gather - Run BioBTree paths
+            # ========================================
+            reasoning.append(f"Phase 2: Gathering data for disease '{disease}'")
+
+            gather_options = GatherOptions(
+                include_gwas=True,
+                include_clinvar=True,
+                include_pubchem=True,
+                include_reactome=True,
+                include_clinical_trials=True,
+                min_indication_phase=3
+            )
+
+            gather_result = await self._gather_phase.execute(disease, gather_options)
+
+            # Check if we got any data (direct_indications is always run)
+            if not gather_result.direct_indications:
+                return AgentResult(
+                    status=AgentStatus.ERROR,
+                    answer=f"Failed to gather data for '{disease}'",
+                    reasoning=reasoning,
+                    error="No data from direct indications query",
+                    iterations=1
+                )
+
+            # Convert to dict for scoring
+            gather_data = gather_result.to_dict()
+
+            # Count successful paths
+            paths_succeeded = 1  # direct_indications always runs
+            if gather_result.gwas and gather_result.gwas.success:
+                paths_succeeded += 1
+            if gather_result.clinvar and gather_result.clinvar.success:
+                paths_succeeded += 1
+            if gather_result.pubchem and gather_result.pubchem.success:
+                paths_succeeded += 1
+            if gather_result.reactome and gather_result.reactome.success:
+                paths_succeeded += 1
+            if gather_result.clinical_trials and gather_result.clinical_trials.success:
+                paths_succeeded += 1
+
+            tool_calls.append({
+                "tool": "GatherPhase",
+                "args": {"disease": disease},
+                "result": {
+                    "paths_succeeded": paths_succeeded,
+                    "total_drugs": len(gather_result.all_drugs),
+                    "total_genes": len(gather_result.all_genes)
+                },
+                "success": True
+            })
+
+            reasoning.append(
+                f"Gathered: {len(gather_result.all_drugs)} drugs, "
+                f"{len(gather_result.all_genes)} genes from {paths_succeeded} paths"
+            )
+
+            # ========================================
+            # Phase 3: Score - Evidence scoring
+            # ========================================
+            reasoning.append("Phase 3: Scoring evidence")
+
+            scoring_result = self._scorer.score_results(gather_data)
+
+            # Add scoring to gather_data
+            gather_data["scoring"] = {
+                "scored_drugs": [d.to_dict() for d in scoring_result.scored_drugs[:20]],
+                "scored_genes": [g.to_dict() for g in scoring_result.scored_genes[:20]],
+                "patterns": scoring_result.patterns,
+                "summary": scoring_result.summary
+            }
+
+            tool_calls.append({
+                "tool": "EvidenceScorer",
+                "args": {},
+                "result": {
+                    "drugs_scored": len(scoring_result.scored_drugs),
+                    "genes_scored": len(scoring_result.scored_genes),
+                    "high_confidence_drugs": scoring_result.summary.get("high_confidence_drugs", 0),
+                    "novel_targets": len(scoring_result.patterns.get("novel_targets", []))
+                },
+                "success": True
+            })
+
+            reasoning.append(
+                f"Scored: {len(scoring_result.scored_drugs)} drugs, "
+                f"{len(scoring_result.scored_genes)} genes. "
+                f"Found {len(scoring_result.patterns.get('novel_targets', []))} novel targets."
+            )
+
+            # ========================================
+            # Phase 6: Synthesize - Generate response
+            # ========================================
+            reasoning.append("Phase 6: Synthesizing response")
+
+            # Format data for LLM
+            formatted_data = self._format_disease_drug_result(gather_data)
+
+            # Create synthesis prompt
+            synthesis_prompt = f"""Based on the drug discovery results below, provide a comprehensive but concise response to the user's query: "{query}"
+
+{formatted_data}
+
+Instructions:
+1. Start with the most clinically relevant findings (approved drugs, Phase 3+)
+2. Highlight top drugs by evidence score
+3. Mention key target genes and their drug coverage
+4. Note any therapeutic gaps (high-evidence genes without drugs)
+5. Include relevant clinical trial activity
+6. Be specific with drug names and ChEMBL IDs where relevant
+
+Keep the response focused and actionable."""
+
+            # Call LLM for synthesis
+            messages = [
+                Message(role="system", content=self.system_prompt),
+                Message(role="user", content=synthesis_prompt)
+            ]
+
+            response = await self.llm.chat(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=1500
+            )
+
+            final_answer = response.content
+
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                answer=final_answer,
+                reasoning=reasoning,
+                tool_calls=tool_calls,
+                iterations=1
+            )
+
+        except Exception as e:
+            reasoning.append(f"Error: {str(e)}")
+            return AgentResult(
+                status=AgentStatus.ERROR,
+                answer=f"An error occurred during drug discovery: {str(e)}",
+                reasoning=reasoning,
+                tool_calls=tool_calls,
+                error=str(e),
+                iterations=1
+            )
 
     def _format_disease_drug_result(self, data: dict) -> str:
         """
-        Format disease_drug_discovery tool output for observation.
+        Format disease drug discovery result for LLM synthesis.
 
         Args:
-            data: Tool result with direct_indications and gene-based targets
+            data: GatherResult.to_dict() with scoring added
 
         Returns:
-            Formatted string for LLM observation
+            Formatted string for LLM
         """
         lines = []
         disease = data.get("disease", "Unknown")
-        lines.append(f"Disease Drug Discovery Results for: {disease}")
+        lines.append(f"# Drug Discovery Results for: {disease}")
         lines.append("=" * 50)
 
         # Direct indications
@@ -188,149 +432,99 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
         lines.append(f"\n## Direct Indications ({len(direct_drugs)} drugs with Phase 3+)")
 
         if direct_drugs:
-            lines.append("| Drug Name | ChEMBL ID | Phase | Mechanism |")
-            lines.append("|-----------|-----------|-------|-----------|")
-            for drug in direct_drugs[:15]:  # Limit to 15
+            for drug in direct_drugs[:10]:
                 name = drug.get("name", drug.get("id", "?"))
                 drug_id = drug.get("id", "?")
                 phase = drug.get("indication_phase", "?")
-                mechanism = drug.get("mechanism", "")[:50]  # Truncate
-                lines.append(f"| {name} | {drug_id} | {phase} | {mechanism} |")
-            if len(direct_drugs) > 15:
-                lines.append(f"... and {len(direct_drugs) - 15} more drugs")
+                mechanism = drug.get("mechanism", "")[:40]
+                lines.append(f"- {name} ({drug_id}) - Phase {phase} - {mechanism}")
         else:
-            lines.append("No drugs found with Phase 3+ indications for this disease.")
+            lines.append("No direct indication drugs found.")
 
-        # Format gene-based sources (GWAS, ClinVar, Reactome, UniProt) - ChEMBL drugs
-        source_configs = [
-            ("gwas_targets", "GWAS Targets (ChEMBL)", "Genetically associated genes"),
-            ("clinvar_targets", "ClinVar Targets (ChEMBL)", "Genes with disease-associated variants"),
-            ("reactome_targets", "Reactome Targets (ChEMBL)", "Genes in disease-related pathways"),
-            ("uniprot_targets", "UniProt Targets (ChEMBL)", "Proteins annotated with disease"),
-        ]
-
-        for source_key, source_name, source_desc in source_configs:
+        # Gene-based targets (GWAS, ClinVar)
+        for source_key, source_name in [
+            ("gwas_targets", "GWAS Targets"),
+            ("clinvar_targets", "ClinVar Targets")
+        ]:
             source_data = data.get(source_key, {})
-            source_genes = source_data.get("genes", [])
-            drugs_by_gene = source_data.get("drugs_by_gene", {})
-            total_drugs = source_data.get("drug_count", 0)
+            genes = source_data.get("genes", [])
+            drug_count = source_data.get("drug_count", 0)
 
-            # Only show sources with results
-            if source_genes and total_drugs > 0:
-                lines.append(f"\n## {source_name} ({len(source_genes)} genes, {total_drugs} drugs)")
-                lines.append(f"*{source_desc}*")
-                lines.append(f"Genes: {', '.join(source_genes)}")
+            if genes and drug_count > 0:
+                lines.append(f"\n## {source_name} ({len(genes)} genes, {drug_count} drugs)")
+                lines.append(f"Genes: {', '.join(genes[:10])}")
+                drugs_by_gene = source_data.get("drugs_by_gene", {})
+                for gene, drugs in list(drugs_by_gene.items())[:5]:
+                    drug_names = [d.get("name", d.get("id")) for d in drugs[:3]]
+                    lines.append(f"- {gene}: {', '.join(drug_names)}")
 
-                if drugs_by_gene:
-                    lines.append("| Target Gene | Drug Name | ChEMBL ID | Drug Phase |")
-                    lines.append("|-------------|-----------|-----------|------------|")
-                    shown = 0
-                    for gene, drugs in drugs_by_gene.items():
-                        for drug in drugs[:3]:  # Max 3 drugs per gene
-                            if shown >= 15:  # Max 15 rows total per source
-                                break
-                            name = drug.get("name", drug.get("id", "?"))
-                            drug_id = drug.get("id", "?")
-                            phase = drug.get("drug_phase", "?")
-                            lines.append(f"| {gene} | {name} | {drug_id} | {phase} |")
-                            shown += 1
-                        if shown >= 15:
-                            break
-                    remaining = total_drugs - shown
-                    if remaining > 0:
-                        lines.append(f"... and {remaining} more drug-gene associations")
+        # PubChem FDA drugs
+        pubchem = data.get("pubchem_targets", {})
+        if pubchem.get("drug_count", 0) > 0:
+            lines.append(f"\n## PubChem FDA-Approved ({pubchem.get('gene_count', 0)} genes, {pubchem.get('drug_count', 0)} drugs)")
 
-        # Format PubChem FDA-approved drugs
-        pubchem_data = data.get("pubchem_targets", {})
-        pubchem_genes = pubchem_data.get("genes", [])
-        pubchem_drugs_by_gene = pubchem_data.get("drugs_by_gene", {})
-        pubchem_total_drugs = pubchem_data.get("drug_count", 0)
+        # Clinical Trials
+        trials = data.get("clinical_trials", {})
+        trial_list = trials.get("trials", [])
+        if trial_list:
+            by_phase = trials.get("by_phase", {})
+            recruiting = trials.get("by_status", {}).get("RECRUITING", 0)
+            lines.append(f"\n## Clinical Trials ({len(trial_list)} trials, {recruiting} recruiting)")
+            for t in trial_list[:5]:
+                nct = t.get("nct_id", "?")
+                title = t.get("brief_title", "")[:50]
+                phase = t.get("phase", "?")
+                lines.append(f"- {nct}: {title}... (Phase {phase})")
 
-        if pubchem_genes and pubchem_total_drugs > 0:
-            lines.append(f"\n## PubChem FDA-Approved Drugs ({len(pubchem_genes)} genes, {pubchem_total_drugs} drugs)")
-            lines.append(f"*FDA-approved drugs from PubChem bioactivity data targeting {disease}-associated genes*")
+        # Scoring results
+        scoring = data.get("scoring", {})
+        if scoring:
+            scored_drugs = scoring.get("scored_drugs", [])
+            scored_genes = scoring.get("scored_genes", [])
+            patterns = scoring.get("patterns", {})
 
-            # Show drugs grouped by gene with actual CIDs
-            if pubchem_drugs_by_gene:
-                for gene, drugs in pubchem_drugs_by_gene.items():
-                    drug_count = len(drugs)
-                    # Get sample CIDs
-                    sample_cids = [d.get("cid", d.get("id", "?")) for d in drugs[:5]]
-                    cids_str = ", ".join(f"CID:{cid}" for cid in sample_cids)
-                    if drug_count > 5:
-                        cids_str += f" (+{drug_count - 5} more)"
-                    lines.append(f"- **{gene}**: {drug_count} FDA-approved drugs - {cids_str}")
+            if scored_drugs:
+                lines.append(f"\n## Top Drugs by Evidence Score")
+                for d in scored_drugs[:8]:
+                    name = d.get("name", d.get("entity_id", "?"))
+                    score = d.get("score", 0)
+                    conf = d.get("confidence", "?")
+                    sources = ", ".join(d.get("sources", []))
+                    lines.append(f"- {name}: {score:.0f} ({conf}) - {sources}")
 
-                # Also show detailed table for first few
-                lines.append("\nSample drugs with details:")
-                lines.append("| Target Gene | PubChem CID | Formula |")
-                lines.append("|-------------|-------------|---------|")
-                shown = 0
-                for gene, drugs in pubchem_drugs_by_gene.items():
-                    for drug in drugs[:2]:  # Max 2 drugs per gene in table
-                        if shown >= 10:
-                            break
-                        cid = drug.get("cid", drug.get("id", "?"))
-                        formula = drug.get("molecular_formula", "")
-                        lines.append(f"| {gene} | {cid} | {formula} |")
-                        shown += 1
-                    if shown >= 10:
-                        break
+            if scored_genes:
+                lines.append(f"\n## Top Genes by Evidence Score")
+                for g in scored_genes[:8]:
+                    name = g.get("name", g.get("entity_id", "?"))
+                    score = g.get("score", 0)
+                    conf = g.get("confidence", "?")
+                    flags = ", ".join(g.get("flags", [])[:2])
+                    lines.append(f"- {name}: {score:.0f} ({conf}) - {flags}")
 
-                lines.append(f"\n*Note: Use PubChem CID to lookup drug details at pubchem.ncbi.nlm.nih.gov*")
+            novel = patterns.get("novel_targets", [])
+            if novel:
+                lines.append(f"\n## Novel Targets (no drugs)")
+                lines.append(f"{', '.join(novel[:10])}")
 
-        # Format Reactome pathways
-        reactome_data = data.get("reactome_pathways", {})
-        reactome_genes = reactome_data.get("genes", [])
-        pathways_by_gene = reactome_data.get("pathways_by_gene", {})
-        total_pathways = reactome_data.get("pathway_count", 0)
-
-        if reactome_genes and total_pathways > 0:
-            lines.append(f"\n## Reactome Pathways ({len(reactome_genes)} genes, {total_pathways} pathways)")
-            lines.append(f"*Biological pathways involving {disease}-associated genes*")
-            lines.append(f"**INCLUDE THIS DATA IN YOUR RESPONSE - list each gene with its pathways below:**")
-
-            for gene, pathways in pathways_by_gene.items():
-                # Show pathway names for each gene
-                disease_pathways = [p for p in pathways if p.get("is_disease_pathway")]
-                other_pathways = [p for p in pathways if not p.get("is_disease_pathway")]
-
-                pathway_names = []
-                # Prioritize disease pathways
-                for p in disease_pathways[:3]:
-                    pathway_names.append(f"**{p.get('name', p.get('id'))}** (disease)")
-                for p in other_pathways[:2]:
-                    name = p.get('name', p.get('id'))
-                    if len(name) > 50:
-                        name = name[:47] + "..."
-                    pathway_names.append(name)
-
-                more_count = len(pathways) - len(pathway_names)
-                pathways_str = ", ".join(pathway_names)
-                if more_count > 0:
-                    pathways_str += f" (+{more_count} more)"
-
-                lines.append(f"- **{gene}**: {pathways_str}")
+            gaps = patterns.get("gaps", [])
+            if gaps:
+                lines.append(f"\n## Therapeutic Gaps")
+                for gap in gaps[:5]:
+                    lines.append(f"- {gap}")
 
         # Summary
         summary = data.get("summary", {})
         lines.append(f"\n## Summary")
-        lines.append(f"- Direct indication drugs (ChEMBL): {summary.get('direct_indication_drugs', 0)}")
+        lines.append(f"- Direct indication drugs: {summary.get('direct_indication_drugs', 0)}")
         lines.append(f"- Total target genes: {summary.get('total_target_genes', 0)}")
-        lines.append(f"- Total gene-based drugs (ChEMBL): {summary.get('total_gene_based_drugs', 0)}")
-        lines.append(f"- FDA-approved drugs (PubChem): {summary.get('pubchem_fda_drugs', 0)}")
-        lines.append(f"- Reactome pathways: {summary.get('reactome_pathways', 0)}")
-        lines.append(f"- Sources with results: {summary.get('sources_with_results', [])}")
+        lines.append(f"- Gene-based drugs: {summary.get('total_gene_based_drugs', 0)}")
+        lines.append(f"- Clinical trials: {summary.get('clinical_trials', 0)}")
 
         return "\n".join(lines)
 
     def _format_observation(self, data: dict) -> str:
         """
-        Format tool result for clearer observation.
-
-        Handles:
-        - disease_drug_discovery tool output
-        - biobtree_query tool output
+        Format tool result for ReAct observation (ad-hoc queries).
 
         Args:
             data: Tool result data
@@ -341,13 +535,9 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
         if not isinstance(data, dict):
             return str(data)
 
-        # Handle disease_drug_discovery tool output
-        if "direct_indications" in data or "gwas_targets" in data:
-            return self._format_disease_drug_result(data)
-
         lines = []
 
-        # Handle lite mode response (results_lite structure)
+        # Handle lite mode response
         if "results_lite" in data:
             lite = data["results_lite"]
             stats = lite.get("stats", {})
@@ -355,200 +545,22 @@ P00533 >> uniprot >> chembl_target_component >> chembl_target >> chembl_assay >>
 
             lines.append("Mode: lite")
             if stats:
-                mapped = stats.get('mapped', 0)
-                total = stats.get('total_terms', 0)
-                total_targets = stats.get('total_targets', 0)
-                lines.append(f"Stats: {mapped}/{total} terms mapped, {total_targets} drug hits")
+                lines.append(f"Stats: {stats.get('mapped', 0)}/{stats.get('total_terms', 0)} mapped")
 
-            if mappings:
-                lines.append("Drug mappings:")
-                for m in mappings[:10]:
-                    if m.get("error"):
-                        continue
-                    term = m.get("term") or m.get("input", "?")
-                    targets = m.get("targets", [])
-                    if targets:
-                        drug_ids = [t.get("id", "?") for t in targets[:5]]
-                        more = len(targets) - 5 if len(targets) > 5 else 0
-                        drug_list = ", ".join(drug_ids)
-                        if more > 0:
-                            drug_list += f" (+{more} more)"
-                        lines.append(f"  {term} -> {drug_list}")
-                    else:
-                        lines.append(f"  {term} -> (no drugs found)")
+            for m in mappings[:10]:
+                if m.get("error"):
+                    continue
+                term = m.get("term") or m.get("input", "?")
+                targets = m.get("targets", [])
+                if targets:
+                    target_ids = [t.get("id", "?") for t in targets[:5]]
+                    lines.append(f"  {term} -> {', '.join(target_ids)}")
 
-        # Handle full mode response (results structure)
+        # Handle full mode response
         elif "results" in data:
             results = data.get("results", {})
-            # Handle both nested (results.results) and flat (results as list) structures
-            if isinstance(results, list):
-                inner_results = results
-            else:
-                inner_results = results.get("results", [])
-
+            inner = results.get("results", []) if isinstance(results, dict) else results
             lines.append("Mode: full")
+            lines.append(f"Results: {len(inner)} mappings")
 
-            if inner_results:
-                # Extract drugs grouped by source
-                drugs_by_source = {}
-                total_drugs = 0
-                is_direct_indication_query = False
-
-                for r in inner_results:
-                    source = r.get("source", {})
-                    source_name = source.get("keyword") or source.get("identifier", "?")
-                    source_dataset = source.get("dataset", "")
-                    targets = r.get("targets", [])
-
-                    # Detect if this is a direct indication query (PATH 1)
-                    # In PATH 1, source is EFO disease, targets are chembl_molecule
-                    if source_dataset == "efo" or source_name.startswith("EFO:"):
-                        is_direct_indication_query = True
-
-                    if source_name not in drugs_by_source:
-                        drugs_by_source[source_name] = []
-
-                    for t in targets:
-                        drug_id = t.get("identifier", "?")
-                        target_dataset = t.get("dataset", "")
-
-                        # Drug info location depends on API:
-                        # - gRPC: t.chembl.molecule
-                        # - REST: t.Attributes.Chembl.molecule
-                        chembl_data = t.get("chembl", {})
-                        if not chembl_data:
-                            attrs = t.get("Attributes", {})
-                            chembl_data = attrs.get("Chembl", {}) or attrs.get("chembl", {})
-                        drug_info = chembl_data.get("molecule", {})
-
-                        # Extract drug name from altNames
-                        drug_name = None
-                        alt_names = drug_info.get("altNames", [])
-                        if alt_names and isinstance(alt_names, list):
-                            for name in alt_names:
-                                if name and len(name) > 2:
-                                    drug_name = name
-                                    break
-
-                        drug_phase = drug_info.get("highestDevelopmentPhase", "N/A")
-                        drug_type = drug_info.get("type", "")
-                        mechanism = drug_info.get("mechanism", {})
-                        mechanism_desc = ""
-                        if mechanism:
-                            mechanism_desc = mechanism.get("desc", "") or mechanism.get("action", "")
-
-                        # Get indications and find indication-specific phase
-                        indications = drug_info.get("indications", [])
-                        indication_str = ""
-                        indication_phase = None
-
-                        if indications:
-                            # For direct indication queries, find the matching indication
-                            for ind in indications:
-                                ind_name = ind.get("efoName", "")
-                                ind_phase = ind.get("highestDevelopmentPhase")
-
-                                # Check if this indication matches the query disease
-                                if is_direct_indication_query and source_name.lower() in ind_name.lower():
-                                    indication_phase = ind_phase
-                                    indication_str = f"{ind_name} (Phase {ind_phase})"
-                                    break
-
-                            # If no exact match, show first 2 indications
-                            if not indication_str:
-                                indication_names = [
-                                    f"{ind.get('efoName', '')} (P{ind.get('highestDevelopmentPhase', '?')})"
-                                    for ind in indications[:2]
-                                    if ind.get("efoName")
-                                ]
-                                if indication_names:
-                                    indication_str = ", ".join(indication_names)
-
-                        drugs_by_source[source_name].append({
-                            "id": drug_id,
-                            "name": drug_name,
-                            "drug_phase": drug_phase,
-                            "indication_phase": indication_phase,
-                            "type": drug_type,
-                            "indication": indication_str,
-                            "mechanism": mechanism_desc
-                        })
-                        total_drugs += 1
-
-                lines.append(f"Found {total_drugs} drugs across {len(drugs_by_source)} sources")
-
-                if is_direct_indication_query:
-                    lines.append("Query type: Direct Disease Indication (PATH 1)")
-                    lines.append("NOTE: Check indication_phase for disease-specific approval status")
-
-                # Show drugs grouped by source
-                for source, drugs in drugs_by_source.items():
-                    lines.append(f"\n{source} ({len(drugs)} drugs):")
-
-                    # Sort by indication_phase (approved first) if available
-                    sorted_drugs = sorted(
-                        drugs,
-                        key=lambda d: (
-                            -(d.get("indication_phase") or 0),  # Higher indication phase first
-                            -(d.get("drug_phase") if d.get("drug_phase") != "N/A" else 0)
-                        )
-                    )
-
-                    for drug in sorted_drugs[:8]:  # Show top 8 per source
-                        name_str = drug["name"] if drug["name"] else drug["id"]
-
-                        # Show indication-specific phase if available (important for PATH 1)
-                        if drug.get("indication_phase") is not None:
-                            phase_str = f"[Indication Phase {drug['indication_phase']}]"
-                        elif drug["drug_phase"] != "N/A":
-                            phase_str = f"[Drug Phase {drug['drug_phase']}]"
-                        else:
-                            phase_str = ""
-
-                        # Build the line
-                        line_parts = [f"  - {name_str} ({drug['id']}) {phase_str}"]
-                        if drug["mechanism"]:
-                            line_parts.append(f"Mechanism: {drug['mechanism']}")
-                        if drug["indication"] and not drug.get("indication_phase"):
-                            line_parts.append(f"Indications: {drug['indication']}")
-
-                        lines.append(" | ".join(line_parts))
-
-                    if len(drugs) > 8:
-                        lines.append(f"  ... and {len(drugs) - 8} more")
-
-            else:
-                lines.append("No drugs found")
-
-        # Fallback for other formats
-        else:
-            mode = data.get("mode", "unknown")
-            stats = data.get("stats", {})
-            mappings = data.get("mappings", [])
-
-            lines.append(f"Mode: {mode}")
-
-            if stats:
-                mapped = stats.get('mapped', 0)
-                total = stats.get('total_terms', 0)
-                total_targets = stats.get('total_targets', 0)
-                lines.append(f"Stats: {mapped}/{total} terms mapped, {total_targets} drug hits")
-
-            if mappings:
-                lines.append("Drug mappings:")
-                for m in mappings[:10]:
-                    if m.get("error"):
-                        continue
-                    term = m.get("term") or m.get("input", "?")
-                    targets = m.get("targets", [])
-                    if targets:
-                        drug_ids = [t.get("id", "?") for t in targets[:5]]
-                        more = len(targets) - 5 if len(targets) > 5 else 0
-                        drug_list = ", ".join(drug_ids)
-                        if more > 0:
-                            drug_list += f" (+{more} more)"
-                        lines.append(f"  {term} -> {drug_list}")
-                    else:
-                        lines.append(f"  {term} -> (no drugs found)")
-
-        return "\n".join(lines)
+        return "\n".join(lines) if lines else str(data)[:500]

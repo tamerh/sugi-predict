@@ -1,3 +1,7 @@
+
+adding dbgap and Allele Frequency Aggregator (ALFA),dbgap,dbsnp 
+
+
   Option 2: Add EFO → Antibody link in BioBTree (Medium)
   - Parse indications field from TheraSAbDab
   - Map indication text to EFO terms

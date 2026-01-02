@@ -106,14 +106,43 @@ Example output:
 | ALK | ceritinib-resistant ALK mutants **(disease)**, Cell Death, Apoptosis |
 | EGFR | EGFR Signaling, Growth Factor Receptors, Clathrin-mediated endocytosis |
 
+### 4. Clinical Trials - ALWAYS INCLUDE
+Active clinical trials for the disease:
+
+- **{count} trials** ({recruiting} currently recruiting)
+- By phase: PHASE3: X, PHASE2: Y, PHASE1: Z
+- Sample trials:
+  - NCT{id}: {title}... (Phase X, RECRUITING/COMPLETED)
+
+### 5. Evidence Scoring - ALWAYS INCLUDE
+Drugs and genes ranked by evidence strength (multi-source = higher confidence):
+
+#### Top Drugs by Evidence Score
+| Drug | Score | Confidence | Evidence Sources |
+|------|-------|------------|------------------|
+| {drug_name} | {score} | high/medium/low | {sources like: direct_indication, clinical_trials} |
+
+#### Top Genes by Evidence Score
+| Gene | Score | Confidence | Evidence Sources |
+|------|-------|------------|------------------|
+| {gene_symbol} | {score} | high/medium/low | {sources like: gwas, clinvar, reactome} |
+
+#### Patterns Detected
+- **Novel targets**: Genes with disease link but no approved drugs: {gene1, gene2...}
+- **Active development**: {N} drugs in recruiting clinical trials
+- **Approved drugs**: {N} drugs with Phase 4 approval
+
 ### Summary
 - Direct indications (ChEMBL): {count from data.direct_indications.count} drugs
 - GWAS (ChEMBL): {data.gwas_targets.gene_count} genes, {data.gwas_targets.drug_count} drugs
 - PubChem FDA: {data.pubchem_targets.drug_count} drugs
 - Reactome pathways: {data.reactome_pathways.pathway_count} pathways
+- Clinical trials: {count} trials ({recruiting} recruiting)
+- High-confidence drugs: {count}
+- Novel targets identified: {count}
 - (Include other sources if they have results)
 
-*Data sources: ChEMBL, GWAS Catalog, ClinVar, Reactome, UniProt, PubChem*
+*Data sources: ChEMBL, GWAS Catalog, ClinVar, Reactome, UniProt, PubChem, ClinicalTrials.gov*
 ```
 
 ## Important Guidelines
@@ -124,7 +153,9 @@ Example output:
 4. **Trust the filtering**: The tool already filters by indication-specific phase
 5. **MANDATORY - Include Reactome pathways**: Always include a table of pathways per gene from the data. Do NOT just say "pathways are involved" - list the actual pathway names.
 6. **Include PubChem**: Show FDA-approved drugs from PubChem with their CIDs
-7. **Complete response**: Your response must include all 3 main sections: (1) Direct Indications, (2) Target-Based Drugs, (3) Biological Pathways
+7. **MANDATORY - Include Clinical Trials**: Show trial count, recruiting count, phase breakdown, and sample trials
+8. **MANDATORY - Include Evidence Scoring**: Show top drugs and genes by score, evidence sources, and detected patterns
+9. **Complete response**: Your response must include all 5 main sections: (1) Direct Indications, (2) Target-Based Drugs, (3) Biological Pathways, (4) Clinical Trials, (5) Evidence Scoring
 
 ## Clinical Development Phases
 

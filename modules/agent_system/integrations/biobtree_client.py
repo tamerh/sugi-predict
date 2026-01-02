@@ -205,7 +205,8 @@ class BioBTreeClient:
         terms: List[str],
         mapfilter: str,
         mode: str = "lite",
-        max_pages: int = 10
+        max_pages: int = 10,
+        preserve_sources: bool = False
     ) -> Dict:
         """
         Execute BioBTree mapping query and fetch all pages.
@@ -215,66 +216,160 @@ class BioBTreeClient:
             mapfilter: Mapping chain query
             mode: Response mode - "lite" or "full"
             max_pages: Maximum number of pages to fetch (safety limit)
+            preserve_sources: If True, preserve source-to-target mapping
+                             (useful for multi-term queries like gene→drug)
 
         Returns:
-            Combined results from all pages with structure:
+            If preserve_sources=False (default):
             {
-                'targets': [...],  # All targets combined
+                'targets': [...],  # All targets combined (flat list)
                 'total_count': int,
                 'pages_fetched': int,
                 '_client_timing_ms': float
             }
+
+            If preserve_sources=True:
+            {
+                'results': {
+                    'results': [
+                        {'source': {...}, 'targets': [...]},  # Per-source grouping
+                        ...
+                    ]
+                },
+                'total_count': int,
+                'pages_fetched': int,
+                '_client_timing_ms': float
+            }
+
+        Example:
+            >>> # Flat results (default)
+            >>> result = await client.map_query_all_pages(
+            ...     terms=["glioblastoma"],
+            ...     mapfilter=">>efo>>chembl_molecule"
+            ... )
+            >>> drugs = result['targets']
+
+            >>> # Preserve source mapping (for multi-term queries)
+            >>> result = await client.map_query_all_pages(
+            ...     terms=["EGFR", "TP53"],
+            ...     mapfilter=">>ensembl>>uniprot>>chembl_molecule",
+            ...     preserve_sources=True
+            ... )
+            >>> # Access per-gene results
+            >>> for r in result['results']['results']:
+            ...     gene = r['source']['keyword']
+            ...     drugs = r['targets']
         """
-        all_targets = []
         page_token = ""
         pages_fetched = 0
         total_time_ms = 0
 
-        while pages_fetched < max_pages:
-            result = await self.map_query(terms, mapfilter, mode, page=page_token)
-            total_time_ms += result.get('_client_timing_ms', 0)
-            pages_fetched += 1
+        if preserve_sources:
+            # Preserve source-to-target mapping (each source has its own targets)
+            targets_by_source = {}  # source_id -> {"source": {...}, "targets": [...]}
 
-            # Extract targets based on mode
-            if mode == "lite":
-                lite = result.get('results_lite', {})
-                mappings = lite.get('mappings', [])
-                pagination = lite.get('pagination', {})
+            while pages_fetched < max_pages:
+                result = await self.map_query(terms, mapfilter, mode, page=page_token)
+                total_time_ms += result.get('_client_timing_ms', 0)
+                pages_fetched += 1
 
-                # Combine targets from all mappings
-                for m in mappings:
-                    all_targets.extend(m.get('targets', []))
+                # Extract based on mode
+                if mode == "lite":
+                    lite = result.get('results_lite', {})
+                    mappings = lite.get('mappings', [])
+                    pagination = lite.get('pagination', {})
 
-                # Check for next page (lite mode uses pagination object)
-                if pagination.get('has_next') and pagination.get('next_token'):
-                    page_token = pagination['next_token']
+                    for m in mappings:
+                        source_id = m.get('input', 'unknown')
+                        if source_id not in targets_by_source:
+                            targets_by_source[source_id] = {
+                                "source": {"keyword": source_id, "input": m.get('input')},
+                                "targets": []
+                            }
+                        targets_by_source[source_id]["targets"].extend(m.get('targets', []))
+
+                    if pagination.get('has_next') and pagination.get('next_token'):
+                        page_token = pagination['next_token']
+                    else:
+                        break
                 else:
-                    break
-            else:
-                # Full mode has different structure
-                results = result.get('results', {})
-                inner_results = results.get('results', [])
+                    # Full mode
+                    results = result.get('results', {})
+                    inner_results = results.get('results', [])
 
-                # Combine targets from all source results
-                for r in inner_results:
-                    all_targets.extend(r.get('targets', []))
+                    for r in inner_results:
+                        source = r.get('source', {})
+                        source_id = source.get('keyword') or source.get('identifier', 'unknown')
+                        if source_id not in targets_by_source:
+                            targets_by_source[source_id] = {"source": source, "targets": []}
+                        targets_by_source[source_id]["targets"].extend(r.get('targets', []))
 
-                # Full mode uses 'nextpage' field directly
-                nextpage = results.get('nextpage', '')
-                if nextpage and nextpage != page_token:
-                    # Continue if we have a new page token
-                    page_token = nextpage
+                    nextpage = results.get('nextpage', '')
+                    if nextpage and nextpage != page_token:
+                        page_token = nextpage
+                    else:
+                        break
+
+            # Build combined result preserving source structure
+            combined_results = list(targets_by_source.values())
+            total_targets = sum(len(r["targets"]) for r in combined_results)
+
+            return {
+                'results': {'results': combined_results},
+                'total_count': total_targets,
+                'pages_fetched': pages_fetched,
+                '_client_timing_ms': round(total_time_ms, 1)
+            }
+
+        else:
+            # Flatten all targets (default behavior)
+            all_targets = []
+
+            while pages_fetched < max_pages:
+                result = await self.map_query(terms, mapfilter, mode, page=page_token)
+                total_time_ms += result.get('_client_timing_ms', 0)
+                pages_fetched += 1
+
+                # Extract targets based on mode
+                if mode == "lite":
+                    lite = result.get('results_lite', {})
+                    mappings = lite.get('mappings', [])
+                    pagination = lite.get('pagination', {})
+
+                    # Combine targets from all mappings
+                    for m in mappings:
+                        all_targets.extend(m.get('targets', []))
+
+                    # Check for next page (lite mode uses pagination object)
+                    if pagination.get('has_next') and pagination.get('next_token'):
+                        page_token = pagination['next_token']
+                    else:
+                        break
                 else:
-                    # Stop if empty or same token (indicates last page)
-                    break
+                    # Full mode has different structure
+                    results = result.get('results', {})
+                    inner_results = results.get('results', [])
 
-        # Return combined result
-        return {
-            'targets': all_targets,
-            'total_count': len(all_targets),
-            'pages_fetched': pages_fetched,
-            '_client_timing_ms': round(total_time_ms, 1)
-        }
+                    # Combine targets from all source results
+                    for r in inner_results:
+                        all_targets.extend(r.get('targets', []))
+
+                    # Full mode uses 'nextpage' field directly
+                    nextpage = results.get('nextpage', '')
+                    if nextpage and nextpage != page_token:
+                        # Continue if we have a new page token
+                        page_token = nextpage
+                    else:
+                        # Stop if empty or same token (indicates last page)
+                        break
+
+            # Return combined result
+            return {
+                'targets': all_targets,
+                'total_count': len(all_targets),
+                'pages_fetched': pages_fetched,
+                '_client_timing_ms': round(total_time_ms, 1)
+            }
 
     async def get_entry(
         self,
