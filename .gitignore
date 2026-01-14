@@ -44,6 +44,7 @@ htmlcov/
 .tox/
 
 web/
+sugi-agent/
 
 benchmark/qdrant_bench/results
 benchmark/qdrant_bench/results2

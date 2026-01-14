@@ -1,10 +1,12 @@
 # BioYoda
 
-AI-powered biomedical search system with vector database backend.
+Biomedical data processing pipeline with vector database backend.
 
 ## Overview
 
-BioYoda is a Snakemake-based pipeline for processing biomedical literature, clinical trials, and patent data into searchable vector databases. The system processes PubMed abstracts, clinical trial information, and patent documents with chemical compounds, creating FAISS indices and Qdrant vector database collections for semantic search.
+BioYoda is a Snakemake-based pipeline for processing biomedical literature, clinical trials, and patent data into vector databases. The system processes PubMed abstracts, clinical trial information, and patent documents with chemical compounds, creating FAISS indices and Qdrant vector database collections.
+
+**Note**: For search and AI-powered queries, see [Sugi-Agent](https://github.com/yourusername/sugi-agent) - the intelligence layer that queries BioYoda's data.
 
 **New Architecture (v0.2.0)**: Data processing and vector database operations are now **fully separated** for maximum flexibility and efficiency.
 
@@ -30,7 +32,6 @@ BioYoda is a Snakemake-based pipeline for processing biomedical literature, clin
     - Parallel CPU processing with distributed chunking
 - **Incremental Updates**: Smart tracking system for efficient daily updates (PubMed supported)
 - **Vector Database**: Qdrant server with independent insertion workflow and upsert support
-- **Search API**: FastAPI-based REST API for semantic search across collections
 - **HPC Ready**: Designed for SGE cluster with GPU support and Singularity containers
 - **Modular Architecture**: Independent data processing and database management
 - **Flexible Deployment**: Run Qdrant on GPU nodes for long-running sessions
@@ -135,16 +136,7 @@ tail -f logs/qdrant/insert_pubmed.log
 │  Storage: data/qdrant/storage/                               │
 └─────────────────────────────────────────────────────────────┘
                             ↓
-┌─────────────────────────────────────────────────────────────┐
-│                      Search API                              │
-│                   (FastAPI REST API)                         │
-├─────────────────────────────────────────────────────────────┤
-│  • Semantic search across collections                        │
-│  • CLI search tool                                           │
-│  • Interactive documentation                                 │
-│                                                               │
-│  Endpoint: http://localhost:8000                             │
-└─────────────────────────────────────────────────────────────┘
+                    (Query via Sugi-Agent)
 ```
 
 ### Key Benefits of Separation
@@ -176,20 +168,14 @@ modules/
 │       ├── process_patents.py      # Text embeddings
 │       ├── process_compounds.py    # Chemical fingerprints
 │       └── process_uspto_json.py   # USPTO enrichment
-├── qdrant/                 # Qdrant operations (separate)
-│   ├── Snakefile           # Standalone insertion workflows
-│   ├── README.md
-│   └── scripts/
-│       ├── start_server.sh
-│       ├── stop_server.sh
-│       ├── check_status.sh
-│       └── insert_from_faiss.py
-└── api/                    # Search API (FastAPI)
+└── qdrant/                 # Qdrant operations (separate)
+    ├── Snakefile           # Standalone insertion workflows
     ├── README.md
     └── scripts/
-        ├── main.py
-        ├── search.py
-        └── bioyoda_search.py
+        ├── start_server.sh
+        ├── stop_server.sh
+        ├── check_status.sh
+        └── insert_from_faiss.py
 ```
 
 ## Commands
@@ -289,31 +275,6 @@ tail -f logs/qdrant/insert_pubmed.log
 # Validate outputs
 ./bioyoda.sh validate pubmed
 ```
-
-### API Operations
-
-```bash
-# Start API server (requires Qdrant running)
-./bioyoda.sh api start
-
-# Start in background
-./bioyoda.sh api start --bg
-
-# Search from CLI
-./bioyoda.sh search "CRISPR gene editing"
-./bioyoda.sh search  # Interactive mode
-
-# Check status
-./bioyoda.sh api status
-
-# Stop server
-./bioyoda.sh api stop
-
-# Run tests
-./run_tests.sh api
-```
-
-Visit http://localhost:8000/docs for interactive API documentation.
 
 ### Management
 
@@ -489,23 +450,7 @@ python modules/pubmed/scripts/tracking.py --tracking-file out/state/pubmed/proce
 - PMID-based upsert ensures updated articles replace old versions
 - No redundant work, no duplicates
 
-### Workflow 4: Search and Query
-
-```bash
-# 1. Ensure Qdrant server is running with data
-./bioyoda.sh qdrant status
-
-# 2. Start API server
-./bioyoda.sh api start --bg
-
-# 3. Search from CLI
-./bioyoda.sh search "Alzheimer disease treatment"
-
-# 4. Or use Python/HTTP
-# Visit http://localhost:8000/docs for API documentation
-```
-
-### Workflow 5: Resume from Existing Storage
+### Workflow 4: Resume from Existing Storage
 
 ```bash
 # Scenario: Server crashed or session ended, data exists on localscratch
@@ -535,7 +480,6 @@ ls -lhd /localscratch/$USER/qdrant_*
   - `modules/diamond/README.md` - DIAMOND BLASTP sequence similarity
   - `modules/esm2/README.md` - ESM-2 protein embeddings
   - `modules/qdrant/README.md` - Qdrant operations and architecture
-  - `modules/api/README.md` - Search API usage and examples
 - **Configuration**: `config/README.md` - Configuration options
 
 ## Troubleshooting
@@ -580,23 +524,6 @@ tail -f logs/qdrant/insert_pubmed.log
 
 # Re-run insertion
 ./bioyoda.sh qdrant insert pubmed
-```
-
-### API Issues
-
-```bash
-# Check API status
-./bioyoda.sh api status
-
-# Check logs
-tail -f out/logs/api/server.log
-
-# Restart API
-./bioyoda.sh api stop
-./bioyoda.sh api start
-
-# Run tests
-./run_tests.sh api
 ```
 
 ## Performance

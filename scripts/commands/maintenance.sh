@@ -263,17 +263,16 @@ cmd_stop() {
     log_success "Stop completed"
 }
 
-# Quick start: start both Qdrant and API
+# Quick start: start Qdrant server
 cmd_start_all() {
     parse_common_args "$@"
 
     log_divider
-    log_info "Starting BioYoda servers (Qdrant + API)"
+    log_info "Starting Qdrant server"
     log_divider
     echo ""
 
-    # Step 1: Start Qdrant
-    log_info "Step 1/2: Starting Qdrant server"
+    # Start Qdrant
     source "${COMMANDS_DIR}/qdrant.sh"
     qdrant_start --mode local $(if [[ "$USE_TEST" == "true" ]]; then echo "--test"; fi) || {
         log_error "Failed to start Qdrant server"
@@ -287,55 +286,33 @@ cmd_start_all() {
         exit 1
     fi
     log_success "Qdrant server ready"
-    echo ""
-
-    # Step 2: Start API
-    log_info "Step 2/2: Starting API server"
-    source "${COMMANDS_DIR}/api.sh"
-    api_start --bg $(if [[ "$USE_TEST" == "true" ]]; then echo "--test"; fi) || {
-        log_error "Failed to start API server"
-        log_warning "Cleaning up: stopping Qdrant..."
-        qdrant_stop 2>/dev/null || true
-        exit 1
-    }
 
     echo ""
     log_divider
-    log_success "BioYoda servers started successfully!"
+    log_success "Qdrant server started successfully!"
     log_divider
     echo ""
-    log_info "Services:"
-    log_info "  - Qdrant: http://localhost:6333"
-    log_info "  - API: http://localhost:8000"
-    log_info "  - API Docs: http://localhost:8000/docs"
+    log_info "Qdrant: http://localhost:6333"
     echo ""
     log_info "To stop: ./bioyoda.sh stop"
 }
 
-# Quick stop: stop both API and Qdrant
+# Quick stop: stop Qdrant server
 cmd_stop_all() {
     parse_common_args "$@"
 
     log_divider
-    log_info "Stopping BioYoda servers (API + Qdrant)"
+    log_info "Stopping Qdrant server"
     log_divider
     echo ""
 
-    # Step 1: Stop API first (it depends on Qdrant)
-    log_info "Step 1/2: Stopping API server"
-    source "${COMMANDS_DIR}/api.sh"
-    api_stop $(if [[ "$USE_TEST" == "true" ]]; then echo "--test"; fi) 2>/dev/null || true
-    sleep 1
-    echo ""
-
-    # Step 2: Stop Qdrant
-    log_info "Step 2/2: Stopping Qdrant server"
+    # Stop Qdrant
     source "${COMMANDS_DIR}/qdrant.sh"
     qdrant_stop $(if [[ "$USE_TEST" == "true" ]]; then echo "--test"; fi) 2>/dev/null || true
     sleep 1
 
     echo ""
     log_divider
-    log_success "BioYoda servers stopped"
+    log_success "Qdrant server stopped"
     log_divider
 }

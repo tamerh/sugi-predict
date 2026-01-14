@@ -1,15 +1,13 @@
-BioYoda v0.2.0 - AI-powered biomedical search system
+BioYoda v0.2.0 - Biomedical data processing pipeline
 
 Usage: bioyoda.sh <command> [options]
 
 COMMANDS:
-    start                     Start both Qdrant and API servers
-    stop                      Stop both Qdrant and API servers
+    start                     Start Qdrant server
+    stop                      Stop Qdrant server
     run <module>              Run data processing pipeline
     status                    Show pipeline status
     qdrant <subcommand>       Manage Qdrant vector database
-    api <subcommand>          Manage BioYoda Search API
-    search [query]            Quick search across collections
     test [--pipeline]         Run test suite
     snapshot --name <name>    Create isolated code snapshot
     validate <module>         Validate module outputs
@@ -38,12 +36,6 @@ QDRANT SUBCOMMANDS:
     insert <dataset>          Insert data (pubmed, clinical_trials, patents, esm2, all)
     stop-insert <dataset>     Stop a running insertion job
 
-API SUBCOMMANDS:
-    start                     Start API server
-    stop                      Stop API server
-    status                    Check API server status
-    search                    CLI search tool
-
 RUN OPTIONS:
     --cluster                 Submit jobs to SGE cluster
     --local                   Run locally (default)
@@ -64,12 +56,6 @@ QDRANT START OPTIONS:
     --runtime <hours>         Runtime in hours (default: 48)
     --memory <mb>             Memory in MB (default: 32000)
     --out-dir <path>          Use existing storage directory
-
-API START OPTIONS:
-    --port N                  Port number (default: 8000)
-    --host HOST               Host address (default: 0.0.0.0)
-    --bg, -b                  Run in background
-    --reload                  Auto-reload on code changes
 
 PUSH/PULL OPTIONS:
     --code-only, -c           Only sync scripts (fast, for code changes)
@@ -100,11 +86,6 @@ EXAMPLES:
     bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --bg
     bioyoda.sh qdrant status
     bioyoda.sh qdrant stop
-
-    # API operations
-    bioyoda.sh api start --bg
-    bioyoda.sh search "CRISPR gene editing"
-    bioyoda.sh api stop
 
     # Testing
     bioyoda.sh test                    # Fast fixture mode

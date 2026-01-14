@@ -11,7 +11,7 @@
 #
 # EXAMPLES:
 #
-#   # Quick start/stop servers (Qdrant + API)
+#   # Quick start/stop Qdrant server
 #   ./bioyoda.sh start
 #   ./bioyoda.sh stop
 #
@@ -31,16 +31,6 @@
 #   ./bioyoda.sh qdrant stop-insert pubmed                         # Stop insertion
 #   ./bioyoda.sh qdrant status                                     # Check status
 #   ./bioyoda.sh qdrant stop                                       # Stop server
-#
-#   # API server
-#   ./bioyoda.sh api start --bg                         # Start in background
-#   ./bioyoda.sh api start --port 8080 --reload         # Dev mode with auto-reload
-#   ./bioyoda.sh api status                             # Check status
-#   ./bioyoda.sh api stop                               # Stop server
-#
-#   # Search
-#   ./bioyoda.sh search "CRISPR gene editing"           # Quick search
-#   ./bioyoda.sh search                                 # Interactive mode
 #
 #   # Testing
 #   ./bioyoda.sh test                                   # Fast fixture mode
@@ -70,7 +60,6 @@
 #   # Help
 #   ./bioyoda.sh help                                   # Show full help
 #   ./bioyoda.sh qdrant help                            # Qdrant-specific help
-#   ./bioyoda.sh api help                               # API-specific help
 #
 ##############################################################################
 
@@ -134,7 +123,7 @@ main() {
                 log_error "Unknown module: $1"
                 echo ""
                 echo "Did you mean:"
-                echo "  bioyoda.sh start              # Start Qdrant and API servers"
+                echo "  bioyoda.sh start              # Start Qdrant server"
                 echo "  bioyoda.sh run $1             # Run data processing pipeline"
                 exit 1
             fi
@@ -175,21 +164,6 @@ main() {
         qdrant)
             source "${SCRIPT_DIR}/commands/qdrant.sh"
             cmd_qdrant "$@"
-            ;;
-
-        # API management
-        api)
-            source "${SCRIPT_DIR}/commands/api.sh"
-            cmd_api "$@"
-            ;;
-
-        # Quick search (alias for api search)
-        search)
-            if [[ $# -eq 0 ]]; then
-                python "${PIPELINE_DIR}/modules/api/scripts/bioyoda_search.py" --interactive
-            else
-                python "${PIPELINE_DIR}/modules/api/scripts/bioyoda_search.py" "$@"
-            fi
             ;;
 
         # Testing
