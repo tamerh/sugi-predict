@@ -211,7 +211,20 @@ patents:
     compounds_hnsw_on_disk: true         # ON-DISK HNSW - critical for 2048-dim to avoid OOM!
 
     # Segment optimization for compounds (~34M points)
-    compounds_indexing_threshold: 30000000  # 30M points - delay indexing
+    #
+    # IMPORTANT: indexing_threshold vs max_segment_size
+    # ------------------------------------------------
+    # - indexing_threshold: HNSW index builds when segment exceeds this size
+    # - max_segment_size: Segments are split when they exceed this size
+    #
+    # If indexing_threshold > max_segment_size, HNSW index will NEVER build!
+    # (segments can't grow large enough to trigger indexing)
+    #
+    # Current setting delays indexing during bulk insert for performance.
+    # After insertion completes, trigger indexing with:
+    #   ./bioyoda.sh qdrant reindex patents_compounds
+    #
+    compounds_indexing_threshold: 30000000  # 30M - delays indexing during bulk insert
     compounds_max_segment_size: 20000000    # 20M points - max segment size
     compounds_default_segment_number: 0     # Let Qdrant decide
 

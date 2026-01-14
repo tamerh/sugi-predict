@@ -20,6 +20,11 @@ from ..paths import (
     PatentsPath,
     BindingDBPath,
     AntibodyPath,
+    GenCCPath,
+    BgeeExpressionPath,
+    GOEnrichmentPath,
+    PPIPath,
+    StructuresPath,
 )
 
 
@@ -29,6 +34,11 @@ class GatherOptions:
     min_indication_phase: int = 3
     include_gwas: bool = True
     include_clinvar: bool = True
+    include_gencc: bool = True  # PATH 15: Expert-curated gene-disease associations
+    include_expression: bool = True  # PATH 16: Bgee tissue expression
+    include_go_enrichment: bool = True  # PATH 17: GO functional annotations
+    include_ppi: bool = True  # PATH 18: Protein-protein interactions (STRING)
+    include_structures: bool = True  # PATH 19: Protein structures (PDB)
     include_reactome: bool = True
     include_uniprot: bool = True
     include_pubchem: bool = True
@@ -49,6 +59,11 @@ class GatherResult:
     direct_indications: PathResult
     gwas: Optional[PathResult] = None
     clinvar: Optional[PathResult] = None
+    gencc: Optional[PathResult] = None  # PATH 15: Expert-curated gene-disease
+    expression: Optional[PathResult] = None  # PATH 16: Bgee tissue expression
+    go_enrichment: Optional[PathResult] = None  # PATH 17: GO functional annotations
+    ppi: Optional[PathResult] = None  # PATH 18: Protein-protein interactions
+    structures: Optional[PathResult] = None  # PATH 19: Protein structures
     pubchem_enrichment: Optional[PathResult] = None  # PATH 6a: ChEMBL drugs enriched with PubChem
     pubchem_activity: Optional[PathResult] = None    # PATH 6b: FDA compounds via target activity
     reactome: Optional[PathResult] = None
@@ -81,6 +96,31 @@ class GatherResult:
         if self.clinvar and self.clinvar.success:
             result["clinvar_targets"] = self.clinvar.data
             result["clinvar_targets"]["note"] = "Drugs targeting genes with disease-associated variants (ClinVar)"
+
+        # Add GenCC results (PATH 15)
+        if self.gencc and self.gencc.success:
+            result["gencc_targets"] = self.gencc.data
+            result["gencc_targets"]["note"] = "Drugs targeting genes with expert-curated disease associations (GenCC)"
+
+        # Add Expression results (PATH 16)
+        if self.expression and self.expression.success:
+            result["expression"] = self.expression.data
+            result["expression"]["note"] = "Tissue-specific expression data for disease-associated genes (Bgee)"
+
+        # Add GO Enrichment results (PATH 17)
+        if self.go_enrichment and self.go_enrichment.success:
+            result["go_enrichment"] = self.go_enrichment.data
+            result["go_enrichment"]["note"] = "Gene Ontology functional annotations for disease-associated genes"
+
+        # Add PPI results (PATH 18)
+        if self.ppi and self.ppi.success:
+            result["ppi"] = self.ppi.data
+            result["ppi"]["note"] = "Protein-protein interaction networks from STRING"
+
+        # Add Structures results (PATH 19)
+        if self.structures and self.structures.success:
+            result["structures"] = self.structures.data
+            result["structures"]["note"] = "Protein structures from PDB for drug target assessment"
 
         # Add PubChem enrichment results (PATH 6a)
         if self.pubchem_enrichment and self.pubchem_enrichment.success:
@@ -133,6 +173,29 @@ class GatherResult:
         if self.clinvar and self.clinvar.success:
             summary["clinvar_genes"] = self.clinvar.data.get("gene_count", 0)
             summary["clinvar_drugs"] = self.clinvar.data.get("drug_count", 0)
+
+        if self.gencc and self.gencc.success:
+            summary["gencc_genes"] = self.gencc.data.get("gene_count", 0)
+            summary["gencc_drugs"] = self.gencc.data.get("drug_count", 0)
+            summary["gencc_classifications"] = self.gencc.data.get("classifications", {})
+
+        if self.expression and self.expression.success:
+            summary["genes_with_expression"] = self.expression.data.get("gene_count", 0)
+
+        if self.go_enrichment and self.go_enrichment.success:
+            summary["genes_with_go"] = self.go_enrichment.data.get("gene_count", 0)
+            summary["shared_go_terms"] = sum(
+                len(terms) for terms in self.go_enrichment.data.get("shared_terms", {}).values()
+            )
+
+        if self.ppi and self.ppi.success:
+            summary["genes_with_ppi"] = self.ppi.data.get("gene_count", 0)
+            summary["total_interactions"] = self.ppi.data.get("total_interactions", 0)
+            summary["hub_proteins"] = len(self.ppi.data.get("hub_proteins", []))
+
+        if self.structures and self.structures.success:
+            summary["genes_with_structures"] = self.structures.data.get("gene_count", 0)
+            summary["total_structures"] = self.structures.data.get("structure_summary", {}).get("total_structures", 0)
 
         if self.pubchem_enrichment and self.pubchem_enrichment.success:
             summary["pubchem_enriched_drugs"] = self.pubchem_enrichment.data.get("drugs_found_in_pubchem", 0)
@@ -238,6 +301,12 @@ class GatherPhase:
             phase1_paths.append(clinvar_path.execute(disease, max_genes=options.max_genes))
             phase1_labels.append("clinvar")
 
+        # GenCC (PATH 15: Expert-curated gene-disease)
+        if options.include_gencc:
+            gencc_path = GenCCPath(self.biobtree)
+            phase1_paths.append(gencc_path.execute(disease, max_genes=options.max_genes))
+            phase1_labels.append("gencc")
+
         # Therapeutic Antibodies
         if options.include_antibodies:
             antibody_path = AntibodyPath(self.biobtree)
@@ -263,15 +332,18 @@ class GatherPhase:
         # Extract direct indications result
         direct_result = results_by_label.get("direct_indications")
 
-        # Collect all genes from GWAS and ClinVar
+        # Collect all genes from GWAS, ClinVar, and GenCC
         all_genes = set()
         gwas_result = results_by_label.get("gwas")
         clinvar_result = results_by_label.get("clinvar")
+        gencc_result = results_by_label.get("gencc")
 
         if gwas_result and gwas_result.success:
             all_genes.update(gwas_result.genes)
         if clinvar_result and clinvar_result.success:
             all_genes.update(clinvar_result.genes)
+        if gencc_result and gencc_result.success:
+            all_genes.update(gencc_result.genes)
 
         all_genes_list = sorted(list(all_genes))[:options.max_genes]
 
@@ -293,8 +365,36 @@ class GatherPhase:
             phase2_paths.append(reactome_path.execute(disease, genes=all_genes_list))
             phase2_labels.append("reactome")
 
+        # Bgee Expression PATH 16 (needs genes)
+        if options.include_expression and all_genes_list:
+            expression_path = BgeeExpressionPath(self.biobtree)
+            phase2_paths.append(expression_path.execute(disease, genes=all_genes_list))
+            phase2_labels.append("expression")
+
+        # GO Enrichment PATH 17 (needs genes)
+        if options.include_go_enrichment and all_genes_list:
+            go_path = GOEnrichmentPath(self.biobtree)
+            phase2_paths.append(go_path.execute(disease, genes=all_genes_list))
+            phase2_labels.append("go_enrichment")
+
+        # PPI PATH 18 (needs genes)
+        if options.include_ppi and all_genes_list:
+            ppi_path = PPIPath(self.biobtree)
+            phase2_paths.append(ppi_path.execute(disease, genes=all_genes_list))
+            phase2_labels.append("ppi")
+
+        # Structures PATH 19 (needs genes)
+        if options.include_structures and all_genes_list:
+            structures_path = StructuresPath(self.biobtree)
+            phase2_paths.append(structures_path.execute(disease, genes=all_genes_list))
+            phase2_labels.append("structures")
+
         pubchem_activity_result = None
         reactome_result = None
+        expression_result = None
+        go_enrichment_result = None
+        ppi_result = None
+        structures_result = None
 
         if phase2_paths:
             phase2_results = await asyncio.gather(*phase2_paths, return_exceptions=True)
@@ -305,6 +405,14 @@ class GatherPhase:
                     pubchem_activity_result = result
                 elif label == "reactome":
                     reactome_result = result
+                elif label == "expression":
+                    expression_result = result
+                elif label == "go_enrichment":
+                    go_enrichment_result = result
+                elif label == "ppi":
+                    ppi_result = result
+                elif label == "structures":
+                    structures_result = result
 
         # ========================================
         # Phase 3: Run drug-dependent queries (in parallel)
@@ -382,6 +490,13 @@ class GatherPhase:
                     all_drugs.append(drug)
                     seen_drug_ids.add(drug["id"])
 
+        # From GenCC
+        if gencc_result and gencc_result.drugs:
+            for drug in gencc_result.drugs:
+                if drug["id"] not in seen_drug_ids:
+                    all_drugs.append(drug)
+                    seen_drug_ids.add(drug["id"])
+
         # From PubChem Activity (uses PubChem CID as key)
         if pubchem_activity_result and pubchem_activity_result.drugs:
             for drug in pubchem_activity_result.drugs:
@@ -408,6 +523,11 @@ class GatherPhase:
             direct_indications=direct_result,
             gwas=gwas_result,
             clinvar=clinvar_result,
+            gencc=gencc_result,
+            expression=expression_result,
+            go_enrichment=go_enrichment_result,
+            ppi=ppi_result,
+            structures=structures_result,
             pubchem_enrichment=pubchem_enrichment_result,
             pubchem_activity=pubchem_activity_result,
             reactome=reactome_result,
@@ -422,6 +542,11 @@ class GatherPhase:
                     "min_indication_phase": options.min_indication_phase,
                     "include_gwas": options.include_gwas,
                     "include_clinvar": options.include_clinvar,
+                    "include_gencc": options.include_gencc,
+                    "include_expression": options.include_expression,
+                    "include_go_enrichment": options.include_go_enrichment,
+                    "include_ppi": options.include_ppi,
+                    "include_structures": options.include_structures,
                     "include_pubchem": options.include_pubchem,
                     "include_clinical_trials": options.include_clinical_trials,
                     "include_patents": options.include_patents,

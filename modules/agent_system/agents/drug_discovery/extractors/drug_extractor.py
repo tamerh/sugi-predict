@@ -6,8 +6,63 @@ Extract drugs from:
 """
 
 from typing import List, Dict, Any
+import re
 
 from ..utils.drug_names import get_best_drug_name
+
+
+# Common medical term synonyms for matching
+TERM_SYNONYMS = {
+    "cancer": ["carcinoma", "tumor", "tumour", "neoplasm", "malignancy"],
+    "carcinoma": ["cancer", "tumor", "tumour", "neoplasm", "malignancy"],
+    "disease": ["disorder", "syndrome"],
+    "disorder": ["disease", "syndrome"],
+}
+
+
+def normalize_disease_terms(text: str) -> str:
+    """Normalize disease terms for better matching."""
+    text = text.lower()
+    # Replace common synonyms
+    text = text.replace("carcinoma", "cancer")
+    text = text.replace("tumour", "tumor")
+    text = text.replace("neoplasm", "cancer")
+    text = text.replace("malignancy", "cancer")
+    return text
+
+
+def disease_matches(disease: str, indication: str) -> bool:
+    """
+    Check if disease name matches indication with synonym support.
+
+    Args:
+        disease: User's disease search term
+        indication: EFO indication name
+
+    Returns:
+        True if they match (considering synonyms)
+    """
+    disease_norm = normalize_disease_terms(disease)
+    indication_norm = normalize_disease_terms(indication)
+
+    # Direct substring match after normalization
+    if disease_norm in indication_norm or indication_norm in disease_norm:
+        return True
+
+    # Word overlap matching (at least 2 significant words must match)
+    disease_words = set(re.findall(r'\b[a-z]{3,}\b', disease_norm))
+    indication_words = set(re.findall(r'\b[a-z]{3,}\b', indication_norm))
+
+    # Remove common words
+    common_words = {'cell', 'type', 'stage', 'grade', 'the', 'and', 'with'}
+    disease_words -= common_words
+    indication_words -= common_words
+
+    overlap = disease_words & indication_words
+    if len(overlap) >= 2:
+        return True
+
+    return False
 
 
 class DrugExtractor:
@@ -38,8 +93,6 @@ class DrugExtractor:
         results_data = result.get("data", {}).get("results", {})
         results_list = results_data.get("results", [])
 
-        disease_lower = disease.lower()
-
         for r in results_list:
             for target in r.get("targets", []):
                 drug_id = target.get("identifier", "")
@@ -69,8 +122,8 @@ class DrugExtractor:
                     ind_name = ind.get("efoName", "")
                     ind_phase = ind.get("highestDevelopmentPhase")
 
-                    # Check if this indication matches the disease
-                    if disease_lower in ind_name.lower():
+                    # Check if this indication matches the disease (with synonym support)
+                    if disease_matches(disease, ind_name):
                         indication_phase = ind_phase
                         indication_name = ind_name
                         break

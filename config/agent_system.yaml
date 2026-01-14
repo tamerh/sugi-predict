@@ -14,13 +14,13 @@ integrations:
     protocol: "rest"  # "grpc" (default) or "rest"
     grpc:
       host: "localhost"  # BioBTree running locally
-      port: 7777
+      port: 7776
       max_connections: 50
       keepalive_time: 30  # seconds
       timeout: 30  # seconds
     rest:
-      host: "localhost"  # BioBTree REST on localhost:9292
-      port: 9292
+      host: "localhost"  # BioBTree REST on localhost:9291
+      port: 9291
       timeout: 30
     retry_attempts: 3
     retry_delay: 1  # seconds

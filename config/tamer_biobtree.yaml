@@ -32,7 +32,4 @@ dependencies:
   # Genomic tools
   - tabix
 
-# After creating the environment, install these Go tools:
-#   go install github.com/golang/protobuf/protoc-gen-go@v1.3.2
-#   go install github.com/pquerna/ffjson@latest
-# Then run: make proto
+w# Then run: make proto

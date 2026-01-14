@@ -12,20 +12,40 @@ The agent uses a specialized `disease_drug_discovery` tool that runs multiple qu
 
 ### Working Paths
 
+Paths are organized into three phases based on data dependencies:
+
+- **Phase 1 (Disease-based)**: Query directly from disease name (PATH 1, 2, 3, 11, 14, 15)
+- **Phase 2 (Gene-based)**: Enrich genes collected from Phase 1 (PATH 6b, 7, 16-20, 22)
+- **Phase 3 (Drug-based)**: Enrich drugs collected from Phase 1-2 (PATH 6a, 12, 13, 21)
+
 | Path | Source | Ontology | Query Chain | Status |
 |------|--------|----------|-------------|--------|
-| PATH 1 | Direct Indications | EFO | `disease >> efo >> chembl_molecule` | ✅ Working |
-| PATH 2 | GWAS | EFO | `disease >> efo >> gwas >> ensembl >> ChEMBL drugs` + study metadata | ✅ Working |
+| PATH 1 | Direct Indications | MONDO→EFO | `disease >> mondo >> efo >> chembl_molecule` | ✅ Working |
+| PATH 2 | GWAS | MONDO→EFO | `disease >> mondo >> efo >> gwas >> ensembl >> ChEMBL drugs` + study metadata | ✅ Working |
 | PATH 3 | ClinVar | MONDO | `disease >> mondo >> clinvar >> ensembl >> ChEMBL drugs` | ✅ Working |
-| PATH 6a | PubChem Enrichment | - | `ChEMBL drugs >> InChI key >> PubChem search` | ✅ Working |
+| PATH 6a | PubChem Enrichment | - | `ChEMBL drugs >> InChI key >> PubChem search` | ✅ Working (enhanced) |
 | PATH 6b | PubChem Activity | - | `genes >> ensembl >> uniprot >> pubchem_activity >> pubchem[fda]` | ✅ Working |
 | PATH 7 | Reactome Pathways | - | `genes >> ensembl >> reactome` | ✅ Working |
-| PATH 8 | Similar Proteins | Qdrant ESM-2 | 573K SwissProt proteins | ✅ Working |
-| PATH 9 | Similar Compounds | Qdrant Morgan FP | 30.8M patent compounds | ✅ Working |
+| PATH 8 | Similar Proteins | Qdrant ESM-2 | `genes >> uniprot >> ESM-2 embedding search` | ✅ Working |
+| PATH 9 | Similar Compounds | Qdrant Morgan FP | `drugs >> SMILES >> Morgan FP search (30M compounds)` | ✅ Working |
 | PATH 11 | Clinical Trials | ClinicalTrials.gov | `disease >> clinical_trials` | ✅ Working |
 | PATH 12 | Patent Compounds | SureChEMBL | ChEMBL drugs >> InChI key >> patent_compound >> patent | ✅ Working (via workaround) |
 | PATH 13 | BindingDB | - | `ChEMBL drugs >> bindingdb` | ✅ Working |
 | PATH 14 | Antibodies | EFO | `disease >> efo >> antibody` | ✅ Working |
+| PATH 15 | GenCC | MONDO | `disease >> efo >> mondo >> gencc >> genes >> ChEMBL drugs` | ✅ Working |
+| PATH 16 | Expression | Bgee | `genes >> ensembl >> bgee` | ✅ Working |
+| PATH 17 | GO Enrichment | - | `genes >> ensembl >> uniprot >> go` | ✅ Working |
+| PATH 18 | PPI Network | STRING | `genes >> ensembl >> uniprot >> string` | ✅ Working |
+| PATH 19 | Structures | PDB | `genes >> ensembl >> uniprot >> pdb` | ✅ Working |
+| PATH 20 | InterPro Domains | InterPro | `genes >> ensembl >> uniprot >> interpro` | ✅ Working |
+| PATH 21 | MeSH Enrichment | MeSH | `drugs >> pubchem >> mesh` | ✅ Working |
+| PATH 22 | HMDB Metabolites | HMDB | `genes >> ensembl >> uniprot >> hmdb` | ✅ Working |
+| PATH 23 | Bioactivity | PubChem | `drugs >> pubchem >> pubchem_activity >> pubchem_assay` | ✅ Working |
+| PATH 23+ | BAO Annotations | BAO | `pubchem_assay >> bao` (assay classification ontology) | ⏳ Next Release |
+| PATH 24 | CTD Interactions | CTD | `mesh_id >> ctd` (chemical-gene-disease) | ✅ Working |
+| PATH 25 | DrugCentral MOA | DrugCentral | `struct_id >> drugcentral` (drug-target MOA) | ✅ Working |
+| PATH 26 | MSigDB Gene Sets | MSigDB | `gene >> hgnc >> msigdb` (gene set enrichment) | ✅ Working |
+| PATH 27 | BioGRID PPI | BioGRID | `biogrid_id >> biogrid` (protein interactions) | ⚠️ Partial (xrefs only) |
 
 ### Pending Paths (Code Ready, Awaiting BioBTree Links)
 
@@ -54,12 +74,16 @@ PATH 3 - ClinVar (ChEMBL): 3 genes -> 160 drugs
 
 PATH 6a - PubChem + MeSH Enrichment: 15 drugs -> 10 in PubChem -> 9 with MeSH
   Enriches ChEMBL drugs with:
-  - PubChem: FDA status, synonyms, molecular data
+  - PubChem: FDA status, synonyms, molecular data, drug-likeness
   - MeSH: Drug class, trade names, therapeutic scope
+  - Pharmacological Actions: Drug mechanism (e.g., "ACE Inhibitors", "Statins")
+  - Drug-Likeness: Lipinski Rule of 5 assessment
+  - External IDs: UNII (FDA), DTXSID (EPA toxicity), NSC (NCI)
   Via: ChEMBL >> InChI key >> PubChem >> MeSH
   Example: Temozolomide -> Drug Class: "Antineoplastic Agents, Alkylating"
            Trade Names: ["Temodar", "Temodal", "Methazolastone"]
            Scope: "treatment of MALIGNANT GLIOMA and MALIGNANT MELANOMA"
+           Lipinski: 0 violations → Drug-like: True
 
 PATH 6b - PubChem Activity: 45 targets -> 4 with compounds -> 139 FDA compounds
   FDA-approved compounds with bioactivity on disease-associated targets
@@ -82,6 +106,71 @@ PATH 12 - Patent Compounds (when enabled): 4000+ patents from 14 drugs
   Sample patents: US-20140197062-A1, WO-2019113041-A1
 
 Total: 23 unique genes, 1700+ ChEMBL drugs, 139 PubChem FDA compounds, 386 pathways, 93 clinical trials, 10 antibodies
+```
+
+## PubChem Data Fields (Enhanced Jan 2026)
+
+PATH 6a now extracts comprehensive drug data from PubChem:
+
+### Classification Fields
+| Field | Description | Example |
+|-------|-------------|---------|
+| `compound_type` | Classification | `drug`, `literature`, `patent`, `bioactive`, `biologic` |
+| `pharmacological_actions` | Drug mechanism/class | `["ACE Inhibitors", "Antihypertensive Agents"]` |
+| `fda_approved` | FDA approval status | `True` |
+| `mesh_terms` | MeSH descriptors | `["Atorvastatin"]` |
+
+### Drug-Likeness (Lipinski Rule of 5)
+| Field | Description | Threshold |
+|-------|-------------|-----------|
+| `molecular_weight` | Molecular weight (Da) | ≤ 500 |
+| `hydrogen_bond_donors` | HBD count | ≤ 5 |
+| `hydrogen_bond_acceptors` | HBA count | ≤ 10 |
+| `xlogp` | Lipophilicity | ≤ 5 |
+| `tpsa` | Topological polar surface area | - |
+| `rotatable_bonds` | Flexibility measure | - |
+| `lipinski_violations` | Number of rule violations | 0-4 |
+| `drug_like` | Oral drug-likeness | `True` if ≤1 violation |
+
+### External Database IDs
+| Field | Description | Example |
+|-------|-------------|---------|
+| `unii` | FDA Unique Ingredient Identifier | `A0JWA85V8F` |
+| `dtxsid` | EPA DSSTox Substance ID (toxicity) | `DTXSID8029868` |
+| `nsc_ids` | NCI compound numbers | `["NSC123456"]` |
+
+### Cross-Reference Counts (FDA drugs only)
+| Field | Description |
+|-------|-------------|
+| `literature_count` | Number of PubMed references |
+| `patent_count` | Number of patent citations |
+
+### Example Output
+```python
+{
+    'chembl_id': 'CHEMBL1078',
+    'name': 'Atorvastatin',
+    'pubchem_cid': '60823',
+    'fda_approved': True,
+    'compound_type': 'drug',
+    'pharmacological_actions': ['Anticholesteremic Agents', 'HMG-CoA Reductase Inhibitors'],
+
+    # Drug-likeness
+    'molecular_weight': 558.6,
+    'xlogp': 4.1,
+    'hydrogen_bond_donors': 4,
+    'hydrogen_bond_acceptors': 6,
+    'lipinski_violations': 1,  # MW > 500
+    'drug_like': True,  # 1 violation is acceptable
+
+    # External IDs
+    'unii': 'A0JWA85V8F',
+    'dtxsid': 'DTXSID8029868',
+
+    # Literature/Patents
+    'literature_count': 75,
+    'patent_count': 75,
+}
 ```
 
 ## Tool Parameters
@@ -142,7 +231,19 @@ agents/drug_discovery/
 │   ├── clinical_trials.py          # PATH 11: ClinicalTrials.gov
 │   ├── patents.py                  # PATH 12: SureChEMBL patents
 │   ├── bindingdb.py                # PATH 13: BindingDB binding data
-│   └── antibody.py                 # PATH 14: Therapeutic antibodies
+│   ├── antibody.py                 # PATH 14: Therapeutic antibodies
+│   ├── gencc.py                    # PATH 15: GenCC expert-curated gene-disease
+│   ├── bgee.py                     # PATH 16: Bgee tissue expression
+│   ├── go_enrichment.py            # PATH 17: GO functional annotations
+│   ├── ppi.py                      # PATH 18: STRING protein-protein interactions
+│   ├── structures.py               # PATH 19: PDB protein structures
+│   ├── interpro.py                 # PATH 20: InterPro protein domains
+│   ├── mesh_enrichment.py          # PATH 21: MeSH drug classification
+│   ├── hmdb.py                     # PATH 22: HMDB metabolites
+│   ├── bioactivity.py              # PATH 23: PubChem bioactivity (IC50, Ki, targets)
+│   ├── ctd.py                      # PATH 24: CTD chemical-gene-disease interactions
+│   ├── drugcentral.py              # PATH 25: DrugCentral drug-target MOA
+│   └── msigdb.py                   # PATH 26: MSigDB gene set enrichment
 │
 ├── extractors/                     # Data extraction utilities
 │   ├── __init__.py
@@ -182,7 +283,7 @@ See `RESTRUCTURE_PLAN.md` for the full migration plan.
 For gene-based paths (GWAS, ClinVar), we use a two-step approach:
 
 1. **Step 1**: Get genes associated with disease
-   - GWAS: `disease >> efo >> gwas >> ensembl`
+   - GWAS: `disease >> mondo >> efo >> gwas >> ensembl`
    - ClinVar: `disease >> mondo >> clinvar >> ensembl`
 
 2. **Step 2a**: Map genes to drugs via ChEMBL
@@ -277,6 +378,56 @@ MeSH in BioBTree links to **drug descriptors**, not disease terms:
 
 **Integration:** PATH 6a now queries `pubchem >> mesh` to enrich drugs with drug class and trade names.
 
+### BAO (BioAssay Ontology) - Coming Next Release
+
+BAO provides standardized classification of bioassays. When loaded in BioBTree, PATH 23 will be enhanced with:
+
+| BAO Field | Description | Example Values |
+|-----------|-------------|----------------|
+| `detection_technology` | How the assay measures activity | luminescence, fluorescence polarization, mass spectrometry |
+| `molecular_target` | Target type classification | protein target: enzyme: kinase, GPCR, ion channel |
+| `biological_process` | Cellular process measured | cell death, apoptosis, gene expression |
+| `assay_format` | Assay methodology | cell-based format, biochemical format |
+| `assay_design` | Assay design type | binding reporter, enzymatic assay |
+| `assay_stage` | Screening stage | primary, confirmatory, counter-screen |
+
+**Use cases:**
+- Filter assays by technology (e.g., only enzymatic assays)
+- Distinguish primary screens from confirmatory assays
+- Group activities by target class (kinases vs GPCRs)
+
+**Query chain (when available):** `pubchem_assay >> bao`
+
+### Additional Working Paths (Verified 2025-01)
+
+The following paths have been **confirmed working** and are available for integration:
+
+| Dataset | Working Path | Data Fields |
+|---------|-------------|-------------|
+| **GO** | `uniprot >> go` | type (biological_process/molecular_function/cellular_component), name, synonyms |
+| **PDB** | `uniprot >> pdb` | method (x-ray/em), resolution, chains |
+| **STRING** | `uniprot >> string` | partner IDs, interaction scores, annotations |
+| **IntAct** | `uniprot >> intact` | partner_uniprot, detection_method, confidence_score, pubmed_id |
+| **Bgee** | `ensembl >> bgee` | tissue/cell type, expression (present/absent), score, rank, quality (gold/silver) |
+| **GenCC** | `gene_symbol >> gencc`, `mondo >> gencc` | classification (Definitive/Strong/Moderate/Limited), MOI, submitter |
+
+**GenCC** (Gene Curation Coalition) is particularly valuable:
+- Curated gene-disease validity assertions
+- Evidence sources: ClinGen, OMIM, Orphanet, PanelApp, Ambry Genetics
+- Classifications: Definitive > Strong > Moderate > Limited > Disputed
+- Mode of inheritance (AD, AR, XL)
+- Could serve as **PATH 15** - complement to GWAS (PATH 2) and ClinVar (PATH 3)
+
+**Potential New Paths to Implement:**
+
+| Path # | Name | Query Chain | Value |
+|--------|------|-------------|-------|
+| PATH 15 | GenCC | `disease >> mondo >> gencc` | Expert-curated gene-disease with evidence levels |
+| PATH 16 | Expression | `genes >> ensembl >> bgee` | Tissue-specific expression for target prioritization |
+| PATH 17 | GO Enrichment | `genes >> uniprot >> go` | Functional annotations, biological process grouping |
+| PATH 18 | PPI Network | `genes >> uniprot >> string/intact` | Protein interaction network expansion |
+| PATH 19 | Structures | `genes >> uniprot >> pdb` | Druggability assessment via structure availability |
+
 ### ClinVar/Clinical Trials Gaps
 
 - `clinvar` search returns 0 for disease names (index issue?)
@@ -331,20 +482,22 @@ This finds thousands of relevant patents (e.g., 4480 patents from 14 glioblastom
 **Note**: When BioBTree adds direct `chembl_molecule >> patent_compound` connection,
 this can be simplified to a single chain query.
 
-### Issue 3: PubChem Synonyms/Drug Names Not Populated
-**Problem**: PubChem entries only have IUPAC names in the `title` field. The `synonyms` and `drug_names` fields are empty.
+### Issue 3: PubChem Title Field - PARTIALLY FIXED ✅
+**Status**: Most fields fixed, title fix coming in next BioBTree release
 
-**Example**:
-```
-CID 123631 (Gefitinib/Iressa - a well-known EGFR inhibitor):
-- title: "N-(3-chloro-4-fluorophenyl)-7-methoxy-6-(3-morpholin-4-ylpropoxy)quinazolin-4-amine"
-- synonyms: []
-- drug_names: []
-```
+**Original problem**: PubChem entries only had IUPAC names in the `title` field. The `synonyms` and `drug_names` fields were empty.
 
-**Expected**: Common names like "Gefitinib" and trade names like "Iressa" should be in synonyms/drug_names.
+**Current status (Jan 2026)**:
+- ✅ `synonyms`: Now populated (100+ synonyms per drug)
+- ✅ `pharmacological_actions`: Now populated (e.g., "ACE Inhibitors", "Statins")
+- ✅ `compound_type`: Now populated (drug, literature, patent, bioactive, biologic)
+- ✅ `mesh_terms`: Now populated from PubChem data
+- ✅ Drug-likeness fields: molecular_weight, xlogp, HBD, HBA, TPSA, rotatable_bonds
+- ✅ External IDs: unii, dtxsid, nsc_ids
+- ⏳ `title`: Still shows IUPAC name (fix coming in next BioBTree release)
+- ⏳ `drug_names`: Will be populated in next BioBTree release
 
-**Fix needed**: Populate `synonyms` and `drug_names` fields from PubChem compound data during BioBTree build.
+**Workaround**: Agent now uses `pharmacological_actions` for drug classification and first synonym as display name when title is IUPAC.
 
 ## Evidence Scoring (PHASE 6)
 
@@ -513,3 +666,107 @@ if result.success:
   - Includes: PubMed IDs, study titles, first author, publication date
   - Tracks association counts per study
   - Enables citation of primary literature sources
+- **New BioBTree Paths Verified (2025-01)**: Tested and documented additional working paths
+  - `uniprot >> go`: Gene Ontology annotations (biological process, molecular function, cellular component)
+  - `uniprot >> pdb`: Protein structures with resolution, method (x-ray/EM)
+  - `uniprot >> string`: STRING protein-protein interactions with scores
+  - `uniprot >> intact`: IntAct curated interactions with PubMed references
+  - `ensembl >> bgee`: Bgee tissue expression with quality scores (gold/silver)
+  - `mondo >> gencc`: GenCC expert-curated gene-disease associations with evidence levels
+  - Ready for PATH 15-19 implementation
+- **GenCC Integration (PATH 15) (2025-01)**: Expert-curated gene-disease associations
+  - Path: `disease >> efo >> mondo >> gencc >> genes >> ChEMBL drugs`
+  - Evidence classifications: Definitive > Strong > Moderate > Limited > Disputed
+  - Includes mode of inheritance (AD, AR, XL)
+  - Tracks submitter sources (ClinGen, OMIM, Orphanet, PanelApp, Ambry, G2P)
+  - Note: GenCC covers Mendelian/heritable diseases (not complex diseases like cancer)
+  - Tested: breast cancer → 10 genes (2 Definitive, 3 Moderate, 7 Limited) → 887 drugs
+- **Bgee Expression (PATH 16) (2025-01)**: Tissue-specific expression for target prioritization
+  - Path: `genes >> ensembl >> bgee`
+  - Provides tissue/cell type expression levels with quality scores (gold/silver)
+  - Ranks tissues by expression score
+  - Identifies shared tissues across disease-associated genes
+  - Use case: Prioritize targets expressed in disease-relevant tissues
+- **GO Enrichment (PATH 17) (2025-01)**: Gene Ontology functional annotations
+  - Path: `genes >> ensembl >> uniprot >> go`
+  - Groups genes by biological process, molecular function, cellular component
+  - Identifies shared GO terms across disease-associated genes
+  - Use case: Understand functional context of disease targets
+- **PPI Network (PATH 18) (2025-01)**: Protein-protein interaction networks from STRING
+  - Path: `genes >> ensembl >> uniprot >> string`
+  - Returns interaction partners with confidence scores (0-1000)
+  - Identifies hub proteins connecting multiple disease genes
+  - Use case: Find network-based drug targets and mechanisms
+- **Structures (PATH 19) (2025-01)**: Protein structure availability from PDB
+  - Path: `genes >> ensembl >> uniprot >> pdb`
+  - Returns available X-ray and cryo-EM structures with resolution
+  - Sorted by resolution (best first)
+  - Use case: Assess druggability via structure-based drug design readiness
+- **MONDO Disease Name Resolution (2026-01)**: Fixed disease text search for PATH 1 and PATH 2
+  - Problem: EFO text search failed for common terms (e.g., "breast cancer" not found, "breast carcinoma" works)
+  - Solution: Changed query from `>> efo >>` to `>> mondo >> efo >>` for better synonym coverage
+  - MONDO has richer disease name synonyms than EFO
+  - Before: "breast cancer" → 0 drugs (EFO search failed)
+  - After: "breast cancer" → MONDO:0007254 → EFO:0000305 → 58 drugs
+  - GWAS: "breast cancer" now finds 807 drugs, 94 studies (was 0)
+- **InterPro Domains (PATH 20) (2026-01)**: Protein domain analysis for druggability assessment
+  - Path: `genes >> ensembl >> uniprot >> interpro`
+  - Classifies domains into druggable categories: kinase, GPCR, ion_channel, protease, etc.
+  - Identifies genes with druggable domain families
+  - Tested: EGFR correctly identified with kinase domains (4 kinase-related domains)
+- **MeSH Drug Enrichment (PATH 21) (2026-01)**: Drug classification and mechanism of action
+  - Path: `drugs >> pubchem >> mesh`
+  - Returns pharmacological actions (e.g., "Tyrosine Kinase Inhibitors", "Antineoplastic Agents")
+  - Returns therapeutic categories from MeSH drug hierarchy
+  - Tested: gefitinib → TKI, erlotinib → TKI, aspirin → NSAIDs + antiplatelet
+- **HMDB Metabolites (PATH 22) (2026-01)**: Gene-metabolite associations
+  - Path: `genes >> ensembl >> uniprot >> hmdb`
+  - Returns metabolites associated with gene products (enzymes, transporters)
+  - Includes pathways, biofluids, chemical structures
+  - Tested: EGFR → 8 metabolites (ADP, ATP, Aldosterone, etc.)
+- **PubChem Enhanced Fields (PATH 6a) (2026-01)**: Comprehensive drug data extraction
+  - New classification fields: `compound_type`, `pharmacological_actions`
+  - Drug-likeness (Lipinski Rule of 5): `xlogp`, `hydrogen_bond_donors/acceptors`, `tpsa`, `rotatable_bonds`, `lipinski_violations`, `drug_like`
+  - External IDs: `unii` (FDA UNII), `dtxsid` (EPA toxicity), `nsc_ids` (NCI)
+  - Cross-reference counts: `literature_count`, `patent_count` (for FDA drugs)
+  - Added `compute_lipinski_violations()` helper function
+  - Tested: Atorvastatin → Pharm Actions: ["HMG-CoA Reductase Inhibitors"], Lipinski: 1 violation (MW), Drug-like: True
+- **PubChem Bioactivity (PATH 23) (2026-01)**: Detailed bioactivity measurements
+  - Path: `drugs >> pubchem >> pubchem_activity >> pubchem_assay`
+  - Activity types: IC50, Ki, Kd, EC50, AC50, ED50, GI50
+  - Values normalized to nM for comparison
+  - Potency categories: ultra_potent (<1nM), very_potent (1-10nM), potent (10-100nM), moderate (100nM-1µM), weak (1-10µM)
+  - Assay metadata: source (BindingDB, ChEMBL), outcome type (Screening/Confirmatory), hit rate
+  - Target proteins: UniProt IDs for off-target analysis
+  - Use cases: potency ranking, target validation, off-target profiling
+  - Tested: Atorvastatin → 75 activities across 75 targets including P51639 (HMG-CoA Reductase)
+  - Future: BAO (BioAssay Ontology) for assay classification (detection technology, target type, assay stage)
+- **CTD Integration (PATH 24) (2026-01)**: Chemical-gene-disease interactions from Comparative Toxicogenomics Database
+  - Path: `mesh_id >> ctd` or `drug_name >> text >> ctd`
+  - Gene interactions: action types (increases/decreases expression, binding, transport, etc.)
+  - Disease associations: direct evidence and gene-inferred connections
+  - PubMed references for each interaction
+  - Effect categorization: expression, activity, binding, metabolism, transport, secretion
+  - Tested: Aspirin (D001241) → 50 gene interactions, 30 disease associations
+- **DrugCentral Integration (PATH 25) (2026-01)**: Drug-target interactions with mechanism of action
+  - Path: `struct_id >> drugcentral` or `drug_name >> text >> drugcentral`
+  - Target proteins with UniProt accessions and gene symbols
+  - Action types: INHIBITOR, AGONIST, ANTAGONIST, MODULATOR, etc.
+  - Activity values: Ki, IC50 with potency interpretation
+  - Target classes: Enzyme, GPCR, Ion channel, Kinase, etc.
+  - Target Development Level (TDL): Tclin, Tchem, Tbio, Tdark (from TCRD/Pharos)
+  - Shared target detection (proteins targeted by multiple drugs)
+  - Tested: Atorvastatin (struct_id 4474) → 8 targets including HMGCR (INHIBITOR)
+- **MSigDB Integration (PATH 26) (2026-01)**: Molecular Signatures Database gene set enrichment
+  - Path: `gene >> hgnc >> msigdb` or `geneset_name >> msigdb`
+  - Collections: H (Hallmark), C1-C8 (Positional, Curated, Regulatory, Computational, Ontology, Oncogenic, Immunologic, Cell Type)
+  - Gene set membership with overlap calculation
+  - Simple fold enrichment scoring
+  - Use cases: pathway enrichment, functional annotation, oncogenic signatures
+  - Tested: BRCA1 → 75 gene sets, HALLMARK_APOPTOSIS → 161 genes
+- **BioGRID Status (PATH 27) (2026-01)**: Protein-protein interactions - PARTIAL
+  - Path: `biogrid_id >> biogrid`
+  - Status: Cross-references working (UniProt, Entrez, PubMed, RefSeq)
+  - Issue: Attributes empty (`{"Empty": true}`) - interaction metadata not stored
+  - Recommend: Report to BioBTree team for next release
+  - Note: For PPI, use PATH 18 (STRING) which is fully functional

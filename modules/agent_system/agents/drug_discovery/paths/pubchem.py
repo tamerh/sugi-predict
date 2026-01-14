@@ -3,12 +3,54 @@
 Two complementary approaches:
 - PATH 6a: Enrich ChEMBL drugs with PubChem data via InChI key matching
 - PATH 6b: Find FDA compounds via target bioactivity (Uniprot >> pubchem_activity >> pubchem)
+
+New fields available (Jan 2026):
+- pharmacological_actions: Drug mechanism/class (e.g., "ACE Inhibitors", "Statins")
+- compound_type: Classification (drug, literature, patent, bioactive, biologic)
+- Drug-likeness: xlogp, hydrogen_bond_donors/acceptors, tpsa, rotatable_bonds
+- External IDs: unii (FDA), dtxsid (EPA toxicity), nsc_ids (NCI)
+- Cross-refs: PubMed literature count, Patent count
 """
 
 from typing import Dict, Any, List, Optional
 import re
 
 from .base import BasePath, PathResult
+
+
+def compute_lipinski_violations(
+    mw: float,
+    hbd: int,
+    hba: int,
+    logp: float
+) -> Dict[str, Any]:
+    """
+    Compute Lipinski's Rule of Five violations for oral drug-likeness.
+
+    Rule of Five thresholds:
+    - Molecular Weight ≤ 500 Da
+    - Hydrogen Bond Donors ≤ 5
+    - Hydrogen Bond Acceptors ≤ 10
+    - LogP ≤ 5
+
+    Returns dict with violations count and details.
+    """
+    violations = []
+
+    if mw and mw > 500:
+        violations.append(f"MW={mw:.1f}>500")
+    if hbd and hbd > 5:
+        violations.append(f"HBD={hbd}>5")
+    if hba and hba > 10:
+        violations.append(f"HBA={hba}>10")
+    if logp and logp > 5:
+        violations.append(f"LogP={logp:.1f}>5")
+
+    return {
+        "violations": len(violations),
+        "details": violations,
+        "drug_like": len(violations) <= 1  # 0-1 violations is acceptable
+    }
 
 
 class PubChemEnrichmentPath(BasePath):
@@ -52,6 +94,30 @@ class PubChemEnrichmentPath(BasePath):
             return {}
         except Exception:
             return {}
+
+    async def _get_literature_count(self, pubchem_cid: str) -> int:
+        """Get count of PubMed literature references for a compound."""
+        try:
+            result = await self.biobtree.map_query_all_pages(
+                terms=[pubchem_cid],
+                mapfilter=">>pubchem>>pubmed",
+                mode="lite"
+            )
+            return len(result.get('targets', []))
+        except Exception:
+            return 0
+
+    async def _get_patent_count(self, pubchem_cid: str) -> int:
+        """Get count of patents referencing a compound."""
+        try:
+            result = await self.biobtree.map_query_all_pages(
+                terms=[pubchem_cid],
+                mapfilter=">>pubchem>>patent",
+                mode="lite"
+            )
+            return len(result.get('targets', []))
+        except Exception:
+            return 0
 
     async def execute(self, disease: str, drugs: List[Dict] = None, **kwargs) -> PathResult:
         """
@@ -135,19 +201,57 @@ class PubChemEnrichmentPath(BasePath):
                     drug = drug_by_inchi.get(inchi_key, {})
                     pubchem_cid = pc.get('identifier', '')
 
+                    # Extract drug-likeness properties
+                    mw = pc_attr.get('molecular_weight')
+                    hbd = pc_attr.get('hydrogen_bond_donors')
+                    hba = pc_attr.get('hydrogen_bond_acceptors')
+                    logp = pc_attr.get('xlogp')
+
+                    # Compute Lipinski Rule of 5
+                    lipinski = compute_lipinski_violations(mw, hbd, hba, logp)
+
                     enriched = {
+                        # Core identifiers
                         'chembl_id': drug.get('chembl_id', ''),
                         'name': drug.get('name', ''),
                         'inchi_key': inchi_key,
                         'pubchem_cid': pubchem_cid,
+
+                        # Classification
                         'fda_approved': pc_attr.get('is_fda_approved', False),
+                        'compound_type': pc_attr.get('compound_type', ''),
+                        'pharmacological_actions': pc_attr.get('pharmacological_actions', []),
+
+                        # Names and synonyms
+                        'title': pc_attr.get('title', ''),
                         'synonyms': pc_attr.get('synonyms', [])[:10],
                         'drug_names': pc_attr.get('drug_names', []),
-                        'title': pc_attr.get('title', ''),
+
+                        # Flags
                         'has_patents': pc_attr.get('has_patents', False),
                         'has_literature': pc_attr.get('has_literature', False),
-                        'molecular_weight': pc_attr.get('molecular_weight'),
+
+                        # Molecular properties
+                        'molecular_weight': mw,
+                        'molecular_formula': pc_attr.get('molecular_formula', ''),
                         'smiles': pc_attr.get('smiles', ''),
+
+                        # Drug-likeness (Lipinski Rule of 5)
+                        'xlogp': logp,
+                        'hydrogen_bond_donors': hbd,
+                        'hydrogen_bond_acceptors': hba,
+                        'rotatable_bonds': pc_attr.get('rotatable_bonds'),
+                        'tpsa': pc_attr.get('tpsa'),
+                        'lipinski_violations': lipinski['violations'],
+                        'drug_like': lipinski['drug_like'],
+
+                        # External database IDs
+                        'unii': pc_attr.get('unii', ''),  # FDA UNII
+                        'dtxsid': pc_attr.get('dtxsid', ''),  # EPA toxicity
+                        'nsc_ids': pc_attr.get('nsc_ids', []),  # NCI compound IDs
+
+                        # MeSH terms from PubChem directly
+                        'mesh_terms': pc_attr.get('mesh_terms', []),
                     }
 
                     # Step 4: Get MeSH data for drug class and better synonyms
@@ -157,12 +261,26 @@ class PubChemEnrichmentPath(BasePath):
                             drugs_with_mesh += 1
                             enriched['mesh_id'] = mesh_data.get('mesh_id', '')
                             enriched['mesh_name'] = mesh_data.get('mesh_name', '')
-                            enriched['drug_class'] = mesh_data.get('drug_class', [])
+                            # Merge drug_class from MeSH if pharmacological_actions empty
+                            if not enriched['pharmacological_actions']:
+                                enriched['drug_class'] = mesh_data.get('drug_class', [])
+                            else:
+                                enriched['drug_class'] = enriched['pharmacological_actions']
                             enriched['trade_names'] = mesh_data.get('trade_names', [])[:10]
                             enriched['therapeutic_scope'] = mesh_data.get('therapeutic_scope', '')
 
+                        # Get literature and patent counts (only for FDA drugs to save API calls)
+                        if enriched['fda_approved']:
+                            enriched['literature_count'] = await self._get_literature_count(pubchem_cid)
+                            enriched['patent_count'] = await self._get_patent_count(pubchem_cid)
+
                     enriched_drugs.append(enriched)
                     pubchem_data[drug.get('chembl_id', inchi_key)] = enriched
+
+            # Compute summary statistics
+            fda_count = sum(1 for d in enriched_drugs if d.get('fda_approved'))
+            drug_like_count = sum(1 for d in enriched_drugs if d.get('drug_like'))
+            with_pharm_actions = sum(1 for d in enriched_drugs if d.get('pharmacological_actions'))
 
             return self._create_result(
                 success=True,
@@ -173,7 +291,9 @@ class PubChemEnrichmentPath(BasePath):
                     "drugs_with_inchi": len(all_inchi_keys),
                     "drugs_found_in_pubchem": len(enriched_drugs),
                     "drugs_with_mesh": drugs_with_mesh,
-                    "fda_approved_count": sum(1 for d in enriched_drugs if d.get('fda_approved')),
+                    "fda_approved_count": fda_count,
+                    "drug_like_count": drug_like_count,
+                    "with_pharmacological_actions": with_pharm_actions,
                     "note": f"PubChem + MeSH enrichment for {disease} drugs"
                 },
                 drugs=enriched_drugs,
@@ -181,7 +301,10 @@ class PubChemEnrichmentPath(BasePath):
                     "query": "chembl_drugs >> inchi_key >> pubchem >> mesh",
                     "drugs_queried": len(drugs),
                     "drugs_enriched": len(enriched_drugs),
-                    "drugs_with_mesh": drugs_with_mesh
+                    "drugs_with_mesh": drugs_with_mesh,
+                    "fda_approved": fda_count,
+                    "drug_like": drug_like_count,
+                    "with_pharm_actions": with_pharm_actions
                 }
             )
 
@@ -340,13 +463,31 @@ class PubChemActivityPath(BasePath):
                     pc = target.get('pubchem', {})
 
                     if cid not in all_compounds:
+                        # Extract drug-likeness properties
+                        mw = pc.get('molecular_weight')
+                        hbd = pc.get('hydrogen_bond_donors')
+                        hba = pc.get('hydrogen_bond_acceptors')
+                        logp = pc.get('xlogp')
+                        lipinski = compute_lipinski_violations(mw, hbd, hba, logp)
+
                         all_compounds[cid] = {
                             'pubchem_cid': cid,
                             'title': pc.get('title', ''),
                             'synonyms': pc.get('synonyms', [])[:5],
                             'fda_approved': pc.get('is_fda_approved', False),
+                            'compound_type': pc.get('compound_type', ''),
+                            'pharmacological_actions': pc.get('pharmacological_actions', []),
                             'smiles': pc.get('smiles', ''),
-                            'molecular_weight': pc.get('molecular_weight'),
+                            'molecular_weight': mw,
+                            'molecular_formula': pc.get('molecular_formula', ''),
+                            'xlogp': logp,
+                            'hydrogen_bond_donors': hbd,
+                            'hydrogen_bond_acceptors': hba,
+                            'tpsa': pc.get('tpsa'),
+                            'lipinski_violations': lipinski['violations'],
+                            'drug_like': lipinski['drug_like'],
+                            'mesh_terms': pc.get('mesh_terms', []),
+                            'unii': pc.get('unii', ''),
                             'targets': []
                         }
 

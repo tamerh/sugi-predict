@@ -7,6 +7,7 @@ Standalone vector database operations for BioYoda.
 This module manages Qdrant vector database operations **independently** from data processing:
 - **Server Management**: Start/stop Qdrant server
 - **Data Insertion**: Insert FAISS indices to Qdrant collections
+- **Index Management**: Trigger HNSW index building after bulk inserts
 - **Status Monitoring**: Check server and collection status
 
 ## Prerequisites
@@ -39,12 +40,16 @@ The Qdrant container (`modules/qdrant/setup/singularity/qdrant.sif`) is included
 # 2. Insert data (after processing)
 ./bioyoda.sh qdrant insert pubmed
 ./bioyoda.sh qdrant insert clinical_trials
+./bioyoda.sh qdrant insert patents_compounds
 ./bioyoda.sh qdrant insert esm2
 
-# 3. Check status
+# 3. Trigger HNSW indexing for large collections
+./bioyoda.sh qdrant reindex patents_compounds --monitor
+
+# 4. Check status
 ./bioyoda.sh qdrant status
 
-# 4. Stop server when done
+# 5. Stop server when done
 ./bioyoda.sh qdrant stop
 ```
 
@@ -115,6 +120,44 @@ Shows:
 - Insertion automatically tracks processed files
 - Skips already-inserted data
 - Uses document-based point IDs for upsert (no duplicates)
+
+### Trigger HNSW Indexing (Reindex)
+
+After bulk insertion, HNSW indexing may need to be triggered manually for large collections:
+
+```bash
+# Trigger indexing for specific collection
+./bioyoda.sh qdrant reindex patents_compounds
+
+# Trigger and monitor progress
+./bioyoda.sh qdrant reindex patents_compounds --monitor
+
+# Reindex all collections
+./bioyoda.sh qdrant reindex all
+
+# Custom indexing threshold (default: 20000)
+./bioyoda.sh qdrant reindex patents_compounds --threshold 10000
+```
+
+**Why is this needed?**
+
+For performance during bulk inserts, some collections (e.g., `patents_compounds`) have a high `indexing_threshold` in config. This delays HNSW index building until after insertion completes.
+
+The reindex command:
+1. Lowers `indexing_threshold` to enable indexing
+2. Inserts/deletes a dummy point to trigger the optimizer
+3. Optionally monitors progress until complete
+
+**Monitoring indexing:**
+```bash
+# Standalone monitoring script
+./scripts/check_qdrant_indexing.sh
+
+# Or with the reindex command
+./bioyoda.sh qdrant reindex patents_compounds --monitor
+```
+
+**Note:** HNSW index building for 30M+ vectors takes several hours. Without the index, searches do full scans (100+ seconds per query).
 
 ## Storage Configuration
 
@@ -289,6 +332,6 @@ modules/qdrant/
 
 ---
 
-**Module Version**: 0.3.0
-**Last Updated**: December 2025
-**Changes**: Simplified for local deployment, removed SGE cluster support
+**Module Version**: 0.4.0
+**Last Updated**: January 2026
+**Changes**: Added `qdrant reindex` command for triggering HNSW index builds after bulk insertion

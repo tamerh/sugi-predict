@@ -189,7 +189,8 @@ class BioYodaQdrantClient:
         self,
         query_vector: List[float],
         limit: int = 10,
-        score_threshold: float = 0.0
+        score_threshold: float = 0.0,
+        timeout: int = 120
     ) -> List[Dict[str, Any]]:
         """
         Search for similar compounds by Morgan fingerprint.
@@ -198,29 +199,39 @@ class BioYodaQdrantClient:
             query_vector: 2048-dim Morgan fingerprint
             limit: Maximum number of results
             score_threshold: Minimum similarity score
+            timeout: Timeout in seconds (default 120 for large collection)
 
         Returns:
             List of similar compounds with SMILES and scores
         """
-        results = self.client.query_points(
-            collection_name="patents_compounds",
-            query=query_vector,
-            limit=limit,
-            score_threshold=score_threshold
+        # Use longer timeout for large compound collection (30M+ vectors)
+        from qdrant_client import QdrantClient
+        compound_client = QdrantClient(
+            host=self.config.host,
+            port=self.config.port,
+            timeout=timeout
         )
-
-        return [
-            {
-                "surechembl_id": hit.payload.get("surechembl_id"),
-                "smiles": hit.payload.get("smiles"),
-                "molecular_weight": hit.payload.get("molecular_weight"),
-                "formula": hit.payload.get("formula"),
-                "inchi": hit.payload.get("inchi"),
-                "score": hit.score,
-                "id": hit.id
-            }
-            for hit in results.points
-        ]
+        try:
+            results = compound_client.query_points(
+                collection_name="patents_compounds",
+                query=query_vector,
+                limit=limit,
+                score_threshold=score_threshold
+            )
+            return [
+                {
+                    "surechembl_id": hit.payload.get("surechembl_id"),
+                    "smiles": hit.payload.get("smiles"),
+                    "molecular_weight": hit.payload.get("molecular_weight"),
+                    "formula": hit.payload.get("formula"),
+                    "inchi": hit.payload.get("inchi"),
+                    "score": hit.score,
+                    "id": hit.id
+                }
+                for hit in results.points
+            ]
+        finally:
+            compound_client.close()
 
     async def search_compounds_by_id(
         self,

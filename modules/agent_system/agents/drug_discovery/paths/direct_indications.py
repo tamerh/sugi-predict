@@ -38,8 +38,9 @@ class DirectIndicationsPath(BasePath):
             PathResult with drugs that have direct indications for this disease
         """
         try:
-            # Query: disease >> efo >> chembl_molecule (using client pagination)
-            mapfilter = ">>efo>>chembl_molecule"
+            # Query: disease >> mondo >> efo >> chembl_molecule
+            # Using MONDO first provides better text search (richer synonyms than EFO)
+            mapfilter = ">>mondo>>efo>>chembl_molecule"
             result = await self.biobtree.map_query_all_pages(
                 terms=[disease],
                 mapfilter=mapfilter,
@@ -64,7 +65,7 @@ class DirectIndicationsPath(BasePath):
                 data=wrapped_result,
                 drugs=drugs,
                 metadata={
-                    "query": f"{disease} >> efo >> chembl_molecule",
+                    "query": f"{disease} >> mondo >> efo >> chembl_molecule",
                     "min_phase_filter": min_phase,
                     "drug_count": len(drugs),
                     "pages_fetched": result.get("pages_fetched", 1)
@@ -75,5 +76,5 @@ class DirectIndicationsPath(BasePath):
             return self._create_result(
                 success=False,
                 error=str(e),
-                metadata={"query": f"{disease} >> efo >> chembl_molecule"}
+                metadata={"query": f"{disease} >> mondo >> efo >> chembl_molecule"}
             )

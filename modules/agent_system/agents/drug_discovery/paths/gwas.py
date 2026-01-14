@@ -39,9 +39,10 @@ class GWASPath(BasePath):
         Returns list of studies with PubMed IDs, titles, authors, etc.
         """
         try:
+            # Use MONDO >> EFO for better disease name resolution
             result = await self.biobtree.map_query_all_pages(
                 terms=[disease],
-                mapfilter=">>efo>>gwas_study",
+                mapfilter=">>mondo>>efo>>gwas_study",
                 mode="full"
             )
 
@@ -90,7 +91,8 @@ class GWASPath(BasePath):
             gwas_studies = await self._get_gwas_studies(disease)
 
             # Step 1: Get genes associated with disease via GWAS
-            mapfilter = ">>efo>>gwas>>ensembl[ensembl.genome==\"homo_sapiens\"]"
+            # Use MONDO >> EFO for better disease name resolution
+            mapfilter = ">>mondo>>efo>>gwas>>ensembl[ensembl.genome==\"homo_sapiens\"]"
             gene_result = await self.biobtree.map_query_all_pages(
                 terms=[disease],
                 mapfilter=mapfilter,
@@ -118,7 +120,7 @@ class GWASPath(BasePath):
                     },
                     genes=[],
                     metadata={
-                        "query": f"{disease} >> efo >> gwas >> ensembl",
+                        "query": f"{disease} >> mondo >> efo >> gwas >> ensembl",
                         "gene_count": 0,
                         "drug_count": 0,
                         "study_count": len(gwas_studies)
@@ -169,7 +171,7 @@ class GWASPath(BasePath):
                 drugs=all_drugs,
                 genes=genes,
                 metadata={
-                    "query": f"{disease} >> efo >> gwas >> ensembl >> ... >> chembl_molecule",
+                    "query": f"{disease} >> mondo >> efo >> gwas >> ensembl >> ... >> chembl_molecule",
                     "gene_count": len(genes),
                     "drug_count": len(all_drugs),
                     "study_count": len(gwas_studies)
@@ -180,5 +182,5 @@ class GWASPath(BasePath):
             return self._create_result(
                 success=False,
                 error=str(e),
-                metadata={"query": f"{disease} >> efo >> gwas >> ensembl"}
+                metadata={"query": f"{disease} >> mondo >> efo >> gwas >> ensembl"}
             )
