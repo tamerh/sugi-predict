@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 12747,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/pubmed-poc/scripts/index.sh",
+  "task_id": "4:4:test_abstracts:index",
+  "timestamp": "2026-06-09T14:47:34+02:00"
+}

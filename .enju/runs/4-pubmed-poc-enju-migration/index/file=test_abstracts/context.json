@@ -1,0 +1,15 @@
+{
+  "instance_key": "test_abstracts",
+  "iteration": {
+    "file": "test_abstracts"
+  },
+  "params": {
+    "files": [
+      "test_abstracts"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "index",
+  "task_id": "4:4:test_abstracts:index",
+  "writes_artifacts": []
+}
