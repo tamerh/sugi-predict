@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 1832207,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/pubmed-update/scripts/process.sh",
+  "task_id": "4:16:00:process",
+  "timestamp": "2026-06-09T21:36:31+02:00"
+}
