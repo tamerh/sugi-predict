@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 342,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/pubmed-poc/scripts/prepare.sh",
+  "task_id": "4:11:prepare",
+  "timestamp": "2026-06-09T16:27:16+02:00"
+}

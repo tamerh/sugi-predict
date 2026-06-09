@@ -1,0 +1,13 @@
+{
+  "instance_key": "",
+  "iteration": null,
+  "params": {
+    "files": [
+      "test_abstracts"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "prepare",
+  "task_id": "4:11:prepare",
+  "writes_artifacts": []
+}
