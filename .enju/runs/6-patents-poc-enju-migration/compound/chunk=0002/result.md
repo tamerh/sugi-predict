@@ -1,0 +1,31 @@
+[2026-06-09 14:56:09] [MEM: 122.8MB] System RAM: 125.7GB total, 116.2GB available
+[2026-06-09 14:56:09] [MEM: 122.8MB] === Starting Compound Processing (Streaming Mode) ===
+[2026-06-09 14:56:09] [MEM: 150.2MB] RDKit loaded successfully (using MorganGenerator)
+[2026-06-09 14:56:09] [MEM: 150.2MB] === Step 3: Processing compounds in batches ===
+[2026-06-09 14:56:09] [MEM: 150.2MB] Counting total compounds to process...
+[2026-06-09 14:56:09] [MEM: 150.2MB] Total compounds to process: 2,000
+[2026-06-09 14:56:09] [MEM: 150.2MB] Estimated memory needed: 0.02 GB
+[2026-06-09 14:56:09] [MEM: 150.2MB] Pre-allocating final array (2000 x 2048)...
+[2026-06-09 14:56:09] [MEM: 150.2MB] Successfully allocated 0.02 GB array
+[2026-06-09 14:56:09] [MEM: 150.2MB] Loading compounds from snapshots/raw_data/patents/chunked_compounds/compounds_chunk_0002.parquet
+[2026-06-09 14:56:09] [MEM: 157.0MB] Total compounds in file: 500,000
+[2026-06-09 14:56:09] [MEM: 157.0MB] Will process: 2,000 compounds
+[2026-06-09 14:56:09] [MEM: 337.1MB]   Loaded batch: 2,000 / 2,000 compounds
+[2026-06-09 14:56:09] [MEM: 337.1MB] Processing batch 1 with 2,000 compounds
+[2026-06-09 14:56:09] [MEM: 337.1MB] Processing 2000 compounds...
+[2026-06-09 14:56:09] [MEM: 355.9MB] Completed: 2000 valid fingerprints, 0 invalid/skipped
+[2026-06-09 14:56:09] [MEM: 371.5MB] Copied 2,000 fingerprints to final array at offset 0
+[2026-06-09 14:56:09] [MEM: 371.5MB] Batch 1 complete. Total processed so far: 2,000
+[2026-06-09 14:56:09] [MEM: 322.8MB] Successfully processed 2,000 compound records
+[2026-06-09 14:56:09] [MEM: 298.9MB] Final fingerprints shape: (2000, 2048)
+[2026-06-09 14:56:09] [MEM: 298.9MB] Creating FAISS index for 2000 fingerprints...
+[2026-06-09 14:56:09] [MEM: 298.9MB] Fingerprints ready: dtype=float32, shape=(2000, 2048), C-contiguous=True
+[2026-06-09 14:56:09] [MEM: 298.9MB] Creating FAISS IndexFlatL2...
+[2026-06-09 14:56:09] [MEM: 299.2MB] Adding 2000 vectors to index...
+[2026-06-09 14:56:09] [MEM: 314.2MB] FAISS index created: 2000 vectors
+[2026-06-09 14:56:09] [MEM: 314.2MB] Saving FAISS index to test_out/patents_poc/compounds/compounds_0002.index
+[2026-06-09 14:56:09] [MEM: 314.4MB] Saving metadata to test_out/patents_poc/compounds/compounds_0002.json
+[2026-06-09 14:56:09] [MEM: 314.5MB] Files saved successfully:
+[2026-06-09 14:56:09] [MEM: 314.5MB]   Index: 15.6MB
+[2026-06-09 14:56:09] [MEM: 314.5MB]   Metadata: 0.5MB
+[2026-06-09 14:56:09] [MEM: 314.5MB] === Compound Processing Complete ===
