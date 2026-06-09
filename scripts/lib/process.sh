@@ -107,24 +107,10 @@ kill_process_tree() {
     fi
 }
 
-# Cancel SGE cluster jobs related to a module
-# Usage: cancel_cluster_jobs <base_dir> <module>
+# SGE cluster job cancellation was retired in the Enju migration (no qsub).
+# Kept as a no-op so any legacy caller still resolves.
 cancel_cluster_jobs() {
-    local base_dir="$1"
-    local module="$2"
-    local main_log="${base_dir}/logs/bioyoda_${module}_main.log"
-
-    if [[ -f "$main_log" ]]; then
-        # Extract job IDs from main log
-        local job_ids=$(grep 'Your job' "$main_log" 2>/dev/null | sed -n "s/.*Your job \([0-9]*\).*/\1/p")
-
-        if [[ -n "$job_ids" ]]; then
-            log_info "Cancelling SGE jobs..."
-            for job_id in $job_ids; do
-                qdel "$job_id" 2>/dev/null || true
-            done
-        fi
-    fi
+    :
 }
 
 # Create a wrapper script for background execution

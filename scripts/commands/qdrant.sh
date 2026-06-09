@@ -19,7 +19,7 @@ Qdrant Vector Database Management
 Usage: bioyoda.sh qdrant <subcommand> [options]
 
 Subcommands:
-    start         Start Qdrant server (local or cluster)
+    start         Start Qdrant server (local, Singularity)
     stop          Stop Qdrant server
     restart       Restart with existing storage directory
     status        Check Qdrant server status and collections
@@ -28,7 +28,6 @@ Subcommands:
     reindex       Trigger HNSW index build after bulk insertion
 
 Start Options:
-    --mode local              Run mode (only local supported)
     --runtime <hours>         Runtime in hours (default: 48)
     --memory <mb>             Memory in MB (default: 32000)
     --out-dir <path>          Use specific storage directory
@@ -36,11 +35,9 @@ Start Options:
     --config <file>           Use custom config file
 
 Insert Options:
-    --cluster                 Submit insertion jobs to cluster
-    --local                   Run insertion locally (default)
+    --local                   Run insertion locally (default; only mode)
     --bg, -b                  Run in background
-    --jobs N                  Max parallel jobs (for cluster mode)
-    --cores N                 Number of cores (for local mode)
+    --cores N                 Number of cores
     --test                    Use test configuration
 
 Reindex Options:
@@ -59,10 +56,9 @@ Datasets:
 
 Examples:
     bioyoda.sh qdrant start
-    bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
     bioyoda.sh qdrant start --out-dir /path/to/existing/qdrant  # Restart with existing storage
     bioyoda.sh qdrant restart                                   # Auto-detect and restart
-    bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --bg
+    bioyoda.sh qdrant insert pubmed                             # Insert (local)
     bioyoda.sh qdrant stop-insert pubmed
     bioyoda.sh qdrant reindex patents_compounds                 # Trigger HNSW indexing
     bioyoda.sh qdrant reindex patents_compounds --monitor       # Trigger and monitor progress
@@ -273,20 +269,12 @@ qdrant_insert() {
     # Parse arguments
     parse_common_args "$@"
 
-    log_info "Inserting ${dataset} to Qdrant (mode=${EXECUTION_MODE})"
+    log_info "Inserting ${dataset} to Qdrant (local)"
 
     check_snakemake || exit 1
 
     # Resolve config
     local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-
-    # Auto-select GPU config if on cluster
-    if [[ "$USE_TEST" != "true" ]] && [[ "$EXECUTION_MODE" == "cluster" ]]; then
-        active_config=$(auto_select_gpu_config "$active_config" "$EXECUTION_MODE")
-        if [[ "$active_config" == "config/config_gpu.yaml" ]]; then
-            log_info "Auto-selected GPU config: config_gpu.yaml"
-        fi
-    fi
 
     local base_dir=$(get_base_dir "$active_config")
     ensure_directories "$active_config"
@@ -301,19 +289,12 @@ qdrant_insert() {
         exit 1
     fi
 
-    # Log execution info
-    local queue=$(get_queue_from_config "$active_config")
-    if [[ "$EXECUTION_MODE" == "cluster" ]]; then
-        log_cluster_info "$queue" "$JOBS"
-    else
-        log_local_info "$CORES"
-    fi
+    # Log execution info (local only — cluster/SGE retired)
+    log_local_info "$CORES"
 
     # Build Snakemake command
     local snakemake_cmd=$(build_qdrant_insert_command \
         "$active_config" \
-        "$EXECUTION_MODE" \
-        "$JOBS" \
         "$CORES" \
         "$USE_TEST" \
         "$dataset"

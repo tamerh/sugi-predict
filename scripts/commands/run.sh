@@ -65,13 +65,8 @@ cmd_run() {
         log_info "Deleted checkpoint marker to force re-evaluation..."
     fi
 
-    # Log execution info
-    local queue=$(get_queue_from_config "$active_config")
-    if [[ "$EXECUTION_MODE" == "cluster" ]]; then
-        log_cluster_info "$queue" "$JOBS"
-    else
-        log_local_info "$CORES"
-    fi
+    # Log execution info (local only — cluster/SGE retired in the Enju migration)
+    log_local_info "$CORES"
 
     # Build Snakemake command
     # If target is specified (via -- separator), use that; otherwise use module
@@ -79,8 +74,6 @@ cmd_run() {
     local snakemake_cmd=$(build_pipeline_command \
         "$DEFAULT_SNAKEFILE" \
         "$active_config" \
-        "$EXECUTION_MODE" \
-        "$JOBS" \
         "$CORES" \
         "$USE_TEST" \
         "$UPDATE_MODE" \
@@ -94,7 +87,7 @@ cmd_run() {
         "$pid_base" \
         "$main_log" \
         "$BACKGROUND" \
-        "$EXECUTION_MODE"
+        "local"
 }
 
 # If script is run directly

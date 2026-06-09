@@ -45,20 +45,14 @@ parse_common_args() {
 
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --cluster)
-                EXECUTION_MODE="cluster"
-                shift
-                ;;
             --local)
+                # Accepted for back-compat; local is the only mode now
+                # (SGE/cluster retired in the Enju migration).
                 EXECUTION_MODE="local"
                 shift
                 ;;
             --cores)
                 CORES="$2"
-                shift 2
-                ;;
-            --jobs)
-                JOBS="$2"
                 shift 2
                 ;;
             --config)

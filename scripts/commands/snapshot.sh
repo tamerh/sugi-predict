@@ -29,7 +29,7 @@ cmd_snapshot() {
                 echo "Example:"
                 echo "  bioyoda.sh snapshot --name prod_v1.0"
                 echo "  cd snapshots/prod_v1.0/code"
-                echo "  ./bioyoda.sh run pubmed --cluster --bg"
+                echo "  ./bioyoda.sh enju pubmed"
                 exit 0
                 ;;
             *)
@@ -161,7 +161,7 @@ Directory Structure:
 
 Usage:
   cd snapshots/${snapshot_name}/code
-  ./bioyoda.sh run pubmed --cluster --bg --config config/config.yaml
+  ./bioyoda.sh enju pubmed --config config/config.yaml
 
 Configuration:
   - All config files have been updated with:
@@ -198,7 +198,7 @@ EOF
     log_info "To use this snapshot:"
     echo ""
     echo "  cd snapshots/${snapshot_name}/code"
-    echo "  ./bioyoda.sh run pubmed --cluster --bg --config config/config.yaml"
+    echo "  ./bioyoda.sh enju pubmed --config config/config.yaml"
     echo ""
     log_info "Snapshot info: snapshots/${snapshot_name}/code/SNAPSHOT_INFO.txt"
     echo ""

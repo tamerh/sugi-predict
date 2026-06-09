@@ -16,18 +16,18 @@
 #   ./bioyoda.sh stop
 #
 #   # Data processing pipelines
-#   ./bioyoda.sh run pubmed --local                     # Run locally
-#   ./bioyoda.sh run pubmed --cluster --bg --jobs 50    # Run on cluster in background
-#   ./bioyoda.sh run all --cluster --bg --jobs 100      # Run all modules
+#   ./bioyoda.sh enju pubmed                            # Run as an Enju DAG (preferred)
+#   ./bioyoda.sh enju clinical_trials                   # Enju DAG: prepare -> fan-out -> merge
+#   ./bioyoda.sh run pubmed --local                     # Run via local Snakemake
 #   ./bioyoda.sh run pubmed --test --local              # Test with small dataset
-#   ./bioyoda.sh run pubmed --cluster --bg --cuda11.4   # GPU cluster with CUDA 11.4
+#   (SGE/cluster execution retired — Enju distributes across citizens, not qsub)
 #
 #   # Qdrant vector database
 #   ./bioyoda.sh qdrant start                                      # Start locally
 #   ./bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
 #   ./bioyoda.sh qdrant start --out-dir /path/to/existing/storage  # Use existing data
 #   ./bioyoda.sh qdrant restart                                    # Auto-detect and restart
-#   ./bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --bg     # Insert data
+#   ./bioyoda.sh qdrant insert pubmed                              # Insert data (local)
 #   ./bioyoda.sh qdrant stop-insert pubmed                         # Stop insertion
 #   ./bioyoda.sh qdrant status                                     # Check status
 #   ./bioyoda.sh qdrant stop                                       # Stop server
@@ -38,7 +38,7 @@
 #
 #   # Snapshots (isolated production copies)
 #   ./bioyoda.sh snapshot --name prod_v1.0
-#   cd snapshots/prod_v1.0/code && ./bioyoda.sh run all --cluster --bg
+#   cd snapshots/prod_v1.0/code && ./bioyoda.sh enju all
 #
 #   # Google Drive sync (for Colab GPU processing)
 #   ./bioyoda.sh push patents                           # Push data + code to Drive
@@ -143,10 +143,16 @@ main() {
             fi
             ;;
 
-        # Data processing
+        # Data processing (Snakemake, local)
         run)
             source "${SCRIPT_DIR}/commands/run.sh"
             cmd_run "$@"
+            ;;
+
+        # Data processing (Enju DAG — distribution via citizens, not SGE)
+        enju)
+            source "${SCRIPT_DIR}/commands/enju.sh"
+            cmd_enju "$@"
             ;;
 
         # Google Drive sync (for GPU processing)

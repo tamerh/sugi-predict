@@ -5,7 +5,8 @@ Usage: bioyoda.sh <command> [options]
 COMMANDS:
     start                     Start Qdrant server
     stop                      Stop Qdrant server
-    run <module>              Run data processing pipeline
+    enju <module>             Run data processing as an Enju DAG (preferred)
+    run <module>              Run data processing via local Snakemake
     status                    Show pipeline status
     qdrant <subcommand>       Manage Qdrant vector database
     test [--pipeline]         Run test suite
@@ -37,11 +38,9 @@ QDRANT SUBCOMMANDS:
     stop-insert <dataset>     Stop a running insertion job
 
 RUN OPTIONS:
-    --cluster                 Submit jobs to SGE cluster
-    --local                   Run locally (default)
+    --local                   Run locally (default; only mode)
     --bg, -b                  Run in background with nohup
-    --cores N                 Number of cores for local mode (default: 1)
-    --jobs N                  Max parallel cluster jobs (default: 100)
+    --cores N                 Number of cores (default: 1)
     --config FILE             Use custom config file
     --test                    Use test configuration
     --mode <full|update>      Processing mode (default: full)
@@ -51,8 +50,6 @@ RUN OPTIONS:
     --biobtree                Convert patents to JSON for biobtree ingestion
 
 QDRANT START OPTIONS:
-    --mode <local|cluster>    Run mode (default: local)
-    --queue <name>            SGE queue (default: scc, can use: gpu)
     --runtime <hours>         Runtime in hours (default: 48)
     --memory <mb>             Memory in MB (default: 32000)
     --out-dir <path>          Use existing storage directory
@@ -67,11 +64,12 @@ EXAMPLES:
     bioyoda.sh start
     bioyoda.sh stop
 
-    # Data processing
-    bioyoda.sh run pubmed --cluster --bg --jobs 50
-    bioyoda.sh run all --cluster --bg --jobs 100
+    # Data processing (Enju DAG — preferred)
+    bioyoda.sh enju pubmed
+    bioyoda.sh enju all
 
-    # Test with small dataset
+    # Or plain local Snakemake
+    bioyoda.sh run pubmed --local
     bioyoda.sh run pubmed --test --local
 
     # Patents: separate text vs compounds processing
@@ -80,10 +78,10 @@ EXAMPLES:
     bioyoda.sh run patents --local --biobtree                   # Convert to biobtree JSON
 
     # Qdrant operations
-    bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
+    bioyoda.sh qdrant start                                  # Start locally (Singularity)
     bioyoda.sh qdrant start --out-dir /scratch/qdrant_data  # Use existing storage
     bioyoda.sh qdrant restart                                # Auto-detect and restart
-    bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --bg
+    bioyoda.sh qdrant insert pubmed                          # Insert data (local)
     bioyoda.sh qdrant status
     bioyoda.sh qdrant stop
 
@@ -94,7 +92,7 @@ EXAMPLES:
     # Production snapshot
     bioyoda.sh snapshot --name prod_v1.0
     cd snapshots/prod_v1.0/code
-    ./bioyoda.sh run all --cluster --bg
+    ./bioyoda.sh enju all
 
     # Google Drive sync (for Colab GPU processing)
     bioyoda.sh push patents                     # Push data + code to Drive

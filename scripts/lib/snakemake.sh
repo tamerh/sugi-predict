@@ -2,10 +2,11 @@
 ##############################################################################
 #
 #   BioYoda Snakemake Command Builders
-#   Constructs Snakemake commands for local and cluster execution
+#   Constructs Snakemake commands for LOCAL execution only.
 #
-#   Note: GPU processing is done via Google Colab, not cluster.
-#         See modules/*/README.md for Colab GPU instructions.
+#   Note: SGE/cluster execution was retired in the Enju migration — distribution
+#         is handled by Enju (multi-citizen + git), not qsub. GPU work runs on a
+#         GPU citizen (or via Colab). Use `bioyoda.sh enju <module>` for the DAG.
 #
 ##############################################################################
 
@@ -17,13 +18,6 @@ DEFAULT_RUNTIME=604800  # 7 days in seconds
 DEFAULT_RETRIES=3
 TEST_RETRIES=0
 
-# Build the cluster submission command
-# Usage: build_cluster_submit_cmd <queue>
-build_cluster_submit_cmd() {
-    local queue="$1"
-    echo "qsub -cwd -V -q ${queue} -N {rule}.{jobid} -pe smp {threads} -l h_vmem={resources.mem_mb}M -l h_rt={resources.runtime} -o {params.LOG_cluster_log} -j y"
-}
-
 # Build base Snakemake command
 # Usage: build_snakemake_base <snakefile> <config_file>
 build_snakemake_base() {
@@ -31,18 +25,6 @@ build_snakemake_base() {
     local config_file="$2"
 
     echo "snakemake --snakefile ${snakefile} --configfile ${config_file} --latency-wait ${DEFAULT_LATENCY_WAIT}"
-}
-
-# Build cluster execution options
-# Usage: build_cluster_options <config_file> <jobs>
-build_cluster_options() {
-    local config_file="$1"
-    local jobs="$2"
-
-    local queue=$(get_queue_from_config "$config_file")
-    local submit_cmd=$(build_cluster_submit_cmd "$queue")
-
-    echo "--executor cluster-generic --cluster-generic-submit-cmd '${submit_cmd}' --jobs ${jobs} --default-resources mem_mb=${DEFAULT_MEM_MB} runtime=${DEFAULT_RUNTIME} threads=1"
 }
 
 # Build local execution options
@@ -76,33 +58,27 @@ build_config_overrides() {
 }
 
 # Build complete Snakemake command for pipeline execution
-# Usage: build_pipeline_command <snakefile> <config_file> <execution_mode> <jobs> <cores> <use_test> <update_mode> [dryrun] [target]
+# Usage: build_pipeline_command <snakefile> <config_file> <cores> <use_test> <update_mode> [dryrun] [target]
 build_pipeline_command() {
     local snakefile="$1"
     local config_file="$2"
-    local execution_mode="$3"
-    local jobs="$4"
-    local cores="$5"
-    local use_test="$6"
-    local update_mode="$7"
-    local dryrun="${8:-}"
-    local target="${9:-}"
+    local cores="$3"
+    local use_test="$4"
+    local update_mode="$5"
+    local dryrun="${6:-}"
+    local target="${7:-}"
 
     # Start with base command
     local cmd=$(build_snakemake_base "$snakefile" "$config_file")
 
-    # Add execution mode options
-    if [[ "$execution_mode" == "cluster" ]]; then
-        cmd="${cmd} $(build_cluster_options "$config_file" "$jobs")"
-    else
-        cmd="${cmd} $(build_local_options "$cores")"
-    fi
+    # Local execution only (SGE/cluster retired — Enju handles distribution)
+    cmd="${cmd} $(build_local_options "$cores")"
 
     # Add common options
     cmd="${cmd} $(build_common_options "$use_test" "$dryrun")"
 
     # Add config overrides
-    local overrides=$(build_config_overrides "$execution_mode" "$update_mode")
+    local overrides=$(build_config_overrides "local" "$update_mode")
     cmd="${cmd} --config ${overrides}"
 
     # Add target if specified
@@ -114,26 +90,20 @@ build_pipeline_command() {
 }
 
 # Build Snakemake command for Qdrant insertion
-# Usage: build_qdrant_insert_command <config_file> <execution_mode> <jobs> <cores> <use_test> <dataset>
+# Usage: build_qdrant_insert_command <config_file> <cores> <use_test> <dataset>
 build_qdrant_insert_command() {
     local config_file="$1"
-    local execution_mode="$2"
-    local jobs="$3"
-    local cores="$4"
-    local use_test="$5"
-    local dataset="$6"
+    local cores="$2"
+    local use_test="$3"
+    local dataset="$4"
 
     local snakefile="modules/qdrant/Snakefile"
 
     # Start with base command
     local cmd=$(build_snakemake_base "$snakefile" "$config_file")
 
-    # Add execution mode options
-    if [[ "$execution_mode" == "cluster" ]]; then
-        cmd="${cmd} $(build_cluster_options "$config_file" "$jobs")"
-    else
-        cmd="${cmd} $(build_local_options "$cores")"
-    fi
+    # Local execution only (SGE/cluster retired)
+    cmd="${cmd} $(build_local_options "$cores")"
 
     # Add common options (without keep-going for insertion)
     local retries=$DEFAULT_RETRIES
@@ -160,14 +130,6 @@ build_qdrant_insert_command() {
 
     cmd="${cmd} -- ${target}"
     echo "$cmd"
-}
-
-# Log cluster submission info
-# Usage: log_cluster_info <queue> <jobs>
-log_cluster_info() {
-    local queue="$1"
-    local jobs="$2"
-    log_info "Submitting to SGE cluster (queue=${queue}, max ${jobs} parallel jobs)"
 }
 
 # Log local execution info
