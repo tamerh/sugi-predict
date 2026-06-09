@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 1,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/esm2-poc/scripts/generate.sh",
+  "task_id": "4:12:generate",
+  "timestamp": "2026-06-09T16:28:01+02:00"
+}

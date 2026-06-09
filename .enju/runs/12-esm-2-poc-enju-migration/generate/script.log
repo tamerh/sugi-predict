@@ -1,0 +1,1 @@
+ESM-2 embedding generation runs on a GPU citizen (CUDA). No-op on CPU host.
