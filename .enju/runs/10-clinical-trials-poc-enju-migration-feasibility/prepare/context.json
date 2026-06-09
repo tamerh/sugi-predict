@@ -1,0 +1,18 @@
+{
+  "instance_key": "",
+  "iteration": null,
+  "params": {
+    "chunks": [
+      "0001",
+      "0002",
+      "0003",
+      "0004",
+      "0005",
+      "0006"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "prepare",
+  "task_id": "4:10:prepare",
+  "writes_artifacts": []
+}

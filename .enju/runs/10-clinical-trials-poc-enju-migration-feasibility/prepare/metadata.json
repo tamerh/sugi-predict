@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 753,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/ct-poc/scripts/prepare.sh",
+  "task_id": "4:10:prepare",
+  "timestamp": "2026-06-09T16:24:57+02:00"
+}
