@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 13000,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/ct-poc/scripts/embed.sh",
+  "task_id": "4:10:0005:embed",
+  "timestamp": "2026-06-09T16:26:33+02:00"
+}
