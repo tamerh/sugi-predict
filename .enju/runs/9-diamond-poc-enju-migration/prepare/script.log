@@ -1,0 +1,19 @@
+Counting sequences...
+Total sequences: 20
+Splitting into 2 chunks
+Chunk size: ~10 sequences per chunk
+
+Splitting sequences...
+  0%|          | 0/20 [00:00<?, ?seq/s]100%|██████████| 20/20 [00:00<00:00, 87290.41seq/s]
+
+Chunk statistics:
+  Chunk 001:     10 sequences,    0.0 MB - chunk_001.fasta
+  Chunk 002:     10 sequences,    0.0 MB - chunk_002.fasta
+
+Total chunks created: 2
+Output directory: test_out/diamond_poc/chunks
+
+State file written: test_out/diamond_poc/processed_chunks.json
+prepare: chunks:
+001
+002

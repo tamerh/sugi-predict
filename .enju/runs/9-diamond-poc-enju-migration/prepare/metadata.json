@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 467,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/diamond-poc/scripts/prepare.sh",
+  "task_id": "4:9:prepare",
+  "timestamp": "2026-06-09T15:26:47+02:00"
+}
