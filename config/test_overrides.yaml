@@ -146,8 +146,11 @@ diamond:
 
 # Qdrant test overrides
 qdrant:
-  # Use NFS storage for testing (not local scratch)
+  # CRITICAL: isolate test storage from the shared/prod snapshots/qdrant_latest.
+  # Without this override, `./bioyoda.sh test` starts Qdrant on production storage
+  # and inserts test fixtures into the real collections (overwriting low point IDs).
   storage:
+    path: "test_out/data/qdrant"   # isolated test storage (was inheriting snapshots/qdrant_latest)
     local_scratch_base: ""     # Empty = use NFS at test_out/data/qdrant (vs local scratch in production)
 
   batch_size: 100              # Small batches (vs 500 production)
