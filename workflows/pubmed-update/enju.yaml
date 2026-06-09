@@ -1,0 +1,29 @@
+name: "PubMed update — PMID-delta embed (batched)"
+description: |
+  Refresh pubmed_abstracts to the 2026 baseline. Batched fan-out (per scale test:
+  ~30 batch-tasks of ~45 files, NOT 1334 single-file tasks). Each batch runs
+  index.py --existing-pmids so only NEW PMIDs (~2M) are embedded; the 28.25M
+  already-embedded are skipped. Throttled (2 threads/task; run parallel=8).
+  Qdrant insert is a deliberate follow-up step, not in this DAG.
+version: 1
+publish:
+  mode: none
+params:
+  - name: batches
+    type: list<string>
+    required: true
+    description: 'Batch ids "00".."NN" (set after download from file count / batch size 45).'
+defaults:
+  assign_to: tamerh
+tasks:
+  - id: process
+    action: compute
+    script: workflows/pubmed-update/scripts/process.sh
+    for_each:
+      batch: "{{batches}}"
+    prompt: "Embed pubmed baseline batch {{batch}} (PMID-delta)."
+  - id: report
+    action: compute
+    script: workflows/pubmed-update/scripts/report.sh
+    collects: process
+    prompt: "Count new vectors produced."
