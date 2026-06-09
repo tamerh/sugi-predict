@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 1,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/_probe/scripts/emit.sh",
+  "task_id": "4:3:emit",
+  "timestamp": "2026-06-09T14:44:23+02:00"
+}
