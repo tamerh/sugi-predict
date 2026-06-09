@@ -1,0 +1,49 @@
+name: "Clinical Trials PoC — Enju migration feasibility"
+description: |
+  Feasibility PoC: express BioYoda's clinical_trials module (currently Snakemake)
+  as an Enju DAG. Three stages exercising the patterns every BioYoda module needs:
+    prepare  (compute, singular) — consume biobtree trials.json, chunk it
+    embed    (compute, fan-out per chunk) — process_trials_chunk.py -> FAISS
+    merge    (compute, fan-in via collects) — verify/aggregate chunk indices
+  Single machine, conda env `bioyoda`, runs on the 300-trial fixture.
+  Outputs land in test_out/ct_poc/ (gitignored); nothing is published.
+version: 1
+
+# Single-machine PoC: artifacts live on shared disk (test_out/), tasks order via
+# depends_on, so there is nothing to publish to the base branch.
+publish:
+  mode: none
+
+params:
+  - name: chunks
+    type: list<string>
+    required: true
+    description: >
+      Chunk ids to embed in parallel (e.g. ["0001","0002",...]). Static here
+      because the fixture is deterministic; the production version would source
+      this from prepare's dynamic list<string> output (Snakemake-checkpoint
+      equivalent).
+
+# All tasks are host-compute run by the operator on this machine.
+defaults:
+  assign_to: tamerh
+
+tasks:
+  - id: prepare
+    action: compute
+    script: workflows/ct-poc/scripts/prepare.sh
+    prompt: "Consume biobtree trials.json fixture and chunk it (test_out/ct_poc)."
+
+  - id: embed
+    action: compute
+    script: workflows/ct-poc/scripts/embed.sh
+    depends_on: [prepare]
+    for_each:
+      chunk: "{{chunks}}"
+    prompt: "Embed clinical-trials chunk {{chunk}} with S-BioBERT into a FAISS index."
+
+  - id: merge
+    action: compute
+    script: workflows/ct-poc/scripts/merge.sh
+    collects: embed
+    prompt: "Verify and aggregate all per-chunk FAISS indices into a report."
