@@ -5,7 +5,7 @@ set -euo pipefail
 
 source /data/miniconda3/etc/profile.d/conda.sh
 conda activate bioyoda
-cd "$ENJU_PROJECT_DIR"
+cd "${BIOYODA_ROOT:-/data/bioyoda}"
 
 OUT=test_out/ct_poc
 CHUNK="$ENJU_PARAM_chunk"
