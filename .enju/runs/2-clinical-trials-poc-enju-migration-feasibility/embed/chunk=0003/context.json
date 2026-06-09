@@ -1,0 +1,20 @@
+{
+  "instance_key": "0003",
+  "iteration": {
+    "chunk": "0003"
+  },
+  "params": {
+    "chunks": [
+      "0001",
+      "0002",
+      "0003",
+      "0004",
+      "0005",
+      "0006"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "embed",
+  "task_id": "4:2:0003:embed",
+  "writes_artifacts": []
+}
