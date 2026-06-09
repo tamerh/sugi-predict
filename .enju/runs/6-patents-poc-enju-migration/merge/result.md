@@ -1,0 +1,2 @@
+text indices : 1 (179 vectors, 768-dim S-BioBERT)
+compound idx : 2 (3999 vectors, 2048-bit Morgan)
