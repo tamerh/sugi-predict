@@ -28,14 +28,15 @@ tasks:
     script: workflows/esm2-poc/scripts/prepare.sh
     prompt: "Stage ESM-2 embedding chunks."
 
-  # GPU step: targets a GPU citizen, so this CPU host skips it (the multi-machine
-  # payoff — a GPU citizen claims and runs it, syncing results back via git).
+  # GPU step. In production set `assign_to: <a registered GPU citizen>` so only
+  # a CUDA machine claims it (the multi-machine payoff — results sync via git).
+  # Here it runs as a labeled no-op placeholder (generate.sh) since this box has
+  # no GPU and the assignee must be a registered citizen.
   - id: generate
     action: compute
-    assign_to: gpu-citizen
     script: workflows/esm2-poc/scripts/generate.sh
     depends_on: [prepare]
-    prompt: "Generate ESM-2 650M embeddings from FASTA (runs on a GPU citizen)."
+    prompt: "Generate ESM-2 650M embeddings from FASTA (production: a GPU citizen)."
 
   - id: faiss
     action: compute
