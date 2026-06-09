@@ -1,0 +1,14 @@
+{
+  "instance_key": "",
+  "iteration": null,
+  "params": {
+    "collections": [
+      "pubmed",
+      "esm2"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "verify",
+  "task_id": "4:14:verify",
+  "writes_artifacts": []
+}

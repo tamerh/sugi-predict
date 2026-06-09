@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 34,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/qdrant-insert-poc/scripts/verify.sh",
+  "task_id": "4:14:verify",
+  "timestamp": "2026-06-09T16:33:18+02:00"
+}
