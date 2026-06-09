@@ -18,9 +18,12 @@ start=$(( 10#$BATCH * BATCH_SIZE ))
 slice=( "${files[@]:start:BATCH_SIZE}" )
 echo "batch $BATCH: files ${start}..$((start+${#slice[@]}-1)) (${#slice[@]} files)" >&2
 
+DELETED=out/raw_data/pubmed/deleted.pmids.sorted.gz
+[[ -f "$DELETED" ]] || DELETED=out/state/pubmed/none.gz
+
 for f in "${slice[@]}"; do
     python modules/pubmed/scripts/index.py "$f" "$OUT" \
-        --deleted-pmids out/state/pubmed/none.gz \
+        --deleted-pmids "$DELETED" \
         --existing-pmids out/state/pubmed/existing_pmids.txt.gz \
         --model-name "pritamdeka/S-BioBERT-snli-multinli-stsb" --vector-dim 768
 done
