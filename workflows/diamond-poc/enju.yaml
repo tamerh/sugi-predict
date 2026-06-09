@@ -1,0 +1,41 @@
+name: "Diamond PoC — Enju migration"
+description: |
+  BioYoda diamond module (all-vs-all BLASTP protein similarity) as an Enju DAG:
+    prepare (compute) — makedb + split query fasta into chunks
+    search  (compute, fan-out per chunk) — diamond blastp chunk vs db
+    merge   (compute, collects) — concatenate + filter top-K
+  CPU-only (diamond binary). Fan-out list driver-resolved. Fixture all-vs-all.
+  Outputs to test_out/diamond_poc.
+version: 1
+
+publish:
+  mode: none
+
+params:
+  - name: chunks
+    type: list<string>
+    required: true
+    description: "Query chunk ids (e.g. 001,002). Driver-resolved from split output."
+
+defaults:
+  assign_to: tamerh
+
+tasks:
+  - id: prepare
+    action: compute
+    script: workflows/diamond-poc/scripts/prepare.sh
+    prompt: "Build diamond DB and split the query fasta into chunks."
+
+  - id: search
+    action: compute
+    script: workflows/diamond-poc/scripts/search.sh
+    depends_on: [prepare]
+    for_each:
+      chunk: "{{chunks}}"
+    prompt: "Run diamond blastp for query chunk {{chunk}}."
+
+  - id: merge
+    action: compute
+    script: workflows/diamond-poc/scripts/merge.sh
+    collects: search
+    prompt: "Concatenate per-chunk hits and filter top-K."
