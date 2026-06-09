@@ -1,0 +1,16 @@
+{
+  "instance_key": "0005",
+  "iteration": {
+    "chunk": "0005"
+  },
+  "params": {
+    "compound_chunks": [
+      "0002",
+      "0005"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "compound",
+  "task_id": "4:6:0005:compound",
+  "writes_artifacts": []
+}
