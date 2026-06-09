@@ -1,0 +1,10 @@
+Reading embeddings from: test_out/esm2_poc/embeddings/reference_embeddings_chunk_001.h5
+  Proteins: 20
+  Dimensions: 1280
+Creating FAISS index...
+  Added 20 vectors to index
+Writing FAISS index: test_out/esm2_poc/faiss/chunk_001.index
+Writing metadata: test_out/esm2_poc/faiss/chunk_001.json
+✓ Conversion complete!
+  FAISS index: test_out/esm2_poc/faiss/chunk_001.index (20 vectors)
+  Metadata: test_out/esm2_poc/faiss/chunk_001.json (20 entries)
