@@ -1,0 +1,20 @@
+name: "probe: compute dynamic for_each"
+version: 1
+publish:
+  mode: none
+defaults:
+  assign_to: tamerh
+tasks:
+  - id: emit
+    action: compute
+    script: workflows/_probe/scripts/emit.sh
+    outputs:
+      items:
+        format: list<string>
+    prompt: "emit a list"
+  - id: use
+    action: compute
+    script: workflows/_probe/scripts/use.sh
+    for_each:
+      x: "{{emit.items}}"
+    prompt: "use {{x}}"
