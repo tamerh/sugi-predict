@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 10734,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/patents-poc/scripts/text.sh",
+  "task_id": "4:13:text",
+  "timestamp": "2026-06-09T16:28:45+02:00"
+}
