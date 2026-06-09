@@ -1,0 +1,16 @@
+{
+  "instance_key": "esm2",
+  "iteration": {
+    "collection": "esm2"
+  },
+  "params": {
+    "collections": [
+      "pubmed",
+      "esm2"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "insert",
+  "task_id": "4:8:esm2:insert",
+  "writes_artifacts": []
+}
