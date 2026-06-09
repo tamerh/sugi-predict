@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 1188,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/patents-poc/scripts/compound.sh",
+  "task_id": "4:13:0002:compound",
+  "timestamp": "2026-06-09T16:28:52+02:00"
+}
