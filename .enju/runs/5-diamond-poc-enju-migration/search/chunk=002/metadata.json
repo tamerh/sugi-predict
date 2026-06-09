@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 447,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/diamond-poc/scripts/search.sh",
+  "task_id": "4:5:002:search",
+  "timestamp": "2026-06-09T14:50:06+02:00"
+}
