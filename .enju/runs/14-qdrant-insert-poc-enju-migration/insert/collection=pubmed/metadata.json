@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 1142,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/qdrant-insert-poc/scripts/insert.sh",
+  "task_id": "4:14:pubmed:insert",
+  "timestamp": "2026-06-09T16:33:11+02:00"
+}
