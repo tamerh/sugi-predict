@@ -85,6 +85,12 @@ clinical_trials:
   min_text_length: 50
   min_summary_length: 100
 
+  # Source of trial data. When set, BioYoda consumes this pre-extracted
+  # trials.json (biobtree's AACT output) instead of downloading AACT itself.
+  # biobtree maintains the AACT download/extract and emits a superset trials.json
+  # (eligibility, outcomes, facilities, study_arms, adverse_events_summary, ...).
+  source_json: "/data/biobtree/raw_data/clinical_trials/trials.json"
+
   # Chunking strategy for parallel processing (NEW)
   enable_chunking: true        # Enable chunked processing for better parallelization
   trials_per_chunk: 5000      # Trials per chunk (CPU: 10K-20K for many parallel jobs)

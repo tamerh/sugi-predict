@@ -776,6 +776,57 @@ class AACTTextExtractor:
         return extracted_studies
 
 
+def load_trials_from_source_json(source_json: str,
+                                 limit: Optional[int] = None,
+                                 nct_ids_file: Optional[str] = None,
+                                 min_summary_length: int = 50,
+                                 exclude_withdrawn: bool = True) -> List[Dict[str, Any]]:
+    """Load pre-extracted trials from an external trials.json instead of downloading AACT.
+
+    Used to consume biobtree's raw_data/clinical_trials/trials.json (the single
+    source of truth for the AACT download+extract stage). The file is expected to
+    be {"trials": [ {...}, ... ]} with the same per-trial schema biobtree emits
+    (see biobtree src/scripts/clinical_trials/clinical_trials_prepare.py). All the
+    fields BioYoda's embedder needs are present: brief_title, brief_summary,
+    detailed_description, eligibility, outcomes, conditions, interventions,
+    sponsors, facilities, study_arms, publications, adverse_events_summary.
+    """
+    log_with_timestamp(f"=== Loading trials from source JSON: {source_json} ===")
+    if not os.path.exists(source_json):
+        log_with_timestamp(f"ERROR: source JSON not found: {source_json}")
+        return []
+
+    with open(source_json, 'r') as f:
+        data = json.load(f)
+    trials = data.get('trials', []) if isinstance(data, dict) else data
+    log_with_timestamp(f"Loaded {len(trials):,} trials from source JSON")
+
+    # Optional NCT ID filter (used by test fixtures)
+    nct_ids_filter_applied = False
+    if nct_ids_file and os.path.exists(nct_ids_file):
+        log_with_timestamp(f"Loading NCT ID filter from: {nct_ids_file}")
+        with open(nct_ids_file, 'r') as f:
+            wanted = {ln.strip() for ln in f if ln.strip() and not ln.startswith('#')}
+        trials = [t for t in trials if t.get('nct_id') in wanted]
+        nct_ids_filter_applied = True
+        log_with_timestamp(f"NCT filter applied: {len(trials):,} trials remain")
+
+    if exclude_withdrawn:
+        before = len(trials)
+        trials = [t for t in trials if str(t.get('overall_status', '')).lower() != 'withdrawn']
+        log_with_timestamp(f"Filtered out {before - len(trials):,} withdrawn trials")
+
+    if min_summary_length:
+        trials = [t for t in trials if len(str(t.get('brief_summary', ''))) >= min_summary_length]
+        log_with_timestamp(f"After min_summary_length>={min_summary_length}: {len(trials):,} trials")
+
+    if limit and not nct_ids_filter_applied:
+        trials = trials[:limit]
+        log_with_timestamp(f"Applied limit: {len(trials):,} trials")
+
+    return trials
+
+
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(
@@ -801,6 +852,10 @@ def main():
     parser.add_argument("--exclude-withdrawn", action="store_true", default=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--nct-ids-file")
+    parser.add_argument("--source-json",
+                        help="Consume a pre-extracted trials.json (e.g. biobtree's "
+                             "raw_data/clinical_trials/trials.json) instead of downloading AACT. "
+                             "Skips download/extract; keeps chunking + tracking.")
 
     args = parser.parse_args()
 
@@ -834,45 +889,59 @@ def main():
 
             return 0
 
-        # ====================================================================
-        # STEP 2: Download snapshot
-        # ====================================================================
-        log_with_timestamp("=== STEP 1: Download ===")
-        downloader = AACTDownloader()
-        snapshot_info = downloader.get_latest_snapshot_info()
-        snapshot_path = downloader.download_snapshot(snapshot_info, args.download_dir)
+        if args.source_json:
+            # ================================================================
+            # STEPS 1-3 (alt): Consume biobtree's pre-extracted trials.json.
+            # biobtree owns the AACT download/extract/process stage; BioYoda
+            # only chunks + embeds. See load_trials_from_source_json().
+            # ================================================================
+            extracted_studies = load_trials_from_source_json(
+                args.source_json,
+                limit=args.limit,
+                nct_ids_file=args.nct_ids_file,
+                min_summary_length=args.min_summary_length,
+                exclude_withdrawn=args.exclude_withdrawn,
+            )
+        else:
+            # ================================================================
+            # STEP 2: Download snapshot
+            # ================================================================
+            log_with_timestamp("=== STEP 1: Download ===")
+            downloader = AACTDownloader()
+            snapshot_info = downloader.get_latest_snapshot_info()
+            snapshot_path = downloader.download_snapshot(snapshot_info, args.download_dir)
 
-        # ====================================================================
-        # STEP 3: Extract snapshot (always extract when running)
-        # ====================================================================
-        log_with_timestamp("=== STEP 2: Extract ===")
-        extracted_files = downloader.extract_snapshot(snapshot_path, args.extract_dir)
+            # ================================================================
+            # STEP 3: Extract snapshot (always extract when running)
+            # ================================================================
+            log_with_timestamp("=== STEP 2: Extract ===")
+            extracted_files = downloader.extract_snapshot(snapshot_path, args.extract_dir)
 
-        # ====================================================================
-        # STEP 4: Process trials and generate chunks
-        # ====================================================================
-        log_with_timestamp("=== STEP 3: Process Trials ===")
+            # ================================================================
+            # STEP 4: Process trials and generate chunks
+            # ================================================================
+            log_with_timestamp("=== STEP 3: Process Trials ===")
 
-        extractor = AACTTextExtractor(args.extract_dir)
-        if not extractor.load_extraction_info():
-            return 1
+            extractor = AACTTextExtractor(args.extract_dir)
+            if not extractor.load_extraction_info():
+                return 1
 
-        extracted_studies = extractor.extract_studies_text(
-            limit=args.limit,
-            include_detailed_description=args.include_detailed_description,
-            include_outcomes=args.include_outcomes,
-            include_eligibility=args.include_eligibility,
-            include_interventions=args.include_interventions,
-            include_conditions=args.include_conditions,
-            include_sponsors=args.include_sponsors,
-            include_facilities=args.include_facilities,
-            include_study_arms=args.include_study_arms,
-            include_publications=args.include_publications,
-            include_adverse_events=args.include_adverse_events,
-            min_summary_length=args.min_summary_length,
-            exclude_withdrawn=args.exclude_withdrawn,
-            nct_ids_file=args.nct_ids_file
-        )
+            extracted_studies = extractor.extract_studies_text(
+                limit=args.limit,
+                include_detailed_description=args.include_detailed_description,
+                include_outcomes=args.include_outcomes,
+                include_eligibility=args.include_eligibility,
+                include_interventions=args.include_interventions,
+                include_conditions=args.include_conditions,
+                include_sponsors=args.include_sponsors,
+                include_facilities=args.include_facilities,
+                include_study_arms=args.include_study_arms,
+                include_publications=args.include_publications,
+                include_adverse_events=args.include_adverse_events,
+                min_summary_length=args.min_summary_length,
+                exclude_withdrawn=args.exclude_withdrawn,
+                nct_ids_file=args.nct_ids_file
+            )
 
         if not extracted_studies:
             log_with_timestamp("WARNING: No studies extracted")

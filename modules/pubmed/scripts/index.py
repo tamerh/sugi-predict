@@ -42,11 +42,37 @@ def load_deleted_pmids(path):
     log_with_timestamp(f"Loaded {len(deleted_set)} deleted PMIDs into memory.")
     return deleted_set
 
+def load_existing_pmids(path):
+    """Loads the set of already-embedded PMIDs (one per line, optionally gzipped).
+
+    Used for incremental PMID-delta refresh: when reprocessing a new PubMed
+    baseline, articles whose PMID is already embedded are skipped, so only NEW
+    abstracts get re-encoded (e.g. ~2M new vs ~30M full re-embed). Bootstrap this
+    set from the existing FAISS metadata JSONs (see build_existing_pmids.py).
+    """
+    if not path:
+        return set()
+    log_with_timestamp(f"Loading existing (already-embedded) PMIDs from {path}...")
+    if not os.path.exists(path):
+        log_with_timestamp(f"Warning: {os.path.basename(path)} not found. Proceeding without incremental skip.")
+        return set()
+
+    opener = gzip.open if path.endswith('.gz') else open
+    existing_set = set()
+    with opener(path, 'rt') as f:
+        for line in f:
+            pmid = line.strip()
+            if pmid:
+                existing_set.add(pmid)
+    log_with_timestamp(f"Loaded {len(existing_set):,} existing PMIDs into memory (will be skipped).")
+    return existing_set
+
 # --- Main Processing Function ---
 # Batch size for encoding (64 optimal for CPU, 128-256 for GPU)
 ENCODE_BATCH_SIZE = 64
 
-def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_dim, limit=None):
+def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_dim, limit=None,
+                 existing_pmids_set=None):
     """
     Processes a single gzipped PubMed XML file, creates a FAISS index and metadata file,
     skipping any PMIDs that are in the deleted_pmids_set.
@@ -76,10 +102,14 @@ def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_d
     model = SentenceTransformer(model_name)
     log_with_timestamp("Model loaded.")
 
+    if existing_pmids_set is None:
+        existing_pmids_set = set()
+
     index = faiss.IndexFlatL2(vector_dim)
     metadata = {}
     vector_count = 0
     skipped_count = 0
+    already_count = 0
 
     # Batching: accumulate texts before encoding
     batch_texts = []
@@ -123,6 +153,12 @@ def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_d
                         elem.clear()
                         continue
 
+                    # Skip already-embedded PMIDs (incremental PMID-delta refresh)
+                    if pmid and pmid in existing_pmids_set:
+                        already_count += 1
+                        elem.clear()
+                        continue
+
                     title_element = elem.find('.//ArticleTitle')
                     title = "".join(title_element.itertext()) if title_element is not None else ""
 
@@ -151,7 +187,8 @@ def process_file(input_path, output_dir, deleted_pmids_set, model_name, vector_d
     # Flush any remaining items in the batch
     flush_batch()
 
-    log_with_timestamp(f"Processed {index.ntotal} chunks. Skipped {skipped_count} deleted PMIDs. Saving assets...")
+    log_with_timestamp(f"Processed {index.ntotal} chunks. Skipped {skipped_count} deleted PMIDs, "
+                       f"{already_count} already-embedded PMIDs. Saving assets...")
     faiss.write_index(index, faiss_output_path)
     with open(metadata_output_path, 'w') as f:
         json.dump(metadata, f)
@@ -162,6 +199,9 @@ if __name__ == "__main__":
     parser.add_argument("input_file", type=str, help="Path to the input .xml.gz file.")
     parser.add_argument("output_dir", type=str, help="Directory to save the output files.")
     parser.add_argument("--deleted-pmids", type=str, required=True, help="Path to deleted PMIDs file.")
+    parser.add_argument("--existing-pmids", type=str, default=None,
+                        help="Path to a file of already-embedded PMIDs (one per line, optionally .gz). "
+                             "When provided, those PMIDs are skipped (incremental PMID-delta refresh).")
     parser.add_argument("--model-name", type=str, required=True, help="Name of the sentence transformer model.")
     parser.add_argument("--vector-dim", type=int, required=True, help="Dimension of the vectors.")
     parser.add_argument("--limit", type=int, default=None,
@@ -176,8 +216,12 @@ if __name__ == "__main__":
     # Load the deleted PMIDs set once at the start of the script
     deleted_pmids = load_deleted_pmids(args.deleted_pmids)
 
+    # Load the already-embedded PMIDs set (incremental PMID-delta refresh)
+    existing_pmids = load_existing_pmids(args.existing_pmids)
+
     # Process the file
-    process_file(args.input_file, args.output_dir, deleted_pmids, args.model_name, args.vector_dim, limit=args.limit)
+    process_file(args.input_file, args.output_dir, deleted_pmids, args.model_name, args.vector_dim,
+                 limit=args.limit, existing_pmids_set=existing_pmids)
 
     # Mark as processed in tracking system if tracking file provided
     if args.tracking_file and args.relative_path:

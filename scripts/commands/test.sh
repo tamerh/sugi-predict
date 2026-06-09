@@ -15,9 +15,11 @@ test_cleanup() {
     local base_dir="$1"
     log_info "Cleaning up test environment..."
 
-    # Stop servers if running
-    source "${COMMANDS_DIR}/api.sh"
-    api_stop --test 2>/dev/null || true
+    # Stop servers if running (api.sh removed when the API layer moved to sugi-agent)
+    if [[ -f "${COMMANDS_DIR}/api.sh" ]]; then
+        source "${COMMANDS_DIR}/api.sh"
+        api_stop --test 2>/dev/null || true
+    fi
 
     source "${COMMANDS_DIR}/qdrant.sh"
     qdrant_stop --test 2>/dev/null || true
@@ -152,56 +154,67 @@ cmd_test() {
     echo ""
 
     # Step 5: Start API
-    log_info "Step 5/6: Starting API server"
-    source "${COMMANDS_DIR}/api.sh"
-    api_start --test || {
-        log_error "Failed to start API server"
-        exit 1
-    }
-
-    # Wait for API (model loading can take time)
-    log_info "  Waiting for API to be ready (loading model)..."
-    sleep 5
-
-    local api_ready=false
-    for i in {1..30}; do
-        if curl -s http://localhost:8000/health > /dev/null 2>&1; then
-            api_ready=true
-            break
-        fi
-        if (( i % 5 == 0 )); then
-            log_info "    Still waiting... (${i}s elapsed)"
-        fi
-        sleep 1
-    done
-
-    if [[ "$api_ready" != "true" ]]; then
-        log_error "API server not responding after 35 seconds"
-        log_info "Check API log: ${base_dir}/logs/api/"
-        exit 1
-    fi
-
-    log_success "API server running"
-    echo ""
-
-    # Step 6: Run query validation
-    log_info "Step 6/6: Running query validation"
-    echo ""
-
+    # NOTE: the API/query layer was extracted out of bioyoda into sugi-agent and
+    # scripts/commands/api.sh was removed. When it's absent we run a pipeline-only
+    # smoke test (Steps 1-4) and skip API-dependent query validation (Steps 5-6).
     local test_result=0
-    if [[ -f "tests/validate_queries.py" ]]; then
-        python tests/validate_queries.py --verbose --api-url http://localhost:8000
-        test_result=$?
-    else
-        log_warning "Validation script not found: tests/validate_queries.py"
-        log_info "Skipping query validation"
-    fi
+    if [[ -f "${COMMANDS_DIR}/api.sh" ]]; then
+        log_info "Step 5/6: Starting API server"
+        source "${COMMANDS_DIR}/api.sh"
+        api_start --test || {
+            log_error "Failed to start API server"
+            exit 1
+        }
 
-    echo ""
+        # Wait for API (model loading can take time)
+        log_info "  Waiting for API to be ready (loading model)..."
+        sleep 5
+
+        local api_ready=false
+        for i in {1..30}; do
+            if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+                api_ready=true
+                break
+            fi
+            if (( i % 5 == 0 )); then
+                log_info "    Still waiting... (${i}s elapsed)"
+            fi
+            sleep 1
+        done
+
+        if [[ "$api_ready" != "true" ]]; then
+            log_error "API server not responding after 35 seconds"
+            log_info "Check API log: ${base_dir}/logs/api/"
+            exit 1
+        fi
+
+        log_success "API server running"
+        echo ""
+
+        # Step 6: Run query validation
+        log_info "Step 6/6: Running query validation"
+        echo ""
+
+        if [[ -f "tests/validate_queries.py" ]]; then
+            python tests/validate_queries.py --verbose --api-url http://localhost:8000
+            test_result=$?
+        else
+            log_warning "Validation script not found: tests/validate_queries.py"
+            log_info "Skipping query validation"
+        fi
+
+        echo ""
+        api_stop --test 2>/dev/null || true
+        sleep 1
+    else
+        log_warning "Step 5/6: API layer not present (api.sh removed; moved to sugi-agent)"
+        log_info "  Running PIPELINE-ONLY smoke test: query validation skipped."
+        log_info "  Pipeline + Qdrant insert (Steps 1-4) is what's being validated."
+        echo ""
+    fi
 
     # Cleanup happens via trap
     log_info "Cleaning up test environment..."
-    api_stop --test 2>/dev/null || true
     sleep 1
     qdrant_stop --test 2>/dev/null || true
     sleep 1

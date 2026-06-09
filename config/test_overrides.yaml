@@ -32,6 +32,10 @@ clinical_trials:
   test_trials_limit: 400             # Process only first 400 trials (fallback)
   #test_nct_ids_file: "tests/fixtures/clinical_trials/test_nct_ids.txt"  # Filter by specific NCT IDs
 
+  # Override the production source_json with a small enriched fixture so the CT
+  # step runs fully offline in tests (no AACT download, no 2.2GB biobtree file).
+  source_json: "tests/fixtures/clinical_trials/trials.json"
+
   # Smaller chunks for testing
   trials_per_chunk: 50         # Very small (vs 20000 production)
   encode_batch_size: 32        # Optimized for CPU
