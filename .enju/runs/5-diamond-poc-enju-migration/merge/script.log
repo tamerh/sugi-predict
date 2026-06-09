@@ -1,0 +1,20 @@
+Reading results from: test_out/diamond_poc/all_hits.tsv
+Keeping top-100 per query
+Minimum identity: 0.0%
+Total input lines: 400
+
+Reading and grouping by query...
+  0%|          | 0/400 [00:00<?, ?lines/s]100%|██████████| 400/400 [00:00<00:00, 799676.64lines/s]
+
+Unique query proteins: 20
+
+Filtering to top-100 per query and writing output...
+  0%|          | 0/20 [00:00<?, ?queries/s]100%|██████████| 20/20 [00:00<00:00, 142906.44queries/s]
+
+Filtering complete!
+Queries with results: 20
+Total output lines: 380
+Average hits per query: 19.0
+Output written to: test_out/diamond_poc/filtered_top100.tsv
+Compression: 5.0% reduction in size
+merge: 400 raw hits -> 381 filtered

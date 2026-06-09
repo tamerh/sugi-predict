@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 375,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/diamond-poc/scripts/merge.sh",
+  "task_id": "4:5:merge",
+  "timestamp": "2026-06-09T14:50:16+02:00"
+}
