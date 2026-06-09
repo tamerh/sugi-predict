@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 427,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/pubmed-poc/scripts/merge.sh",
+  "task_id": "4:11:merge",
+  "timestamp": "2026-06-09T16:27:40+02:00"
+}
