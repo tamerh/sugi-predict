@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 1,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/scale-test/scripts/noop.sh",
+  "task_id": "4:15:f0022:work",
+  "timestamp": "2026-06-09T18:37:18+02:00"
+}
