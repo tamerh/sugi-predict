@@ -1,0 +1,18 @@
+{
+  "instance_key": "",
+  "iteration": null,
+  "params": {
+    "chunks": [
+      "0001",
+      "0002",
+      "0003",
+      "0004",
+      "0005",
+      "0006"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "merge",
+  "task_id": "4:2:merge",
+  "writes_artifacts": []
+}
