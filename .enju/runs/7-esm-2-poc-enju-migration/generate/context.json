@@ -1,0 +1,13 @@
+{
+  "instance_key": "",
+  "iteration": null,
+  "params": {
+    "h5chunks": [
+      "001"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "generate",
+  "task_id": "4:7:generate",
+  "writes_artifacts": []
+}
