@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 430,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/patents-poc/scripts/merge.sh",
+  "task_id": "4:13:merge",
+  "timestamp": "2026-06-09T16:29:06+02:00"
+}
