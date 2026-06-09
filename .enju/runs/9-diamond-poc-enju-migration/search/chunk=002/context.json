@@ -1,0 +1,16 @@
+{
+  "instance_key": "002",
+  "iteration": {
+    "chunk": "002"
+  },
+  "params": {
+    "chunks": [
+      "001",
+      "002"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "search",
+  "task_id": "4:9:002:search",
+  "writes_artifacts": []
+}
