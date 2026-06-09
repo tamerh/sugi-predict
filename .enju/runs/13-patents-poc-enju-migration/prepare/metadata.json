@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 9,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/patents-poc/scripts/prepare.sh",
+  "task_id": "4:13:prepare",
+  "timestamp": "2026-06-09T16:28:29+02:00"
+}
