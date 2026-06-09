@@ -1,0 +1,23 @@
+[2026-06-09 16:25:06] [MEM: 481.5MB] System RAM: 125.7GB total, 115.9GB available
+[2026-06-09 16:25:06] [MEM: 481.5MB] Loading trial chunk from test_out/ct_poc/raw_data/clinical_trials/chunked/trials_chunk_0001.json
+[2026-06-09 16:25:06] [MEM: 482.9MB] Loaded 50 trials from chunk file
+[2026-06-09 16:25:06] [MEM: 482.9MB] === Starting Clinical Trials Chunk Processing ===
+[2026-06-09 16:25:06] [MEM: 482.9MB] Loading model: pritamdeka/S-BioBERT-snli-multinli-stsb
+[2026-06-09 16:25:06] [MEM: 482.9MB] Using device: cpu
+[2026-06-09 16:25:10] [MEM: 506.4MB] CPU workers: 1
+[2026-06-09 16:25:10] [MEM: 847.8MB] Model loaded successfully. Dimension: 768
+[2026-06-09 16:25:10] [MEM: 847.8MB] Processing chunk with 50 trials...
+[2026-06-09 16:25:10] [MEM: 847.9MB] Generated 423 text chunks from 50 trials
+[2026-06-09 16:25:10] [MEM: 847.9MB] Generating embeddings (batch_size=32)...
+Batches:   0%|          | 0/14 [00:00<?, ?it/s]Batches:   7%|▋         | 1/14 [00:00<00:09,  1.42it/s]Batches:  14%|█▍        | 2/14 [00:01<00:08,  1.42it/s]Batches:  21%|██▏       | 3/14 [00:01<00:06,  1.58it/s]Batches:  29%|██▊       | 4/14 [00:02<00:05,  1.69it/s]Batches:  36%|███▌      | 5/14 [00:03<00:05,  1.68it/s]Batches:  43%|████▎     | 6/14 [00:03<00:04,  1.77it/s]Batches:  50%|█████     | 7/14 [00:04<00:03,  1.86it/s]Batches:  57%|█████▋    | 8/14 [00:04<00:03,  1.93it/s]Batches:  64%|██████▍   | 9/14 [00:05<00:02,  1.95it/s]Batches:  71%|███████▏  | 10/14 [00:05<00:02,  1.96it/s]Batches:  79%|███████▊  | 11/14 [00:06<00:01,  1.99it/s]Batches:  86%|████████▌ | 12/14 [00:06<00:00,  2.03it/s]Batches:  93%|█████████▎| 13/14 [00:07<00:00,  2.02it/s]Batches: 100%|██████████| 14/14 [00:07<00:00,  2.63it/s]Batches: 100%|██████████| 14/14 [00:07<00:00,  1.96it/s]
+[2026-06-09 16:25:17] [MEM: 935.9MB] Generated 423 embeddings with dimension 768
+[2026-06-09 16:25:17] [MEM: 935.9MB] Generated 423 embeddings from 50 trials
+[2026-06-09 16:25:17] [MEM: 935.9MB] Creating FAISS index for 423 vectors...
+[2026-06-09 16:25:17] [MEM: 937.4MB] FAISS index created: 423 vectors
+[2026-06-09 16:25:17] [MEM: 937.4MB] Saving FAISS index to test_out/ct_poc/data/processed/clinical_trials/full/trials_chunk_0001.index
+[2026-06-09 16:25:17] [MEM: 937.6MB] Saving metadata to test_out/ct_poc/data/processed/clinical_trials/full/trials_chunk_0001_meta.json
+[2026-06-09 16:25:17] [MEM: 937.6MB] Files saved successfully:
+[2026-06-09 16:25:17] [MEM: 937.6MB]   Index: 1.2MB
+[2026-06-09 16:25:17] [MEM: 937.6MB]   Metadata: 2.3MB
+[2026-06-09 16:25:17] [MEM: 937.6MB] === Clinical Trials Chunk Processing Complete ===
+embed: chunk 0001 done
