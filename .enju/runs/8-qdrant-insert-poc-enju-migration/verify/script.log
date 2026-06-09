@@ -1,0 +1,3 @@
+poc_pubmed : 50 points
+poc_esm2 : 20 points
+verify: report at test_out/qdrant_poc/insert_report.txt
