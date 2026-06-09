@@ -1,0 +1,15 @@
+{
+  "instance_key": "001",
+  "iteration": {
+    "h5chunk": "001"
+  },
+  "params": {
+    "h5chunks": [
+      "001"
+    ]
+  },
+  "reads_artifacts": [],
+  "task_def_id": "faiss",
+  "task_id": "4:7:001:faiss",
+  "writes_artifacts": []
+}

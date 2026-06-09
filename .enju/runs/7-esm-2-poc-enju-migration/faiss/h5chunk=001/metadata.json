@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 446,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/esm2-poc/scripts/faiss.sh",
+  "task_id": "4:7:001:faiss",
+  "timestamp": "2026-06-09T14:59:07+02:00"
+}
