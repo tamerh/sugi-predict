@@ -1,0 +1,51 @@
+[2026-06-09 16:33:04] [MEM: 116.4MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 116.4MB] FAISS to Qdrant Sequential Insertion
+[2026-06-09 16:33:04] [MEM: 116.4MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 116.4MB] FAISS directory: test_out/esm2_poc/faiss
+[2026-06-09 16:33:04] [MEM: 116.4MB] Collection: poc_esm2
+[2026-06-09 16:33:04] [MEM: 116.4MB] Qdrant URL: http://localhost:6333
+[2026-06-09 16:33:04] [MEM: 116.4MB] Batch size: 200
+[2026-06-09 16:33:04] [MEM: 116.4MB] Starting point ID: 0
+[2026-06-09 16:33:04] [MEM: 116.4MB] 
+[2026-06-09 16:33:04] [MEM: 116.4MB] Connecting to Qdrant...
+[2026-06-09 16:33:04] [MEM: 123.3MB] ✓ Connected via HTTP
+[2026-06-09 16:33:04] [MEM: 123.3MB]   Existing collections: 2
+[2026-06-09 16:33:04] [MEM: 123.3MB]   Timeout: 300 seconds
+[2026-06-09 16:33:04] [MEM: 123.3MB]   Tip: Use --prefer-grpc for 20-30% faster bulk inserts
+[2026-06-09 16:33:04] [MEM: 123.4MB] Collection 'poc_esm2' already exists
+[2026-06-09 16:33:04] [MEM: 123.4MB] Found 1 FAISS files to process
+[2026-06-09 16:33:04] [MEM: 123.4MB] 
+[2026-06-09 16:33:04] [MEM: 124.0MB] Point ID strategy: sequential
+[2026-06-09 16:33:04] [MEM: 124.0MB]   Using sequential IDs (fallback mode)
+[2026-06-09 16:33:04] [MEM: 124.0MB] 
+[2026-06-09 16:33:04] [MEM: 124.0MB] [1/1] chunk_001.index
+[2026-06-09 16:33:04] [MEM: 124.1MB]   └─ Vectors: 20
+[2026-06-09 16:33:04] [MEM: 126.5MB] Inserted final batch
+[2026-06-09 16:33:04] [MEM: 126.5MB] 
+[2026-06-09 16:33:04] [MEM: 126.5MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 126.5MB] Insertion complete!
+[2026-06-09 16:33:04] [MEM: 126.5MB] Total vectors inserted: 20
+[2026-06-09 16:33:04] [MEM: 126.5MB] Final point ID: 20
+[2026-06-09 16:33:04] [MEM: 126.5MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 126.5MB] 
+[2026-06-09 16:33:04] [MEM: 126.5MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 126.5MB] WAITING FOR COLLECTION OPTIMIZATION
+[2026-06-09 16:33:04] [MEM: 126.5MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 126.5MB] Collection is optimizing in background (HNSW indexing, segment merging)
+[2026-06-09 16:33:04] [MEM: 126.5MB] This is normal after bulk insertion - wait for GREEN status before queries
+[2026-06-09 16:33:04] [MEM: 126.5MB] 
+[2026-06-09 16:33:04] [MEM: 126.5MB] 
+[2026-06-09 16:33:04] [MEM: 126.5MB] ✓ Collection is GREEN after 0s
+[2026-06-09 16:33:04] [MEM: 126.5MB]   Points: 20
+[2026-06-09 16:33:04] [MEM: 126.5MB]   Indexed: 0 (0.0%)
+[2026-06-09 16:33:04] [MEM: 126.5MB]   Segments: 2
+[2026-06-09 16:33:04] [MEM: 126.5MB]   Collection is ready for queries!
+[2026-06-09 16:33:04] [MEM: 126.5MB] 
+[2026-06-09 16:33:04] [MEM: 126.5MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 126.5MB] COLLECTION READY FOR PRODUCTION
+[2026-06-09 16:33:04] [MEM: 126.5MB] ================================================================================
+[2026-06-09 16:33:04] [MEM: 126.5MB] Total insertion time: (see logs above)
+[2026-06-09 16:33:04] [MEM: 126.5MB] Optimization time: 0s (0.0 minutes)
+[2026-06-09 16:33:04] [MEM: 126.5MB] Final status: GREEN
+[2026-06-09 16:33:04] [MEM: 126.5MB] ================================================================================
+insert: esm2 done

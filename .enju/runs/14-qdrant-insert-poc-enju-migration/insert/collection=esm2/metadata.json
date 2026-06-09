@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 1154,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/qdrant-insert-poc/scripts/insert.sh",
+  "task_id": "4:14:esm2:insert",
+  "timestamp": "2026-06-09T16:33:04+02:00"
+}
