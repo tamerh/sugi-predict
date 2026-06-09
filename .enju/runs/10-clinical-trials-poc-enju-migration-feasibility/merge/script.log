@@ -1,0 +1,4 @@
+chunks indexed : 6
+total vectors  : 2099
+by chunk_type  : {'summary': 290, 'description': 952, 'eligibility': 857}
+merge: report written to test_out/ct_poc/merge_report.txt

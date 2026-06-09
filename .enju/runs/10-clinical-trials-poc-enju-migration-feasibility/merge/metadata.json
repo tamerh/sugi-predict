@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 486,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/ct-poc/scripts/merge.sh",
+  "task_id": "4:10:merge",
+  "timestamp": "2026-06-09T16:26:59+02:00"
+}
