@@ -1,0 +1,2 @@
+esm2 faiss chunks : 1
+protein vectors   : 20 (1280-dim ESM-2)
