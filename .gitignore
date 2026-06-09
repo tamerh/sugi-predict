@@ -53,3 +53,8 @@ benchmark/qdrant_bench/*.log
 benchmark/qdrant_bench/nohup.out
 analysis/string_raw
 analysis/benchmark/qdrant_bench/qdrant_data
+
+notes.txt
+todo.txt
+old.txt
+*.bak
