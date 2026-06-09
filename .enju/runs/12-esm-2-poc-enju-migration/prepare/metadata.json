@@ -1,0 +1,10 @@
+{
+  "action": "compute",
+  "elapsed_ms": 8,
+  "exit_code": 0,
+  "model": "",
+  "result_type": "text",
+  "script": "workflows/esm2-poc/scripts/prepare.sh",
+  "task_id": "4:12:prepare",
+  "timestamp": "2026-06-09T16:27:56+02:00"
+}
