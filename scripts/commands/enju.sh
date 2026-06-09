@@ -53,6 +53,17 @@ cmd_enju() {
     export BIOYODA_ROOT="$root"
     cd "$root"
 
+    # `enju go --run-branch` leaves the worktree on the run branch; the next
+    # create_run refuses unless we're back on the project default. Return to it
+    # first. (Safe: code is committed; test_out/ is gitignored.)
+    local default_branch
+    default_branch=$(git -C "$root" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+    default_branch="${default_branch:-main}"
+    if [[ "$(git -C "$root" branch --show-current)" != "$default_branch" ]]; then
+        git -C "$root" checkout "$default_branch" >/dev/null 2>&1 \
+            || { log_error "Could not checkout ${default_branch} (uncommitted changes on a run branch?)"; exit 1; }
+    fi
+
     local wf="" param="" list=""
 
     case "$module" in
