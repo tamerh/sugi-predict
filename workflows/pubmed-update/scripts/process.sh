@@ -25,8 +25,14 @@ echo "batch $BATCH: files ${start}..$((start+${#slice[@]}-1)) (${#slice[@]} file
 DELETED=out/raw_data/pubmed/deleted.pmids.sorted.gz
 [[ -f "$DELETED" ]] || DELETED=out/state/pubmed/none.gz
 
+# HARD half-machine cap: OMP/MKL env alone doesn't constrain torch's intra-op
+# pool, so pin to the lower half of cores. With Enju --parallel N all tasks share
+# this same core set => total capped at ~half the machine regardless of torch.
+HALF=$(( $(nproc) / 2 )); (( HALF < 1 )) && HALF=1
+PIN="taskset -c 0-$((HALF-1))"
+
 for f in "${slice[@]}"; do
-    python modules/pubmed/scripts/index.py "$f" "$OUT" \
+    $PIN python modules/pubmed/scripts/index.py "$f" "$OUT" \
         --deleted-pmids "$DELETED" \
         --existing-pmids out/state/pubmed/existing_pmids.txt.gz \
         --model-name "pritamdeka/S-BioBERT-snli-multinli-stsb" --vector-dim 768
