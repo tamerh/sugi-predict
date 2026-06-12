@@ -45,7 +45,7 @@ def get_memory_usage() -> tuple:
 class CompoundProcessor:
     """Processes chemical compounds to generate fingerprints for similarity search."""
 
-    def __init__(self, fingerprint_bits: int = 2048, radius: int = 2):
+    def __init__(self, fingerprint_bits: int = 2048, radius: int = 2, existing_ids: set = None):
         """
         Initialize the compound processor.
 
@@ -55,6 +55,7 @@ class CompoundProcessor:
         """
         self.fingerprint_bits = fingerprint_bits
         self.radius = radius
+        self.existing_ids = existing_ids if existing_ids is not None else set()
         self.rdkit_available = False
 
         # Try to import RDKit
@@ -141,6 +142,7 @@ class CompoundProcessor:
         metadata = []
         valid_count = 0
         invalid_count = 0
+        skipped_existing = 0
 
         for idx, compound in enumerate(compounds):
             # Extract compound data
@@ -149,6 +151,11 @@ class CompoundProcessor:
             # Convert to string and add SCHEMBL prefix if it's just a number
             if surechembl_id and not isinstance(surechembl_id, str):
                 surechembl_id = f"SCHEMBL{surechembl_id}"
+
+            # Compound ID-delta: skip compounds already fingerprinted (additive update).
+            if surechembl_id and surechembl_id in self.existing_ids:
+                skipped_existing += 1
+                continue
 
             smiles = compound.get('smiles', '')
             inchi = compound.get('inchi', '')
@@ -187,7 +194,7 @@ class CompoundProcessor:
                 log_with_timestamp(f"  Processed {idx + 1}/{len(compounds)} compounds "
                                  f"(valid: {valid_count}, invalid: {invalid_count})")
 
-        log_with_timestamp(f"Completed: {valid_count} valid fingerprints, {invalid_count} invalid/skipped")
+        log_with_timestamp(f"Completed: {valid_count} valid fingerprints, {invalid_count} invalid/skipped, {skipped_existing} already-fingerprinted (delta)")
 
         if valid_count > 0:
             # Trim array to actual valid count (remove unfilled rows)
@@ -200,11 +207,11 @@ class CompoundProcessor:
 class CompoundsFAISSProcessor:
     """Main processor for compound data to create FAISS indices."""
 
-    def __init__(self, fingerprint_bits: int = 2048, radius: int = 2):
+    def __init__(self, fingerprint_bits: int = 2048, radius: int = 2, existing_ids: set = None):
         """Initialize the FAISS processor."""
         self.fingerprint_bits = fingerprint_bits
         self.radius = radius
-        self.compound_processor = CompoundProcessor(fingerprint_bits, radius)
+        self.compound_processor = CompoundProcessor(fingerprint_bits, radius, existing_ids)
 
         if not self.compound_processor.rdkit_available:
             raise RuntimeError("RDKit is required for compound processing")
@@ -418,6 +425,27 @@ class CompoundsFAISSProcessor:
             return False
 
 
+def load_existing_ids(path):
+    """Load already-fingerprinted surechembl_ids to skip (incremental ID-delta).
+    One id per line (e.g. SCHEMBL123), optionally gzipped. Returns a set."""
+    if not path:
+        return set()
+    import gzip, os
+    log_with_timestamp(f"Loading existing surechembl_ids from {path}...")
+    if not os.path.exists(path):
+        log_with_timestamp(f"Warning: {path} not found; proceeding without ID-delta skip.")
+        return set()
+    opener = gzip.open if path.endswith('.gz') else open
+    s = set()
+    with opener(path, 'rt') as f:
+        for ln in f:
+            v = ln.strip()
+            if v:
+                s.add(v)
+    log_with_timestamp(f"Loaded {len(s):,} existing surechembl_ids (will be skipped).")
+    return s
+
+
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(
@@ -460,6 +488,11 @@ Examples:
         help="Radius for Morgan fingerprint (default: 2 = ECFP4)"
     )
     parser.add_argument(
+        "--existing-ids", type=str, default=None,
+        help="File of already-fingerprinted surechembl_ids (one per line, optionally .gz). "
+             "When set, those compounds are skipped (incremental ID-delta)."
+    )
+    parser.add_argument(
         "--limit", type=int, default=None,
         help="Limit number of compounds to process (for testing)"
     )
@@ -477,9 +510,11 @@ Examples:
     try:
         # Initialize processor
         log_with_timestamp("=== Starting Compound Processing (Streaming Mode) ===")
+        existing_ids = load_existing_ids(args.existing_ids)
         processor = CompoundsFAISSProcessor(
             args.fingerprint_bits,
-            args.radius
+            args.radius,
+            existing_ids
         )
 
         # NOTE: Patent-compound mappings are handled by biobtree, not stored in FAISS metadata
