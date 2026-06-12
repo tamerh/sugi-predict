@@ -130,6 +130,17 @@ def get_point_id_from_metadata(meta: dict, fallback_id: int) -> int:
         point_id = int.from_bytes(hash_bytes, byteorder='big', signed=False)
         return point_id & 0x7FFFFFFFFFFFFFFF  # Ensure positive 63-bit number
 
+    # Try Protein ID (ESM-2 proteins) - UniProt accession, alphanumeric
+    # NOTE: the original 573K esm2 points predate this case and were inserted
+    # with sequential fallback IDs (0..N). Hash IDs land in the ~10^18 range, so
+    # they CANNOT collide with that low sequential block -> additive delta inserts
+    # of NEW proteins are safe, and become idempotent (protein_id -> fixed point).
+    if 'protein_id' in meta:
+        protein_id = str(meta['protein_id'])
+        hash_bytes = hashlib.sha256(protein_id.encode()).digest()[:8]
+        point_id = int.from_bytes(hash_bytes, byteorder='big', signed=False)
+        return point_id & 0x7FFFFFFFFFFFFFFF  # Ensure positive 63-bit number
+
     # No unique ID found, use fallback
     return fallback_id
 
@@ -673,6 +684,8 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                     id_strategy = "patent_id"
                 elif 'surechembl_id' in first_meta:
                     id_strategy = "surechembl_id"
+                elif 'protein_id' in first_meta:
+                    id_strategy = "protein_id"
         except Exception:
             pass  # Ignore errors, will use sequential as fallback
 
@@ -685,6 +698,8 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
         log_with_timestamp("  Using hashed Patent ID as point ID (enables upsert for incremental updates)")
     elif id_strategy == "surechembl_id":
         log_with_timestamp("  Using hashed SureChEMBL ID as point ID (enables upsert for incremental updates)")
+    elif id_strategy == "protein_id":
+        log_with_timestamp("  Using hashed protein ID as point ID (additive delta; cannot collide with legacy sequential esm2 IDs)")
     else:
         log_with_timestamp("  Using sequential IDs (fallback mode)")
     log_with_timestamp("")
