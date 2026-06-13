@@ -15,10 +15,10 @@ Files downloaded per release:
 
 Usage:
     # Download latest release
-    python download_surechembl.py --raw-dir out/raw_data/patents/surechembl
+    python download_surechembl.py --raw-dir work/raw_data/patents/surechembl
 
     # Update mode (skip download if release already exists on disk)
-    python download_surechembl.py --raw-dir out/raw_data/patents/surechembl --update-mode
+    python download_surechembl.py --raw-dir work/raw_data/patents/surechembl --update-mode
 
     # Test mode with debug
     python download_surechembl.py --raw-dir test_out/raw_data/patents/surechembl \\
@@ -316,11 +316,11 @@ def main():
         epilog="""
 Examples:
   # Download latest release
-  %(prog)s --raw-dir out/raw_data/patents/surechembl
+  %(prog)s --raw-dir work/raw_data/patents/surechembl
 
   # Update mode (download only if new)
-  %(prog)s --raw-dir out/raw_data/patents/surechembl \\
-      --update-mode --tracking-file out/state/patents/processed_files.json
+  %(prog)s --raw-dir work/raw_data/patents/surechembl \\
+      --update-mode --tracking-file work/state/patents/processed_files.json
 
   # Debug mode (limit files)
   %(prog)s --raw-dir test_out/raw_data/patents/surechembl \\

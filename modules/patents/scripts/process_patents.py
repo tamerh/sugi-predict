@@ -547,8 +547,8 @@ def main():
 Examples:
   # Process patents from Parquet file
   %(prog)s --input patents.parquet \\
-      --output-index out/data/processed/patents/text/patents_batch_0001.index \\
-      --output-metadata out/data/processed/patents/text/patents_batch_0001.json
+      --output-index work/data/processed/patents/text/patents_batch_0001.index \\
+      --output-metadata work/data/processed/patents/text/patents_batch_0001.json
 
   # Test mode with limit
   %(prog)s --input patents.parquet \\

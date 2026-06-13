@@ -4,7 +4,7 @@ set -euo pipefail
 source /data/miniconda3/etc/profile.d/conda.sh
 conda activate bioyoda
 cd "${BIOYODA_ROOT:-/data/bioyoda}"
-OUT=out/data/processed/pubmed/embeddings
+OUT=work/data/processed/pubmed/embeddings
 python3 - "$OUT" <<'PY'
 import sys, glob, faiss
 d=sys.argv[1]

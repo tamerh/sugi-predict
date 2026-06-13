@@ -8,7 +8,7 @@ to enable incremental updates by detecting new and modified trials.
 Usage:
     from tracking_db import TrialsTracker
 
-    tracker = TrialsTracker("out/state/clinical_trials/trials_tracking.db")
+    tracker = TrialsTracker("work/state/clinical_trials/trials_tracking.db")
 
     # Add or update a trial
     tracker.add_or_update_trial("NCT12345678", "2025-01-15", "abc123hash")
@@ -266,7 +266,7 @@ def main():
     parser.add_argument(
         '--tracking-db',
         type=str,
-        default='out/state/clinical_trials/trials_tracking.db',
+        default='work/state/clinical_trials/trials_tracking.db',
         help='Path to tracking database'
     )
     parser.add_argument(

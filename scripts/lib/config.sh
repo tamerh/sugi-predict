@@ -74,8 +74,8 @@ get_qdrant_storage_path() {
         value=$(grep -A10 "^qdrant:" "$config_file" | grep -A5 "storage:" | grep "path:" | sed 's/.*path:\s*"\?\([^"#]*\)"\?.*/\1/' | xargs)
     fi
 
-    # Default to snapshots/qdrant_latest if not set
-    value="${value:-snapshots/qdrant_latest}"
+    # Default to repo-root qdrant/ if not set (was snapshots/qdrant_latest)
+    value="${value:-qdrant}"
 
     # Make absolute if relative
     if [[ ! "$value" = /* ]]; then

@@ -20,9 +20,9 @@ Output:
 
 Usage:
     python process_uspto_json.py \
-        --input-dir snapshots/raw_data/patents/historical_uspto \
+        --input-dir raw_data/patents/historical_uspto \
         --filter-ids test_out/raw_data/patents/surechembl/2025-10-01/us_patent_ids.txt \
-        --output snapshots/raw_data/patents/historical_uspto/uspto_historical.parquet
+        --output raw_data/patents/historical_uspto/uspto_historical.parquet
 """
 
 import os

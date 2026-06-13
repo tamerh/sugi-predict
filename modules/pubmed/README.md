@@ -35,7 +35,7 @@ tail -f logs/bioyoda_pubmed_main.log
 
 # Check tracking status
 python modules/pubmed/scripts/tracking.py \
-    --tracking-file out/state/pubmed/processed_files.json \
+    --tracking-file work/state/pubmed/processed_files.json \
     stats
 ```
 
@@ -70,7 +70,7 @@ For initial full dataset processing, GPU acceleration on Google Colab Pro+ is re
 1. **Upload raw data from server to Google Drive:**
 ```bash
 # From Hetzner/local server
-rclone sync /data/bioyoda/snapshots/raw_data/pubmed/ gdrive:bioyoda/raw_data/pubmed --progress --transfers 8
+rclone sync /data/bioyoda/raw_data/pubmed/ gdrive:bioyoda/raw_data/pubmed --progress --transfers 8
 
 # Upload GPU scripts
 rclone copy /data/bioyoda/modules/pubmed/scripts/index_gpu.py gdrive:bioyoda/modules/pubmed/scripts/
@@ -109,7 +109,7 @@ drive.mount('/content/drive')
 ./bioyoda.sh pull pubmed
 
 # Or manually with rclone
-rclone sync gdrive:bioyoda/processed/pubmed /data/bioyoda/snapshots/data/processed/pubmed --progress
+rclone sync gdrive:bioyoda/processed/pubmed /data/bioyoda/work/data/processed/pubmed --progress
 ```
 
 **Note:** The GPU processing preserves the `baseline/` and `updatefiles/` subdirectory structure, matching the local Snakemake workflow expectations.
@@ -215,17 +215,17 @@ The module uses a JSON-based tracking system to enable efficient incremental upd
 ```bash
 # View statistics
 python modules/pubmed/scripts/tracking.py \
-    --tracking-file out/state/pubmed/processed_files.json \
+    --tracking-file work/state/pubmed/processed_files.json \
     stats
 
 # Check if specific file is processed
 python modules/pubmed/scripts/tracking.py \
-    --tracking-file out/state/pubmed/processed_files.json \
+    --tracking-file work/state/pubmed/processed_files.json \
     check baseline/pubmed25n0001.xml.gz
 
 # List all processed files
 python modules/pubmed/scripts/tracking.py \
-    --tracking-file out/state/pubmed/processed_files.json \
+    --tracking-file work/state/pubmed/processed_files.json \
     list
 ```
 

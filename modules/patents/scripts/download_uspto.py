@@ -17,7 +17,7 @@ Filename Pattern: ip[ag]YYMMDD.zip
 
 Usage:
     # Process manual files
-    python download_uspto.py --raw-dir out/raw_data/patents/uspto/2025-10-29 \
+    python download_uspto.py --raw-dir work/raw_data/patents/uspto/2025-10-29 \
         --manual-dir /path/to/manual_downloads
 """
 

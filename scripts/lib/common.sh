@@ -16,6 +16,31 @@ source "${LIB_DIR}/logging.sh"
 source "${LIB_DIR}/config.sh"
 source "${LIB_DIR}/process.sh"
 
+# Delete-guard: refuse to rm a path that is empty, a filesystem/repo root, or that
+# resolves inside a PROTECTED root (raw_data/, qdrant/, snapshots/). Catches the
+# classic misfire where an unset base_dir turns `rm -rf "$base_dir/data/.."` into
+# `rm -rf "/data/.."`, and stops any clean target from ever reaching the
+# irreplaceable raw_data, the live qdrant DB, or the published snapshots.
+# Usage: assert_deletable "<path-to-be-deleted>"   (call BEFORE the rm)
+assert_deletable() {
+    local target="$1"
+    local repo_root="${PIPELINE_DIR:-$(pwd)}"
+    if [[ -z "$target" || "$target" == "/" || "$target" == "/data" \
+          || "$target" == "$repo_root" || "$target" == "$repo_root/" ]]; then
+        log_error "DELETE-GUARD: refusing unsafe delete target: '${target}'"
+        exit 1
+    fi
+    local abs; abs="$(readlink -f "$target" 2>/dev/null || echo "$target")"
+    local prot
+    for prot in raw_data qdrant snapshots; do
+        local pabs; pabs="$(readlink -f "${repo_root}/${prot}" 2>/dev/null || echo "${repo_root}/${prot}")"
+        if [[ "$abs" == "$pabs" || "$abs" == "$pabs/"* ]]; then
+            log_error "DELETE-GUARD: refusing to delete PROTECTED path '${target}' (resolves under ${prot}/)"
+            exit 1
+        fi
+    done
+}
+
 # Global variables set by argument parsing
 declare -g EXECUTION_MODE="local"
 declare -g CORES=1

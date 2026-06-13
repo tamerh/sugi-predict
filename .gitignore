@@ -1,14 +1,21 @@
-# Old structure (keep for backward compatibility during migration)
+# Data dirs (never tracked) — see IRREPLACEABLE.md for what these hold.
+# Current layout (2026-06-13 reorg):
+#   raw_data/  = ALL inputs, consolidated at root
+#   work/      = pipeline working outputs (was "out"): data/ state/ logs/
+#   qdrant/    = LIVE serving DB (was snapshots/qdrant_latest)
+#   snapshots/ = published/archival bundles only
+raw_data/
+work/
+qdrant/
+snapshots/
+
+# Legacy / other
 data/
 data.bkp/
-raw_data/
 logs/
 logs.bkp/
-
-# New structure
 out/
 test_out/
-snapshots/
 
 # Generated config files (created on-the-fly from config.yaml + test_overrides.yaml)
 config/test_config.yaml

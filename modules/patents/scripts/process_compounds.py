@@ -456,8 +456,8 @@ Examples:
   # Process compounds with patent mapping (streaming mode)
   %(prog)s --input compounds.parquet \\
       --compound-map patent_compound_map.parquet \\
-      --output-index out/data/processed/patents/compounds/compounds_batch_0001.index \\
-      --output-metadata out/data/processed/patents/compounds/compounds_batch_0001.json \\
+      --output-index work/data/processed/patents/compounds/compounds_batch_0001.index \\
+      --output-metadata work/data/processed/patents/compounds/compounds_batch_0001.json \\
       --processing-batch-size 100000
 
   # Test mode with limit

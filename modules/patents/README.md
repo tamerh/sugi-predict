@@ -151,14 +151,14 @@ The pipeline **automatically downloads** USPTO-Chem historical data from https:/
 If you need to download manually before running the pipeline:
 ```bash
 python modules/patents/scripts/download_uspto_chem.py \
-    --output-dir /data/bioyoda/snapshots/raw_data/patents/historical_uspto \
-    --tracking-file /data/bioyoda/snapshots/state/patents/uspto_historical_download.json
+    --output-dir /data/bioyoda/raw_data/patents/historical_uspto \
+    --tracking-file /data/bioyoda/work/state/patents/uspto_historical_download.json
 ```
 
 **Verify download:**
 ```bash
 # Check tracking file
-cat /data/bioyoda/snapshots/state/patents/uspto_historical_download.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"Downloaded: {d['stats']['downloaded']}/{d['stats']['total_files']}\")"
+cat /data/bioyoda/work/state/patents/uspto_historical_download.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"Downloaded: {d['stats']['downloaded']}/{d['stats']['total_files']}\")"
 ```
 
 After download, the pipeline automatically converts JSON → parquet on first run.
@@ -369,7 +369,7 @@ patents:
 
   # USPTO enrichment
   enable_uspto: true
-  uspto_historical_json_dir: "snapshots/raw_data/patents/historical_uspto"
+  uspto_historical_json_dir: "raw_data/patents/historical_uspto"
 
   # Resources
   encode_batch_size: 32
@@ -386,7 +386,7 @@ patents:
 
   # USPTO enrichment
   enable_uspto: true
-  uspto_historical_json_dir: "snapshots/raw_data/patents/historical_uspto"
+  uspto_historical_json_dir: "raw_data/patents/historical_uspto"
 
   # Resources
   encode_batch_size: 128
@@ -685,7 +685,7 @@ conda run -n bioyoda python3 modules/patents/scripts/process_patents.py \
   --output-index test_out/data/processed/patents/text/test.index \
   --output-metadata test_out/data/processed/patents/text/test.json \
   --limit 10 \
-  --uspto-data snapshots/raw_data/patents/historical_uspto/uspto_historical.parquet
+  --uspto-data raw_data/patents/historical_uspto/uspto_historical.parquet
 ```
 
 ## Key Scripts

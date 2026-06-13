@@ -32,7 +32,7 @@ Optional: Merge chunks → Single master index (for analysis/export)
 ./bioyoda.sh run clinical_trials --cluster --bg --jobs 30
 
 # Result: ~25 chunk files ready for Qdrant insertion
-# out/data/processed/clinical_trials/trials_chunk_*.index
+# work/data/processed/clinical_trials/trials_chunk_*.index
 ```
 
 ### Test Run
@@ -68,7 +68,7 @@ snakemake --cores 1 \
   --configfile config/config.yaml \
   clinical_trials_merge
 
-# Output: out/data/merged/clinical_trials/master_clinical_trials.index
+# Output: work/data/merged/clinical_trials/master_clinical_trials.index
 ```
 
 ## Incremental Updates
@@ -183,13 +183,13 @@ The system tracks content changes using **SHA256 hashes**:
 Check state file for update status:
 ```bash
 # View state file
-cat out/state/clinical_trials/processed_chunks.json
+cat work/state/clinical_trials/processed_chunks.json
 
 # Check tracking database
-sqlite3 out/state/clinical_trials/trials_tracking.db "SELECT COUNT(*) FROM trials"
+sqlite3 work/state/clinical_trials/trials_tracking.db "SELECT COUNT(*) FROM trials"
 
 # List update chunks (dated)
-ls -lh out/raw_data/clinical_trials/chunked/trials_update_*.json
+ls -lh work/raw_data/clinical_trials/chunked/trials_update_*.json
 ```
 
 ## Pipeline Steps
@@ -201,7 +201,7 @@ ls -lh out/raw_data/clinical_trials/chunked/trials_update_*.json
 
 ```bash
 # Output location
-out/raw_data/clinical_trials/
+work/raw_data/clinical_trials/
 ├── aact_snapshot.zip
 └── extracted/
     ├── studies.txt (554K trials)
@@ -232,7 +232,7 @@ out/raw_data/clinical_trials/
 
 **Output**:
 ```bash
-out/data/processed/clinical_trials/
+work/data/processed/clinical_trials/
 ├── trials_chunk_0001.json
 ├── trials_chunk_0002.json
 ├── ...
@@ -261,7 +261,7 @@ config_gpu.yaml:
 
 **Output**:
 ```bash
-out/data/processed/clinical_trials/
+work/data/processed/clinical_trials/
 ├── trials_chunk_0001.index + _metadata.json  ← Insert to Qdrant
 ├── trials_chunk_0002.index + _metadata.json  ← Insert to Qdrant
 ├── trials_chunk_0003.index + _metadata.json  ← Insert to Qdrant
@@ -275,7 +275,7 @@ out/data/processed/clinical_trials/
 
 **Output**:
 ```bash
-out/data/merged/clinical_trials/
+work/data/merged/clinical_trials/
 ├── master_clinical_trials.index
 └── master_clinical_trials.json
 ```
@@ -490,8 +490,8 @@ After processing clinical trials data:
 
 2. **Check chunk files**:
    ```bash
-   ls -lh out/data/processed/clinical_trials/trials_chunk_*.index
-   cat out/data/processed/clinical_trials/chunk_manifest.json
+   ls -lh work/data/processed/clinical_trials/trials_chunk_*.index
+   cat work/data/processed/clinical_trials/chunk_manifest.json
    ```
 
 3. **Optional: Merge for analysis**:
@@ -504,7 +504,7 @@ After processing clinical trials data:
 ### Check Chunking Status
 ```bash
 # Check manifest
-cat out/data/processed/clinical_trials/chunk_manifest.json
+cat work/data/processed/clinical_trials/chunk_manifest.json
 
 # Example output:
 # {
@@ -519,20 +519,20 @@ cat out/data/processed/clinical_trials/chunk_manifest.json
 ### List Chunk Files
 ```bash
 # List generated chunks
-ls -lh out/data/processed/clinical_trials/trials_chunk_*.json
+ls -lh work/data/processed/clinical_trials/trials_chunk_*.json
 
 # Count index files
-find out/data/processed/clinical_trials -name "*.index" | wc -l
+find work/data/processed/clinical_trials -name "*.index" | wc -l
 ```
 
 ### Check Processing Logs
 ```bash
 # Main log
-tail -f out/logs/clinical_trials/extract.log
+tail -f work/logs/clinical_trials/extract.log
 
 # Individual chunk logs
-tail -f out/logs/clinical_trials/process_chunk_0001.log
-tail -f out/logs/clinical_trials/process_chunk_0002.log
+tail -f work/logs/clinical_trials/process_chunk_0001.log
+tail -f work/logs/clinical_trials/process_chunk_0002.log
 ```
 
 ### Memory Issues
@@ -551,7 +551,7 @@ clinical_trials:
 ```bash
 # Rerun just the failed chunk
 snakemake --snakefile modules/clinical_trials/Snakefile \
-  out/data/processed/clinical_trials/trials_chunk_0005.index \
+  work/data/processed/clinical_trials/trials_chunk_0005.index \
   --cores 1
 ```
 

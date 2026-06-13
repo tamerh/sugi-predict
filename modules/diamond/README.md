@@ -39,7 +39,7 @@ Download UniProt → Split FASTA → Create DIAMOND DB
 ./bioyoda.sh run protein_similarity_diamond --cluster --jobs 100
 
 # Result: Filtered TSV ready for BioBTree identifier mapping
-# out/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
+# work/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
 ```
 
 ### Production Run - TrEMBL (250M proteins)
@@ -62,7 +62,7 @@ protein_similarity_diamond:
 
 ```bash
 # Output location
-out/raw_data/protein_similarity_diamond/
+work/raw_data/protein_similarity_diamond/
 └── uniprot_swissprot.fasta  (or uniprot_trembl.fasta)
 ```
 
@@ -73,7 +73,7 @@ out/raw_data/protein_similarity_diamond/
 
 **Output**:
 ```bash
-out/raw_data/protein_similarity_diamond/chunks/
+work/raw_data/protein_similarity_diamond/chunks/
 ├── chunk_001.fasta
 ├── chunk_002.fasta
 ├── ...
@@ -86,7 +86,7 @@ out/raw_data/protein_similarity_diamond/chunks/
 
 **Output**:
 ```bash
-out/raw_data/protein_similarity_diamond/diamond_db/
+work/raw_data/protein_similarity_diamond/diamond_db/
 └── uniprot_swissprot.dmnd  # DIAMOND database
 ```
 
@@ -106,7 +106,7 @@ out/raw_data/protein_similarity_diamond/diamond_db/
 
 **Output**:
 ```bash
-out/data/processed/protein_similarity_diamond/results/
+work/data/processed/protein_similarity_diamond/results/
 ├── chunk_001.tsv  # TSV: query, target, identity, evalue, bitscore
 ├── chunk_002.tsv
 └── ...
@@ -118,7 +118,7 @@ out/data/processed/protein_similarity_diamond/results/
 
 **Output**:
 ```bash
-out/data/processed/protein_similarity_diamond/merged/
+work/data/processed/protein_similarity_diamond/merged/
 └── merged_results.tsv  # All similarity pairs
 ```
 
@@ -130,7 +130,7 @@ out/data/processed/protein_similarity_diamond/merged/
 
 **Output**:
 ```bash
-out/data/processed/protein_similarity_diamond/merged/
+work/data/processed/protein_similarity_diamond/merged/
 └── filtered_top100.tsv  # Top-K per protein (BioBTree-ready)
 ```
 
@@ -313,7 +313,7 @@ out/
 
 # 2. Use BioBTree for identifier mapping (external tool)
 # BioBTree can parse the TSV directly
-biobtree insert --input out/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
+biobtree insert --input work/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
 
 # 3. Query BioBTree for protein relationships
 biobtree query --protein Q6GZX4 --type similarity
@@ -331,7 +331,7 @@ biobtree query --protein Q6GZX4 --type similarity
 ./bioyoda.sh run protein_similarity_diamond --cluster --jobs 500
 
 # 3. BioBTree integration (TSV input)
-biobtree insert --input out/data/processed/protein_similarity_diamond/merged/filtered_top50.tsv
+biobtree insert --input work/data/processed/protein_similarity_diamond/merged/filtered_top50.tsv
 ```
 
 ## Troubleshooting
@@ -346,19 +346,19 @@ protein_similarity_diamond:
 ### Check Processing Status
 ```bash
 # Count processed chunks
-ls -lh out/data/processed/protein_similarity_diamond/results/chunk_*.tsv | wc -l
+ls -lh work/data/processed/protein_similarity_diamond/results/chunk_*.tsv | wc -l
 
 # Check merged results
-wc -l out/data/processed/protein_similarity_diamond/merged/merged_results.tsv
+wc -l work/data/processed/protein_similarity_diamond/merged/merged_results.tsv
 
 # Check filtered results
-wc -l out/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
+wc -l work/data/processed/protein_similarity_diamond/merged/filtered_top100.tsv
 ```
 
 ### Inspect TSV Output
 ```bash
 # View TSV format (DIAMOND blastp outfmt 6)
-head out/data/processed/protein_similarity_diamond/results/chunk_001.tsv
+head work/data/processed/protein_similarity_diamond/results/chunk_001.tsv
 
 # Columns:
 # 1. query_id
@@ -379,7 +379,7 @@ head out/data/processed/protein_similarity_diamond/results/chunk_001.tsv
 ```bash
 # Rerun specific chunk
 snakemake --snakefile modules/protein_similarity_diamond/Snakefile \
-  out/data/processed/protein_similarity_diamond/results/chunk_005.tsv \
+  work/data/processed/protein_similarity_diamond/results/chunk_005.tsv \
   --cores 4
 ```
 

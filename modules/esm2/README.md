@@ -39,7 +39,7 @@ Download UniProt → Split FASTA → Generate ESM-2 Embeddings (GPU) → H5 File
 ./bioyoda.sh run esm2 --cluster --jobs 50 --config config/config_gpu.yaml
 
 # Result: ~29 chunk files ready for Qdrant insertion
-# out/data/processed/esm2/embeddings/chunk_*.index
+# work/data/processed/esm2/embeddings/chunk_*.index
 ```
 
 ### Production Run - TrEMBL (250M proteins)
@@ -64,7 +64,7 @@ esm2:
 
 ```bash
 # Output location
-out/raw_data/esm2/
+work/raw_data/esm2/
 └── uniprot_swissprot.fasta  (or uniprot_trembl.fasta)
 ```
 
@@ -75,7 +75,7 @@ out/raw_data/esm2/
 
 **Output**:
 ```bash
-out/raw_data/esm2/chunks/
+work/raw_data/esm2/chunks/
 ├── chunk_001.fasta
 ├── chunk_002.fasta
 ├── ...
@@ -98,7 +98,7 @@ out/raw_data/esm2/chunks/
 
 **Output**:
 ```bash
-out/data/processed/esm2/embeddings/
+work/data/processed/esm2/embeddings/
 ├── chunk_001.h5    # HDF5 with embeddings + IDs
 ├── chunk_002.h5
 └── ...
@@ -111,7 +111,7 @@ out/data/processed/esm2/embeddings/
 
 **Output**:
 ```bash
-out/data/processed/esm2/embeddings/
+work/data/processed/esm2/embeddings/
 ├── chunk_001.index  # FAISS index ← Insert to Qdrant
 ├── chunk_001.json   # Metadata with protein IDs
 ├── chunk_002.index
@@ -354,16 +354,16 @@ esm2:
 ### Check Processing Status
 ```bash
 # Count generated chunks
-ls -lh out/data/processed/esm2/embeddings/chunk_*.index | wc -l
+ls -lh work/data/processed/esm2/embeddings/chunk_*.index | wc -l
 
 # Check chunk files exist
-ls -lh out/raw_data/esm2/chunks/
+ls -lh work/raw_data/esm2/chunks/
 ```
 
 ### Check Embeddings
 ```bash
 # Inspect H5 file
-python -c "import h5py; f=h5py.File('out/data/processed/esm2/embeddings/chunk_001.h5'); print(f['embeddings'].shape, f['ids'][:][:5])"
+python -c "import h5py; f=h5py.File('work/data/processed/esm2/embeddings/chunk_001.h5'); print(f['embeddings'].shape, f['ids'][:][:5])"
 
 # Expected output:
 # (20, 1280) [b'sp|Q6GZX4|001R_FRG3G' b'sp|Q6GZX3|002L_FRG3G' ...]
@@ -373,7 +373,7 @@ python -c "import h5py; f=h5py.File('out/data/processed/esm2/embeddings/chunk_00
 ```bash
 # Rerun specific chunk
 snakemake --snakefile modules/esm2/Snakefile \
-  out/data/processed/esm2/embeddings/chunk_005.index \
+  work/data/processed/esm2/embeddings/chunk_005.index \
   --cores 1
 ```
 

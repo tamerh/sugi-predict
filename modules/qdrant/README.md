@@ -58,7 +58,7 @@ The Qdrant container (`modules/qdrant/setup/singularity/qdrant.sif`) is included
 ### Start Server
 
 ```bash
-# Start Qdrant (uses snapshots/qdrant_latest by default)
+# Start Qdrant (uses qdrant by default)
 ./bioyoda.sh qdrant start
 
 # Custom memory allocation
@@ -73,7 +73,7 @@ The Qdrant container (`modules/qdrant/setup/singularity/qdrant.sif`) is included
 - `--out-dir <path>`: Use specific storage directory
 - `--config <file>`: Use custom config file
 
-**Output**: Creates `snapshots/qdrant_latest/connection_info.txt` with server URL
+**Output**: Creates `qdrant/connection_info.txt` with server URL
 
 ### Stop Server
 
@@ -166,7 +166,7 @@ Qdrant storage is configured in `config/config.yaml`:
 ```yaml
 qdrant:
   storage:
-    path: "snapshots/qdrant_latest"  # Storage location
+    path: "qdrant"  # Storage location
 ```
 
 All snapshots insert to this shared Qdrant instance.
@@ -174,7 +174,7 @@ All snapshots insert to this shared Qdrant instance.
 ### Directory Structure
 
 ```
-snapshots/qdrant_latest/
+qdrant/
 ├── connection_info.txt     # Server URL (created on start)
 ├── qdrant.pid              # Process ID
 ├── storage/                # Qdrant data directory
@@ -219,7 +219,7 @@ cd snapshots/patents_latest/code
 
 ```bash
 # Source connection info
-source snapshots/qdrant_latest/connection_info.txt
+source qdrant/connection_info.txt
 
 # List collections
 curl $QDRANT_URL/collections
@@ -245,7 +245,7 @@ curl -X POST "$QDRANT_URL/collections/pubmed_abstracts/points/search" \
 ./bioyoda.sh qdrant status
 
 # Check logs
-tail -f out/logs/qdrant/server_*.log
+tail -f work/logs/qdrant/server_*.log
 
 # Stop and restart
 ./bioyoda.sh qdrant stop
@@ -259,10 +259,10 @@ tail -f out/logs/qdrant/server_*.log
 ./bioyoda.sh qdrant status
 
 # Check if data exists
-ls -lh out/data/processed/pubmed/baseline/*.index
+ls -lh work/data/processed/pubmed/baseline/*.index
 
 # Check insertion logs
-tail -f out/logs/qdrant/insert_pubmed.log
+tail -f work/logs/qdrant/insert_pubmed.log
 
 # Re-run insertion
 ./bioyoda.sh qdrant insert pubmed
@@ -272,7 +272,7 @@ tail -f out/logs/qdrant/insert_pubmed.log
 
 ```bash
 # Verify connection file exists
-cat snapshots/qdrant_latest/connection_info.txt
+cat qdrant/connection_info.txt
 
 # Test connection
 curl http://localhost:6333/collections

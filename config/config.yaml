@@ -18,9 +18,11 @@ gdrive:
   remote: "gdrive:bioyoda"  # rclone remote:path
 
 # Base Paths - CHANGE THIS FOR DIFFERENT ENVIRONMENTS
-# All outputs (raw_data/, data/, logs/) will be created under: base_dir/
+# Pipeline working outputs (data/, logs/, state/) are created under: base_dir/
+# raw_data is consolidated at the repo root; base_dir/raw_data is a symlink to it.
+# Live Qdrant DB lives at repo-root qdrant/ (see qdrant.storage.path); snapshots/ = archives only.
 # Supports both relative paths (relative to project root) and absolute paths
-base_dir: "out"
+base_dir: "work"
 
 # PubMed Module Configuration
 pubmed:
@@ -378,7 +380,7 @@ qdrant:
 
   # Storage configuration
   storage:
-    path: "/data/bioyoda/snapshots/qdrant_latest"  # Shared Qdrant storage (absolute path)
+    path: "/data/bioyoda/qdrant"  # Live Qdrant storage (promoted to repo root; was snapshots/qdrant_latest)
     # All snapshots insert to this shared Qdrant instance
     # Use --out-dir flag to override with a different location
 
@@ -415,7 +417,7 @@ api:
 qdrant_api:
   url: "http://localhost:6333"
   timeout: 180  # Increased for 27M document collection
-  connection_info_path: "out/data/qdrant/connection_info.txt"
+  connection_info_path: "work/data/qdrant/connection_info.txt"
 
 # Search Settings (for API)
 search:
@@ -476,7 +478,7 @@ collections:
 logging:
   level: "INFO"
   format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-  file: "out/logs/api/api.log"
+  file: "work/logs/api/api.log"
 
 # RAG (Retrieval-Augmented Generation) Configuration
 rag:

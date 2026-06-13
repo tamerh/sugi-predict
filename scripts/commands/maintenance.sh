@@ -129,6 +129,11 @@ cmd_clean() {
     local module="${1:-all}"
     local base_dir=$(get_base_dir)
 
+    # Safety: never let an empty/garbage base_dir or a protected root be deleted.
+    # NOTE: 'clean' only ever touches base_dir/data/* (regenerable staging) — never
+    # the root raw_data/, qdrant/ (live DB), or snapshots/ (see assert_deletable).
+    assert_deletable "${base_dir}/data"
+
     if ! confirm_action "This will remove intermediate files. Continue?"; then
         log_info "Cancelled"
         exit 0
@@ -137,23 +142,28 @@ cmd_clean() {
     case $module in
         pubmed)
             log_info "Cleaning PubMed processed files..."
+            assert_deletable "${base_dir}/data/processed/pubmed"
             rm -rf "${base_dir}/data/processed/pubmed/"*
             log_success "PubMed cleaned"
             ;;
         clinical_trials)
             log_info "Cleaning Clinical Trials processed files..."
+            assert_deletable "${base_dir}/data/processed/clinical_trials"
             rm -rf "${base_dir}/data/processed/clinical_trials/"*
             log_success "Clinical Trials cleaned"
             ;;
         qdrant)
-            log_info "Cleaning Qdrant storage and collections..."
+            log_info "Cleaning Qdrant staging (NOT the live root qdrant/ DB)..."
+            assert_deletable "${base_dir}/data/qdrant/storage"
             rm -rf "${base_dir}/data/qdrant/storage/"*
             rm -f "${base_dir}/data/qdrant/connection_info.txt"
             rm -f "${base_dir}/data/qdrant/collections/"*.done
-            log_success "Qdrant cleaned"
+            log_success "Qdrant staging cleaned"
             ;;
         all)
             log_info "Cleaning all processed files..."
+            assert_deletable "${base_dir}/data/processed"
+            assert_deletable "${base_dir}/data/qdrant/storage"
             rm -rf "${base_dir}/data/processed/"*
             rm -rf "${base_dir}/data/qdrant/storage/"*
             rm -f "${base_dir}/data/qdrant/connection_info.txt"

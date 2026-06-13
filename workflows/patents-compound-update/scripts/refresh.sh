@@ -4,8 +4,8 @@ set -euo pipefail
 source /data/miniconda3/etc/profile.d/conda.sh && conda activate bioyoda
 cd "${BIOYODA_ROOT:-/data/bioyoda}"
 INPUT="${1:?usage: refresh.sh <compounds.parquet>}"
-CHUNKDIR=out/raw_data/patents/compounds_chunks_new
-OUT=out/data/processed/patents/compounds_new
+CHUNKDIR=work/raw_data/patents/compounds_chunks_new
+OUT=work/data/processed/patents/compounds_new
 mkdir -p "$CHUNKDIR" "$OUT"
 
 echo "=== split $INPUT into 1M-row chunks ===" >&2

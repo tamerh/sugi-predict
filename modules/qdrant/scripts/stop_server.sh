@@ -17,7 +17,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 if [ -n "$QDRANT_STORAGE_PATH" ]; then
     STORAGE="$QDRANT_STORAGE_PATH"
 else
-    STORAGE="${PROJECT_ROOT}/snapshots/qdrant_latest"
+    STORAGE="${PROJECT_ROOT}/qdrant"
 fi
 
 PID_FILE="${STORAGE}/qdrant.pid"

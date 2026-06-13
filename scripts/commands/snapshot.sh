@@ -66,8 +66,8 @@ cmd_snapshot() {
     mkdir -p "${snapshots_dir}"
     mkdir -p "${code_dir}"
 
-    # Create shared raw_data directory and symlink
-    local shared_raw_data="${snapshots_dir}/raw_data"
+    # Symlink each snapshot's raw_data to the shared repo-root raw_data store
+    local shared_raw_data="$(dirname "${snapshots_dir}")/raw_data"
     mkdir -p "${shared_raw_data}"
     ln -s "${shared_raw_data}" "${snapshot_root}/raw_data"
     log_info "  raw_data: SYMLINKED to shared ${shared_raw_data}"
@@ -154,7 +154,7 @@ Directory Structure:
   │   ├── scripts/       # Modular scripts
   │   ├── config/        # Modified configs
   │   └── bioyoda.sh     # Main script
-  ├── raw_data/          # SYMLINK to shared snapshots/raw_data/
+  ├── raw_data/          # SYMLINK to shared repo-root raw_data/
   ├── data/              # Processed data and outputs (PER-SNAPSHOT)
   ├── logs/              # Pipeline logs (PER-SNAPSHOT)
   └── state/             # State tracking files (PER-SNAPSHOT)
@@ -173,7 +173,7 @@ Configuration:
   - Fully isolated from the main development directory
 
 Raw Data Sharing:
-  - raw_data/ is SYMLINKED to shared snapshots/raw_data/
+  - raw_data/ is SYMLINKED to shared repo-root raw_data/
   - Saves disk space by reusing downloaded data across snapshots
   - Each snapshot maintains its own state/ for tracking
 

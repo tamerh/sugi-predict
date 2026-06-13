@@ -14,9 +14,9 @@ index.py --existing-pmids.
 
 Usage:
   python build_existing_pmids.py --metadata-dir snapshots/prod_latest/data/processed/pubmed \
-      --output out/state/pubmed/existing_pmids.txt.gz
+      --output work/state/pubmed/existing_pmids.txt.gz
   python build_existing_pmids.py --qdrant-url http://localhost:6333 \
-      --collection pubmed_abstracts --output out/state/pubmed/existing_pmids.txt.gz
+      --collection pubmed_abstracts --output work/state/pubmed/existing_pmids.txt.gz
 """
 import argparse
 import glob
