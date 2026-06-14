@@ -1,0 +1,58 @@
+name: "patents_text update — USPTO full-text gap fill (batched)"
+description: |
+  Enrich/extend patents_text with USPTO full text (title+abstract+claims+description)
+  for biomedical patents, filtered to the SureChEMBL universe. Codifies the 2026-06-14
+  gap-fill run (issues.md / memory patents-text-mining-architecture).
+
+  MANUAL PREREQUISITE (not in this DAG — USPTO bulk portal is CAPTCHA-gated):
+    Download the weekly grant+application XML ZIPs (ipg*/ipa*) for the gap period from
+      https://data.uspto.gov/bulkdata/datasets/PTGRXML  (grants)
+      https://data.uspto.gov/bulkdata/datasets/APPXML   (applications)
+    and place them in raw_data/patents/manual/. Also ensure the latest SureChEMBL
+    patents.parquet is present (raw_data/patents/surechembl/<release>/patents.parquet).
+
+  STAGE 1 (prepare): extract US patent-ID filter from SureChEMBL -> organize the manual
+    ZIPs (fixing download_uspto.py's broken relative symlinks -> absolute) -> parse_uspto
+    (XML -> abstract+claims+description, filtered) -> tag has_full_text=True /
+    text_source=surechembl+uspto -> split into 32 fixed batches.
+  STAGE 2 (embed, fan-out x32): process_patents.py S-BioBERT 768-d, 1 combined vector per
+    patent (CPU).
+  STAGE 3 (report): aggregate vector count + chunk-type breakdown.
+
+  Qdrant insert is a deliberate FOLLOW-UP (not in this DAG): additive UPSERT by
+  hash(patent_id) — existing title-only patents upgraded to full-text in place, new ones
+  added. Run:
+    python modules/qdrant/scripts/insert_from_faiss.py \
+      --faiss-dir work/data/processed/patents/text_gap --collection patents_text \
+      --qdrant-url http://localhost:6333 --vector-size 768
+version: 1
+publish:
+  mode: none
+params:
+  - name: surechembl_patents
+    type: string
+    required: true
+    description: 'Path to latest SureChEMBL patents.parquet (e.g. raw_data/patents/surechembl/2026-06-01/patents.parquet).'
+  - name: manual_dir
+    type: string
+    required: false
+    description: 'Dir of manually-downloaded USPTO ipg*/ipa* ZIPs (default raw_data/patents/manual).'
+defaults:
+  assign_to: tamerh
+tasks:
+  - id: prepare
+    action: compute
+    script: workflows/patents-text-update/scripts/prepare.sh
+    prompt: "Build US-ID filter, parse USPTO ZIPs to filtered full-text, split into 32 batches."
+  - id: embed
+    action: compute
+    script: workflows/patents-text-update/scripts/embed_batch.sh
+    collects: prepare
+    for_each:
+      batch: ["01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","31","32"]
+    prompt: "Embed patents_text batch {{batch}} (S-BioBERT full-text)."
+  - id: report
+    action: compute
+    script: workflows/patents-text-update/scripts/report.sh
+    collects: embed
+    prompt: "Count full-text vectors produced across batches."

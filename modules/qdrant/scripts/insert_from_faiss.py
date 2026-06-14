@@ -104,12 +104,22 @@ def get_point_id_from_metadata(meta: dict, fallback_id: int) -> int:
             log_with_timestamp(f"  └─ WARNING: Invalid PMID '{meta.get('pmid')}', using fallback ID")
             return fallback_id
 
-    # Try NCT ID (Clinical Trials)
+    # Try NCT ID (Clinical Trials) — MULTI-CHUNK.
+    # A trial yields several section chunks (summary / primary_outcome /
+    # secondary_outcome / eligibility / description...). chunk_id is NOT unique within a
+    # trial (summary, primary_outcome, secondary_outcome all use chunk_id=0), so we key on
+    # the per-file global_chunk_id running counter to give each SECTION a distinct point.
+    # (Falls back to chunk_type:chunk_id, then bare nct_id.) Pair with insert --update-mode,
+    # which deletes ALL of a trial's old points by nct_id payload filter before re-inserting,
+    # so refreshes stay consistent even though these ids differ from the legacy hash(nct_id).
     if 'nct_id' in meta:
         nct_id = str(meta['nct_id'])
-        # Hash NCT ID to get consistent integer
-        # Use first 8 bytes of SHA256 hash for 64-bit integer
-        hash_bytes = hashlib.sha256(nct_id.encode()).digest()[:8]
+        disc = meta.get('global_chunk_id')
+        if disc is None:
+            ct, ci = meta.get('chunk_type'), meta.get('chunk_id')
+            disc = f"{ct}:{ci}" if ct is not None or ci is not None else None
+        key = f"{nct_id}:{disc}" if disc is not None else nct_id
+        hash_bytes = hashlib.sha256(key.encode()).digest()[:8]
         point_id = int.from_bytes(hash_bytes, byteorder='big', signed=False)
         # Ensure positive and within reasonable range (Qdrant uses unsigned 64-bit)
         return point_id & 0x7FFFFFFFFFFFFFFF  # Ensure positive 63-bit number

@@ -22,8 +22,11 @@ other `raw_data/*` (pubmed/uniprot/surechembl — re-downloadable from live sour
    (`scripts/commands/sync.sh`; manual backup log under `work/logs/sync/`). This is the
    only layer that survives a full local `rm -rf` or disk failure — **keep it current.**
    (Before 2026-06-13 only the 143 MB parquet was on gdrive, NOT the 11 G of raw JSONs.)
-2. **Read-only.** `raw_data/patents/historical_uspto` and `raw_data/clinical_trials` are
-   `chmod -R a-w` (blocks accidental overwrite + casual `rm`; to edit: `chmod -R u+w <path>`).
+2. **Read-only.** `raw_data/patents/historical_uspto` and the AACT raw
+   (`raw_data/clinical_trials/aact_flat_files_*.zip` + `extracted/`) are `chmod -R a-w`
+   (blocks accidental overwrite + casual `rm`; to edit: `chmod -R u+w <path>`).
+   NOTE: `raw_data/clinical_trials/chunked/` is DERIVED (regenerated from biobtree
+   `trials.json`) and is intentionally left writable so the CT refresh can rewrite it.
 3. **Delete-guard.** `bioyoda.sh clean` (and any caller of `assert_deletable` in
    `scripts/lib/common.sh`) refuses to delete anything under `raw_data/`, `qdrant/`, or
    `snapshots/`, and refuses empty/`/`/`/data`/repo-root targets (stops the
