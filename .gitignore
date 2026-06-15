@@ -4,10 +4,12 @@
 #   work/      = pipeline working outputs (was "out"): data/ state/ logs/
 #   qdrant/    = LIVE serving DB (was snapshots/qdrant_latest)
 #   snapshots/ = published/archival bundles only
-raw_data/
-work/
-qdrant/
-snapshots/
+# Anchored to repo ROOT (leading /) so they only match the top-level data dirs and
+# NEVER a code dir like modules/qdrant/.
+/raw_data/
+/work/
+/qdrant/
+/snapshots/
 
 # Legacy / other
 data/
