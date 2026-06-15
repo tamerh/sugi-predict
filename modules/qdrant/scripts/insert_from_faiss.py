@@ -988,8 +988,18 @@ def main():
     # by nct_id payload filter before re-inserting) unless explicitly overridden.
     update_mode = args.update_mode
     if not update_mode and "clinical_trials" in args.collection.lower():
-        update_mode = True
-        log_with_timestamp("Auto-enabled --update-mode for clinical_trials (multi-chunk; avoids orphaned vectors)")
+        # Only needed if there are OLD points to delete. On a fresh/empty collection
+        # (full rebuild) skip it — else ~one delete-by-nct call per trial wastes huge time.
+        try:
+            from qdrant_client import QdrantClient as _QC
+            _existing = _QC(url=args.qdrant_url, timeout=30).count(args.collection).count
+        except Exception:
+            _existing = 0
+        if _existing > 0:
+            update_mode = True
+            log_with_timestamp(f"Auto-enabled --update-mode for clinical_trials ({_existing:,} existing points to replace)")
+        else:
+            log_with_timestamp("clinical_trials empty/new — fresh insert, no update-mode needed")
 
     # Run insertion
     try:
