@@ -30,6 +30,7 @@ def main():
     ap.add_argument('--output-dir', required=True)
     ap.add_argument('--shard-size', type=int, default=50000)
     ap.add_argument('--scroll-batch', type=int, default=10000)
+    ap.add_argument('--max-records', type=int, default=0, help="stop after N records (0 = all; use one shard for a test run)")
     args = ap.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -61,6 +62,10 @@ def main():
             buf.append(rec); n += 1
             if len(buf) >= args.shard_size:
                 flush()
+            if args.max_records and n >= args.max_records:
+                flush()
+                print(f"DONE (test): {n:,} records -> {shard} shard(s) in {args.output_dir}  (skipped no-text: {skipped:,})")
+                return
         if n and n % 500000 < args.scroll_batch:
             print(f"[{time.strftime('%H:%M:%S')}] exported {n:,}  skipped(no-text) {skipped:,}  "
                   f"({n/max(1e-9,time.time()-t0):.0f}/s)", flush=True)

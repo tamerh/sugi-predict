@@ -69,6 +69,12 @@ def process_shard(path, out_dir, tok, model, device, args):
             records.append(r); texts.append(t)
     if not texts:
         return 0
+    # Length-sort so each batch has similar-length texts -> far less padding waste -> big
+    # GPU throughput win (variable-length biomedical text). Keep records+texts in the same
+    # order; point_id comes from payload, not position, so order is irrelevant downstream.
+    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+    records = [records[i] for i in order]
+    texts = [texts[i] for i in order]
     vecs = embed(texts, tok, model, device, args.max_length, args.batch_size)
     os.makedirs(out_dir, exist_ok=True)
     index = faiss.IndexFlatIP(vecs.shape[1]); index.add(vecs)
@@ -90,7 +96,7 @@ def main():
     ap.add_argument('--model', default='ncbi/MedCPT-Article-Encoder')
     ap.add_argument('--text-field', default='text')
     ap.add_argument('--max-length', type=int, default=512)
-    ap.add_argument('--batch-size', type=int, default=64)
+    ap.add_argument('--batch-size', type=int, default=256)
     ap.add_argument('--no-fp16', dest='fp16', action='store_false', default=True)
     ap.add_argument('--device', default='auto')
     args = ap.parse_args()
