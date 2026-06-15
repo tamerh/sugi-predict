@@ -582,8 +582,11 @@ Examples:
             gc.collect()
 
         if offset == 0:
-            log_with_timestamp("ERROR: No fingerprints generated from compounds")
-            return 1
+            # Not an error in delta mode: a chunk can be all already-existing (skipped via
+            # --existing-ids) or all invalid SMILES (e.g. RDKit Si/P valence). Nothing to
+            # embed -> succeed quietly with no output index, so it doesn't read as a FAIL.
+            log_with_timestamp("No new valid compounds in this chunk (all skipped/invalid) — nothing to write")
+            return 0
 
         # Trim array to actual valid count (remove unfilled rows)
         if offset < total_compounds:

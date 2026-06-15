@@ -982,6 +982,15 @@ def main():
         log_with_timestamp(f"ERROR: FAISS directory not found: {args.faiss_dir}")
         sys.exit(1)
 
+    # clinical_trials is MULTI-CHUNK (many section vectors per nct_id, point-id keyed on
+    # global_chunk_id). Re-running without delete-old would orphan a trial's prior vectors
+    # if its chunking shifts. So default update-mode ON for CT (delete a trial's old points
+    # by nct_id payload filter before re-inserting) unless explicitly overridden.
+    update_mode = args.update_mode
+    if not update_mode and "clinical_trials" in args.collection.lower():
+        update_mode = True
+        log_with_timestamp("Auto-enabled --update-mode for clinical_trials (multi-chunk; avoids orphaned vectors)")
+
     # Run insertion
     try:
         insert_from_faiss(
@@ -993,7 +1002,7 @@ def main():
             vector_size=args.vector_size,
             tracking_file=args.tracking_file,
             chunk_tracking_file=args.chunk_tracking_file,
-            update_mode=args.update_mode,
+            update_mode=update_mode,
             hnsw_m=args.hnsw_m,
             hnsw_ef_construct=args.hnsw_ef_construct,
             max_segment_size=args.max_segment_size,
