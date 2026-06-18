@@ -1,0 +1,24 @@
+# Isolated bioyoda Qdrant — SEPARATE compose project from prod (`deploy`).
+# Reuses the existing on-disk storage written by Qdrant v1.16.3 (no migration).
+# Launch:  docker compose -p bioyoda -f deploy/docker-compose.bioyoda.yml up -d
+# Stop:    docker compose -p bioyoda -f deploy/docker-compose.bioyoda.yml down
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.18.2          # exact match to the data on disk -> no migration
+    container_name: qdrant-bioyoda
+    restart: unless-stopped
+    # --- memory safety net (the 2026-06-17 freeze was swap-thrash; this prevents a repeat) ---
+    mem_limit: 95g                       # hard cap; with always_ram:false RSS ~ HNSW (~30g)
+    memswap_limit: 95g                   # == mem_limit -> container swap DISABLED
+    mem_swappiness: 0
+    environment:
+      # config.yaml binds 127.0.0.1 (old host-process setup); in a container that hides it from
+      # the published port. Bind 0.0.0.0 in-container; host security = the 127.0.0.1 port map.
+      - QDRANT__SERVICE__HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:6333:6333"             # HTTP, localhost only
+      - "127.0.0.1:6334:6334"             # gRPC, localhost only
+    volumes:
+      - /data/bioyoda/qdrant/storage:/qdrant/storage
+      - /data/bioyoda/config/qdrant_config.yaml:/qdrant/config/production.yaml:ro
+    stop_grace_period: 120s               # let Qdrant flush WAL cleanly on stop

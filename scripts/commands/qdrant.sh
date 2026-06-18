@@ -86,6 +86,7 @@ cmd_qdrant() {
         insert)      qdrant_insert "$@" ;;
         stop-insert) qdrant_stop_insert "$@" ;;
         reindex)     qdrant_reindex "$@" ;;
+        rebuild)     qdrant_rebuild "$@" ;;
         help|--help|-h) qdrant_help ;;
         *)
             log_error "Unknown qdrant subcommand: $subcommand"
@@ -93,6 +94,14 @@ cmd_qdrant() {
             exit 1
             ;;
     esac
+}
+
+# Rebuild a collection from its FAISS source using its proven profile
+# Usage: bioyoda.sh qdrant rebuild <collection> [--recreate]
+qdrant_rebuild() {
+    local py="/data/miniconda3/envs/bioyoda/bin/python"
+    [[ -x "$py" ]] || py="python3"
+    "$py" /data/bioyoda/modules/qdrant/scripts/rebuild_collection.py "$@"
 }
 
 # Start Qdrant server

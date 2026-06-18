@@ -12,7 +12,7 @@ Sizes (full pubmed, float32): input ~60 GB + vectors ~89 GB (28.9M×768×4B) + s
 
 ---
 
-## PHASE 0 — LOCAL: export shards + stage to gdrive  (do FIRST; ~60 GB upload is the real bottleneck)
+## PHASE 0 — LOCAL: export shards  (⚠️ do this BEFORE renting the box — it's local + Qdrant-only, no reason to pay for an idle GPU during the ~20 min export. Qdrant scroll = guaranteed 1:1 with the collection, the right source. Further: pre-stage to a persistent RunPod network volume to also skip the rsync-idle.)
 ```bash
 ./bioyoda.sh qdrant start
 # full pubmed export (no --max-records) -> ~578 shards (~60 GB); ~30-45 min scroll
