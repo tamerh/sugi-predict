@@ -9,9 +9,9 @@ QUINAZOLINE = "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1O"   # SCHEMBL8383-like → EGF
 
 def test_collections():
     c = E.collections()
-    assert len(c) == 7
+    assert len(c) == 6
     assert c["patent_atlas"]["modality"] == "chemical" and c["patent_atlas"]["dim"] == 2048
-    assert c["pubmed_abstracts_medcpt"]["modality"] == "text"
+    assert c["clinical_trials_medcpt"]["modality"] == "text"
     assert c["esm2"]["modality"] == "protein"
 
 

@@ -9,7 +9,6 @@ COLLECTIONS_DOC = """Collections (pass as `collection`):
                           best_tanimoto (0-1 float), novel (bool), exact_match (bool), surechembl_id.
   chembl                  ChEMBL reference ligands. CHEMICAL (query by `smiles`).
   patents_compounds       SureChEMBL compound fingerprints. CHEMICAL (query by `smiles`).
-  pubmed_abstracts_medcpt PubMed abstracts. TEXT (query by `text`). payload: pmid, chunk_text.
   clinical_trials_medcpt  ClinicalTrials.gov. TEXT (query by `text`).
   patents_text            patent full text. TEXT (query by `text`).
   esm2                    SwissProt ESM-2 protein embeddings. PROTEIN (query by `accession`, a UniProt id).

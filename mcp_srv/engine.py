@@ -20,7 +20,6 @@ COLLECTIONS = {
     "patent_atlas":            ("chemical", 2048),   # 30M patent compounds, predicted targets + provenance
     "chembl":                  ("chemical", 2048),   # ChEMBL reference ligands
     "patents_compounds":       ("chemical", 2048),   # SureChEMBL compound fingerprints
-    "pubmed_abstracts_medcpt": ("text", 768),        # PubMed abstracts (MedCPT)
     "clinical_trials_medcpt":  ("text", 768),        # clinical trials (MedCPT)
     "patents_text":            ("text", 768),        # patent text (MedCPT-compatible)
     "esm2":                    ("protein", 1280),     # SwissProt ESM-2 protein embeddings
