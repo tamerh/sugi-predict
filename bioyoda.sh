@@ -172,6 +172,12 @@ main() {
             cmd_qdrant "$@"
             ;;
 
+        # Compound substrate — exact-Tanimoto FTO / chemical-density (FPSim2)
+        compounds)
+            source "${SCRIPT_DIR}/commands/compounds.sh"
+            cmd_compounds "$@"
+            ;;
+
         # Testing
         test)
             source "${SCRIPT_DIR}/commands/test.sh"

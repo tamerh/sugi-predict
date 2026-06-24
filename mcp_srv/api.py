@@ -1,0 +1,77 @@
+"""BioYoda REST API — FastAPI router for /api/*. Thin wrappers over the engine (the single source of truth)."""
+from typing import Optional, List
+
+from fastapi import APIRouter, Body, Query
+from fastapi.responses import JSONResponse, Response
+
+from . import engine as E
+
+router = APIRouter(prefix="/api", tags=["api"])
+
+
+def _err(e):
+    return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+@router.get("/collections")
+async def api_collections():
+    """The capability map: collections, their modality, and vector dim."""
+    return E.collections()
+
+
+@router.post("/query")
+async def api_query(body: dict = Body(...)):
+    """Search/filter any collection. Body: {collection, text?|smiles?|accession?, filter?, limit?, offset?}."""
+    try:
+        return E.query(
+            collection=body["collection"], text=body.get("text"), smiles=body.get("smiles"),
+            accession=body.get("accession"), filter=body.get("filter"),
+            limit=body.get("limit", 10), offset=body.get("offset"), ids=body.get("ids"),
+            with_names=body.get("with_names", False), with_known=body.get("with_known", False),
+        )
+    except KeyError:
+        return _err("'collection' is required")
+    except Exception as e:
+        return _err(e)
+
+
+@router.post("/count")
+async def api_count(body: dict = Body(...)):
+    """Count points matching a filter. Body: {collection, filter?}."""
+    try:
+        return E.count(collection=body["collection"], filter=body.get("filter"))
+    except Exception as e:
+        return _err(e)
+
+
+@router.get("/depict")
+async def api_depict(smiles: str = Query(...), w: int = Query(240), h: int = Query(150)):
+    """Render a molecule to SVG (RDKit). Run in a worker thread so concurrent renders don't block the loop."""
+    import asyncio
+    try:
+        svg = await asyncio.to_thread(E.depict, smiles, w, h)
+        if svg is None:
+            return Response(status_code=404)
+        return Response(content=svg, media_type="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=604800"})
+    except Exception:
+        return Response(status_code=404)
+
+
+@router.get("/predict")
+async def api_predict(smiles: str = Query(...), top: int = Query(20), human_only: bool = Query(True)):
+    """Predict targets for a SMILES."""
+    try:
+        return E.predict(smiles, top=top, human_only=human_only)
+    except Exception as e:
+        return _err(e)
+
+
+@router.get("/provenance")
+async def api_provenance(ids: str = Query(..., description="comma-separated SureChEMBL ids"),
+                         max_per: int = Query(8)):
+    """Patent provenance for SureChEMBL id(s)."""
+    try:
+        return E.provenance([i.strip() for i in ids.split(",") if i.strip()], max_per=max_per)
+    except Exception as e:
+        return _err(e)

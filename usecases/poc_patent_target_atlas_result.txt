@@ -1,0 +1,107 @@
+  qc = QdrantClient(url="http://localhost:6333", timeout=180)
+building REFERENCE ligand->target library (16 targets, ChEMBL)…
+  reference = 480 unique ligands across 16 targets
+  decoy universe = 500 targets; base rate ~= 0.20%
+
+building QUERY set (mechanism target + CONFIRMED in patents_compounds)…
+  imatinib       skip: no mechanism target
+  gefitinib      mech= 1t (in-ref:P00533            ) patent_tan=1.000 PRESENT SCHEMBL7866
+  erlotinib      skip: no mechanism target
+  osimertinib    mech= 1t (in-ref:P00533            ) patent_tan=1.000 PRESENT SCHEMBL29378405
+  dasatinib      mech=15t (in-ref:P00519            ) patent_tan=1.000 PRESENT SCHEMBL29381185
+  nilotinib      skip: no mechanism target
+  sunitinib      mech= 9t (in-ref:P36888            ) patent_tan=1.000 PRESENT SCHEMBL25343938
+  sorafenib      skip: no mechanism target
+  lapatinib      mech= 2t (in-ref:P00533            ) patent_tan=1.000 PRESENT SCHEMBL29351024
+  vemurafenib    mech= 1t (in-ref:-                 ) patent_tan=1.000 PRESENT SCHEMBL29356185
+  crizotinib     mech= 6t (in-ref:-                 ) patent_tan=1.000 PRESENT SCHEMBL30129754
+  ruxolitinib    skip: no mechanism target
+  ibrutinib      mech= 1t (in-ref:-                 ) patent_tan=1.000 PRESENT SCHEMBL201859
+  afatinib       skip: no mechanism target
+  bosutinib      mech= 4t (in-ref:P00519            ) patent_tan=1.000 PRESENT SCHEMBL29389315
+  ponatinib      skip: no mechanism target
+  bicalutamide   mech= 3t (in-ref:P10275            ) patent_tan=1.000 PRESENT SCHEMBL29353850
+  enzalutamide   mech= 1t (in-ref:P10275            ) patent_tan=1.000 PRESENT SCHEMBL29352764
+  apalutamide    mech= 1t (in-ref:P10275            ) patent_tan=1.000 PRESENT SCHEMBL29351392
+  tamoxifen      mech= 1t (in-ref:P03372            ) patent_tan=1.000 PRESENT SCHEMBL17262111
+  raloxifene     mech= 1t (in-ref:P03372            ) patent_tan=1.000 PRESENT SCHEMBL3162158
+  fulvestrant    mech= 1t (in-ref:P03372            ) patent_tan=0.797 absent
+  toremifene     skip: no mechanism target
+  rosiglitazone  mech= 1t (in-ref:P37231            ) patent_tan=1.000 PRESENT SCHEMBL7052472
+  pioglitazone   skip: no mechanism target
+  apixaban       mech= 1t (in-ref:P00742            ) patent_tan=1.000 PRESENT SCHEMBL118023
+  rivaroxaban    mech= 1t (in-ref:P00742            ) patent_tan=1.000 PRESENT SCHEMBL7721848
+  edoxaban       skip: no mechanism target
+  betrixaban     mech= 1t (in-ref:P00742            ) patent_tan=1.000 PRESENT SCHEMBL29374026
+  dabigatran     mech= 1t (in-ref:P00734            ) patent_tan=1.000 PRESENT SCHEMBL29582891
+  argatroban     mech= 1t (in-ref:P00734            ) patent_tan=1.000 PRESENT SCHEMBL29741503
+  melagatran     skip: no mechanism target
+  fentanyl       mech= 1t (in-ref:P35372            ) patent_tan=1.000 PRESENT SCHEMBL8804
+  sufentanil     skip: no mechanism target
+  alfentanil     skip: no mechanism target
+  haloperidol    mech= 4t (in-ref:P14416,P28223     ) patent_tan=1.000 PRESENT SCHEMBL20254453
+  risperidone    mech= 3t (in-ref:P14416,P28223,P28335) patent_tan=1.000 PRESENT SCHEMBL5070793
+  clozapine      mech= 2t (in-ref:P14416,P28223     ) patent_tan=1.000 PRESENT SCHEMBL29360001
+  olanzapine     mech= 5t (in-ref:P14416,P28223,P28335) patent_tan=1.000 PRESENT SCHEMBL29358280
+  aripiprazole   mech= 3t (in-ref:P14416,P28223     ) patent_tan=1.000 PRESENT SCHEMBL29475638
+  quetiapine     skip: no mechanism target
+  ziprasidone    mech= 3t (in-ref:P14416,P28223,P28335) patent_tan=1.000 PRESENT SCHEMBL29368426
+  paliperidone   mech= 2t (in-ref:P14416,P28223     ) patent_tan=1.000 PRESENT SCHEMBL67205
+  rimonabant     mech= 1t (in-ref:-                 ) patent_tan=1.000 PRESENT SCHEMBL29373177
+  naloxone       skip: no mechanism target
+  morphine       skip: no mechanism target
+  buprenorphine  mech= 2t (in-ref:P35372            ) patent_tan=1.000 PRESENT SCHEMBL15262711
+  loperamide     mech= 1t (in-ref:P35372            ) patent_tan=1.000 PRESENT SCHEMBL8409779
+
+confirmed-in-patent-space: 31/48 drugs
+of those, evaluable (>=1 mechanism target inside the 16-target reference): 27
+
+### PATENT-COMPOUND -> TARGET prediction (k-NN to reference, held-out)
+
+evaluable queries = 27   universe = 500 targets
+
+recall@k      k-NN (chem)   POPULARITY     RANDOM
+  @1               74.1%         0.0%       0.0%
+  @5               96.3%         0.0%       0.0%
+
+recall@1 stratified by top-neighbor Tanimoto (graded signal check):
+  top-tan [0.7,0.9):  recall@1 = 100.0%   (n=2)
+  top-tan [0.5,0.7):  recall@1 = 88.9%   (n=9)
+  top-tan [0.3,0.5):  recall@1 = 75.0%   (n=12)
+  top-tan [0.0,0.3):  recall@1 = 25.0%   (n=4)
+
+per-query (held-out twins excluded):
+  paliperidone   top-tan=0.740  pred=P28223  true(in-ref)=['P14416', 'P28223']  hit@1=Y
+  risperidone    top-tan=0.736  pred=P28223  true(in-ref)=['P14416', 'P28223', 'P28335']  hit@1=Y
+  rivaroxaban    top-tan=0.627  pred=P00742  true(in-ref)=['P00742']  hit@1=Y
+  enzalutamide   top-tan=0.622  pred=P10275  true(in-ref)=['P10275']  hit@1=Y
+  osimertinib    top-tan=0.568  pred=P00533  true(in-ref)=['P00533']  hit@1=Y
+  buprenorphine  top-tan=0.553  pred=P35372  true(in-ref)=['P35372']  hit@1=Y
+  ziprasidone    top-tan=0.527  pred=P28223  true(in-ref)=['P14416', 'P28223', 'P28335']  hit@1=Y
+  apalutamide    top-tan=0.523  pred=P10275  true(in-ref)=['P10275']  hit@1=Y
+  bicalutamide   top-tan=0.514  pred=P10275  true(in-ref)=['P10275']  hit@1=Y
+  aripiprazole   top-tan=0.514  pred=P14416  true(in-ref)=['P14416', 'P28223']  hit@1=Y
+  haloperidol    top-tan=0.500  pred=P35372  true(in-ref)=['P14416', 'P28223']  hit@1=n
+  gefitinib      top-tan=0.494  pred=P00533  true(in-ref)=['P00533']  hit@1=Y
+  raloxifene     top-tan=0.472  pred=P03372  true(in-ref)=['P03372']  hit@1=Y
+  fentanyl       top-tan=0.460  pred=P35372  true(in-ref)=['P35372']  hit@1=Y
+  apixaban       top-tan=0.450  pred=P00742  true(in-ref)=['P00742']  hit@1=Y
+  lapatinib      top-tan=0.417  pred=P00533  true(in-ref)=['P00533']  hit@1=Y
+  dasatinib      top-tan=0.392  pred=P00519  true(in-ref)=['P00519']  hit@1=Y
+  betrixaban     top-tan=0.388  pred=P00734  true(in-ref)=['P00742']  hit@1=n
+  sunitinib      top-tan=0.357  pred=P36888  true(in-ref)=['P36888']  hit@1=Y
+  bosutinib      top-tan=0.356  pred=P00533  true(in-ref)=['P00519']  hit@1=n
+  tamoxifen      top-tan=0.350  pred=P03372  true(in-ref)=['P03372']  hit@1=Y
+  argatroban     top-tan=0.308  pred=P00734  true(in-ref)=['P00734']  hit@1=Y
+  dabigatran     top-tan=0.304  pred=P00742  true(in-ref)=['P00734']  hit@1=n
+  loperamide     top-tan=0.274  pred=P08172  true(in-ref)=['P35372']  hit@1=n
+  clozapine      top-tan=0.260  pred=Q05655  true(in-ref)=['P14416', 'P28223']  hit@1=n
+  olanzapine     top-tan=0.256  pred=Q05655  true(in-ref)=['P14416', 'P28223', 'P28335']  hit@1=n
+  rosiglitazone  top-tan=0.241  pred=P37231  true(in-ref)=['P37231']  hit@1=Y
+
+VERDICT inputs:
+  confirmed-in-patent-space : 31/48
+  evaluable (target in ref) : 27
+  recall@1 k-NN=74.1%  pop=0.0%  rnd=0.0%
+  recall@5 k-NN=96.3%  pop=0.0%  rnd=0.0%
+

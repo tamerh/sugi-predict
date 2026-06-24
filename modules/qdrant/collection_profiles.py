@@ -48,6 +48,15 @@ PROFILES = {
         "query_encoder": None,  # protein: query is an ESM-2 vector (by protein_id) or raw embedding
         "notes": "574K proteins; small, vectors in-RAM. Mixed point-ids (legacy seq + delta hash).",
     },
+    "chembl": {
+        "dim": 2048, "vectors_on_disk": False, "hnsw_m": 32, "hnsw_ef": 256,
+        "quant": BINARY,
+        "faiss_source": None,   # built from work/chembl_reference/ via modules/qdrant/scripts/build_chembl_collection.py
+        "query_encoder": None,  # compound: query is a Morgan/ECFP4 fingerprint (RDKit), like patents_compounds
+        "notes": "683K ChEMBL ligands, Morgan r2/2048, BINARY quant, in-RAM. The ligand->target answer key as a "
+                 "general target-labeled modality (payload: cid, smiles, targets[UniProt]). Symmetric with "
+                 "patents_compounds; exact-Tanimoto prediction still uses the FPSim2 index (work/chembl_reference).",
+    },
     "patents_compounds": {
         "dim": 2048, "vectors_on_disk": True, "hnsw_m": 32, "hnsw_ef": 256,
         "quant": BINARY,

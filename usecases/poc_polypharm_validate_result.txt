@@ -1,0 +1,39 @@
+loading SwissProt seqs + taxids…
+  c = QdrantClient(url="http://localhost:6333", timeout=120)
+building gold set (primary + held-out secondary targets per drug)…
+  dasatinib      primary=P06239 secondary=155
+  bosutinib      primary=P00519 secondary=228
+  sunitinib      primary=P07333 secondary=328
+  regorafenib    primary=Q02763 secondary=33
+  axitinib       primary=P17948 secondary=106
+  crizotinib     primary=P08922 secondary=198
+  ceritinib      primary=Q9UM73 secondary=47
+  lorlatinib     primary=Q9UM73 secondary=23
+  gefitinib      primary=P00533 secondary=102
+  osimertinib    primary=P00533 secondary=39
+  lapatinib      primary=P04626 secondary=24
+  vandetanib     primary=Q02763 secondary=112
+  vemurafenib    primary=P15056 secondary=92
+  tofacitinib    primary=O60674 secondary=37
+  ibrutinib      primary=Q06187 secondary=58
+  palbociclib    primary=P24385 secondary=90
+  midostaurin    primary=P36888 secondary=200
+  larotrectinib  primary=P04629 secondary=3
+  entrectinib    primary=P04629 secondary=59
+  gilteritinib   primary=P36888 secondary=91
+  quizartinib    primary=P07333 secondary=69
+  binimetinib    primary=Q02750 secondary=2
+  fedratinib     primary=P36888 secondary=298
+  baricitinib    primary=P23458 secondary=29
+  -> 24 drugs with >=2 held-out human/in-esm2 secondary targets
+
+### PREDICT->VALIDATE  (recall@50, 24 drugs, 2423 held-out secondary targets ; 35s)
+
+  ESM-2       recall@50 = 2.2%  (median 2%)
+  DIAMOND     recall@50 = 5.1%  (median 4%)
+  POPULARITY  recall@50 = 29.2%  (median 29%)
+  RANDOM      recall@50 = 10.4%  (median 10%)
+
+  of 44 ESM-2-recovered secondary targets, 15 (34%) are DIAMOND-missed AND <30% identity to primary = recovered ONLY via the embedding (the moat).
+
+VERDICT: moat validated iff ESM-2 >> DIAMOND (reaches targets sequence misses) AND >> POPULARITY (specific, not degree-bias).

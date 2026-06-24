@@ -1,0 +1,19 @@
+fetching corpus…
+  833 peptides / 47 families (cap 25)
+loading ESM-2 650M…
+loading ProtT5…
+embedding (ESM-2 real+null, ProtT5, k-mer)…
+Smith-Waterman all-vs-all…
+within-family identity (twilight split)…
+
+family-mate pairs: 7393 | twilight(<30% id)=3187 (43%) — the gap sequence-search is blind to
+
+encoder               family-recall@10TWILIGHT-recall@10
+ESM-2(centered)                   52%                5%
+ProtT5(centered)                  56%                6%
+k-mer 1+2                         58%                3%
+ESM-2 NULL(shuffled)              39%                4%
+Smith-Waterman                    74%                6%
+
+MOAT iff ESM-2 TWILIGHT-recall >> k-mer, NULL, and Smith-Waterman.
+(twilight pairs are <30%-id BY DEFINITION → SW/seq-search ~floor; question is whether the EMBEDDING, and not mere composition, recovers them.)

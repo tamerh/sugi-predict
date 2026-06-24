@@ -1,0 +1,27 @@
+loading ROBIN SMM target-hit matrix…
+  24572 compounds screened; 30 RNA targets kept (dropped 6 DNA/G4): AKTIP, BCL2, BCL_XL, BCL_XL_SS, CKIT, ENE_A9, EWSR1, FGFR...
+  2064 RNA binders with valid fingerprints
+  hits/binder: mean=1.99  single-target binders=1320 (64%)
+  per-target binder counts (top): EWSR1=292, RRE2B_MeA=234, AKTIP=223, BCL_XL_SS=205, RRE2B=201, SAM_ll=197
+  chance (1 random target of 30) base rate = 3.33%
+
+### TEST A — does Tanimoto separate same-RNA-target pairs from random pairs?
+  same-target pairs: n=15000  median Tanimoto=0.104  mean=0.112
+  diff-target pairs: n=15000  median Tanimoto=0.104  mean=0.110
+  ROC-AUC(Tanimoto predicts share-a-target) = 0.504   (0.5 = no signal)
+
+### TEST B — leave-one-out k-NN RNA-target recovery
+  queries=2064   universe=30 RNA targets
+  recall@1:  k-NN Tanimoto =  16.4%   POPULARITY =  14.1%   RANDOM =   6.3%
+  recall@5:  k-NN Tanimoto =  45.2%   POPULARITY =  44.4%   RANDOM =  27.1%
+
+  recall@1 stratified by top-neighbour Tanimoto (generalization vs near-duplicate memorization):
+    Tanimoto in [0.0,0.40)  novel chemotype n=  715  recall@1= 10.5%
+    Tanimoto in [0.4,0.70)  moderate        n= 1032  recall@1= 17.2%
+    Tanimoto in [0.7,1.01)  near-duplicate  n=  317  recall@1= 26.8%
+
+==================== PoC 2 VERDICT ====================
+  ROC-AUC (SEA principle)      = 0.504   (>0.5 => similar chem => same RNA target)
+  recall@1  k-NN=16.4%  vs POPULARITY=14.1%  vs RANDOM=6.3%
+  recall@1 on NOVEL chemotypes (top-NN Tanimoto<0.4) = 10.5%  (this is the real generalization test)
+  -> DOESN'T / DATA-LIMITED (k-NN does not clearly beat the popularity degree-bias null)

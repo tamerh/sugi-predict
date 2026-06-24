@@ -1,0 +1,14 @@
+loading SwissProt sequences…
+  573661 sequences ; 20420 human
+  c = QdrantClient(url="http://localhost:6333", timeout=120)
+  40 query proteins (human, InterPro-annotated, in esm2)
+
+### RESULT  (40 queries × 10 neighbors = 400 pairs ; 92s)
+
+coherence   REAL (ESM-2 neighbors share InterPro) : 71%
+coherence   NULL (random protein pairs)           : 2%   <- base rate
+TWILIGHT strict  (coherent AND <30% identity): 16% of all neighbors (62/400) ; 22% of coherent ones
+twilight DIAMOND (coherent AND not in DIAMOND top100): 14% (55/400)
+
+VERDICT: moat holds iff coherence REAL >> NULL (embedding finds real homologs, not noise) AND a
+meaningful TWILIGHT-strict fraction exists (functional relatives BELOW sequence-search's <30%-id floor).
