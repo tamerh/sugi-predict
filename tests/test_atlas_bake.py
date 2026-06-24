@@ -27,10 +27,11 @@ def test_bake():
         "asignee": [["Acme"], ["Beta"], ["Gamma"], ["Delta"]],
         "title": ["old", "mid", "new", "other"],
     }), os.path.join(snap, "patents.parquet"))
-    # map fixture, sorted by compound_id. field_id==2 => claimed.
+    # map fixture, deliberately UNSORTED (a compound's links scattered, compounds interleaved) to mirror the
+    # real map -- a naive "group by consecutive compound_id" stream would mis-bake compound 1 here. field_id==2 => claimed.
     #   compound 1: patent 10 claimed (1995); 11,12 disclosed (2010,2020).  compound 2: patent 20 claimed (2001).
     pq.write_table(pa.table({
-        "compound_id": [1, 1, 1, 2], "patent_id": [10, 11, 12, 20], "field_id": [2, 1, 1, 2],
+        "compound_id": [1, 2, 1, 1], "patent_id": [10, 20, 11, 12], "field_id": [2, 2, 1, 1],
     }), os.path.join(snap, "patent_compound_map.parquet"))
 
     qc = QdrantClient(url=QDRANT, timeout=60)
@@ -45,7 +46,10 @@ def test_bake():
     ])
 
     r = subprocess.run([sys.executable, BAKE, "--snapshot", snap, "--collection", COLL,
-                        "--top", "5", "--batch", "10", "--ckpt", os.path.join(tmp, "ckpt")],
+                        "--top", "5", "--batch", "10", "--ckpt", os.path.join(tmp, "ckpt"),
+                        "--sorted", os.path.join(tmp, "sorted.parquet"),
+                        "--duck-tmp", os.path.join(tmp, "ducktmp"),
+                        "--mem-limit", "2GB", "--threads", "2"],
                        capture_output=True, text=True)
     assert r.returncode == 0, f"bake failed:\n{r.stderr}"
     time.sleep(1)
