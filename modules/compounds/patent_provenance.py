@@ -21,6 +21,14 @@ MAP = f"{DIR}/patent_compound_map.parquet"
 PATENTS = f"{DIR}/patents.parquet"
 NOISE_CAP = 2000        # n_patents above this = generic/excipient noise, not IP-informative
 
+def _span(lst, k):
+    """Earliest + latest k of a date-ascending list: foundational/priority patents plus the current frontier
+    (rather than the k oldest). Returns all if there are <= k."""
+    if len(lst) <= k:
+        return lst
+    return lst[:k - k // 2] + lst[-(k // 2):]
+
+
 def compound_patents(compound_ids, max_per=8):
     ids = sorted({int(c) for c in compound_ids})
     if not ids: return {}
@@ -45,8 +53,14 @@ def compound_patents(compound_ids, max_per=8):
             pats.append({"number": r["patent_number"], "date": str(r["publication_date"]),
                          "country": r["country"], "assignee": (r["asignee"][0] if r["asignee"] else ""),
                          "title": (r["title"] or ""), "claimed": fid == 2})
-        pats.sort(key=lambda x: (not x["claimed"], x["date"]))     # claimed first, then earliest
-        out[cid] = {"n_patents": n, "noise": n > NOISE_CAP, "patents": pats[:max_per]}
+        # select a foundational + current-frontier span (earliest + latest dates), preferring claimed patents
+        claimed = sorted((p for p in pats if p["claimed"]), key=lambda x: x["date"])
+        disclosed = sorted((p for p in pats if not p["claimed"]), key=lambda x: x["date"])
+        chosen = _span(claimed, max_per) if len(claimed) >= max_per \
+            else claimed + _span(disclosed, max_per - len(claimed))
+        chosen.sort(key=lambda x: x["date"], reverse=True)   # newest first,
+        chosen.sort(key=lambda x: not x["claimed"])          # claimed group on top (stable sort keeps date order)
+        out[cid] = {"n_patents": n, "noise": n > NOISE_CAP, "patents": chosen}
     return out
 
 if __name__ == "__main__":
