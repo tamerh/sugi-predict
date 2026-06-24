@@ -150,10 +150,13 @@ def predict(smiles, top=20, human_only=True):
     """Chemical target prediction for an arbitrary molecule (the FPSim2 k-NN engine; not a Qdrant op)."""
     import target
     preds, _, supp = target.predict(smiles, human_only=human_only, with_support=True)
+    kn = set(known_targets(smiles))
     out = [{"accession": acc, "gene": target.gene_sym(acc), "name": target.full_name(acc),
-            "confidence": round(float(conf), 3), "support": supp.get(acc, 0), "band": target.band(conf)}
+            "confidence": round(float(conf), 3), "support": supp.get(acc, 0), "band": target.band(conf),
+            "known": target.gene_sym(acc) in kn}
            for acc, conf in preds[:top]]
-    return {"smiles": smiles, "n_targets": len(preds), "predictions": out}
+    return {"smiles": smiles, "name": name(smiles), "n_targets": len(preds),
+            "known": sorted(kn), "predictions": out}
 
 
 # --------------------------------------------------------------------------- primitive 3: provenance
