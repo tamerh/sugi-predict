@@ -1,40 +1,35 @@
 # BioYoda
 
-Biomedical data processing pipeline with vector database backend.
+The open, reproducible engine behind the **Patent Target Atlas**.
 
 ## Overview
 
-BioYoda is a Snakemake-based pipeline for processing biomedical literature, clinical trials, and patent data into vector databases. The system processes PubMed abstracts, clinical trial information, and patent documents with chemical compounds, creating FAISS indices and Qdrant vector database collections.
+BioYoda builds and serves the **Patent Target Atlas**: ~30 million SureChEMBL patent compounds, each annotated with its likely human protein targets by chemical k-nearest-neighbour transfer from a 1.25M-pair ChEMBL ligand→target reference, joined to **patent provenance** (which patents claim each compound — assignee, publication date, claimed-vs-disclosed). The atlas is browsable both directions — *what does this molecule hit?* and *what patented chemistry is predicted against this target, and who claimed it?* — and served openly as a web atlas (`sugi.bio/patent-atlas`), a REST API, and an MCP server for AI agents.
 
-**Note**: For search and AI-powered queries, see [Sugi-Agent](https://github.com/yourusername/sugi-agent) - the intelligence layer that queries BioYoda's data.
+The engine also holds a small supporting multi-modal substrate (patent text, clinical trials, proteins) used as **retrieval context, not predictors** — chemical similarity is the only relationship validated as predictive. Everything runs on Qdrant, CPU-served (no query-time GPU), ~74.5M vectors, reproducible from source.
 
-**New Architecture (v0.2.0)**: Data processing and vector database operations are now **fully separated** for maximum flexibility and efficiency.
+> **Product vs engine:** the public-facing product is the *Patent Target Atlas*; *BioYoda* is the engine beneath it (prediction + provenance + substrate, exposed via REST + MCP). The web UI lives in a separate repo (`patent-atlas`) and talks to the engine only over HTTP.
 
-## Features
+## What it does
 
-- **PubMed Processing**: Process 30M+ PubMed abstracts with S-BioBERT embeddings
-- **Clinical Trials**: Integrate ClinicalTrials.gov data (500K+ trials)
-- **Patent Search**: Process 43M+ patents from SureChEMBL with chemical compound search (30M+ compounds)
-  - Semantic text search using S-BioBERT embeddings
-  - Chemical structure search using Morgan fingerprints (2048-bit)
-  - USPTO enrichment for patent abstracts (493K US patents)
-- **Protein Similarity**: Multiple methods for protein similarity search
-  - **ESM-2 Embeddings**: Vector-based semantic similarity using protein language models
-    - UniProt SwissProt (570K+ proteins) and TrEMBL (250M+ proteins)
-    - 1280-dimensional embeddings using ESM-2 650M model
-    - Vector search for protein homology and function prediction
-    - Qdrant integration for scalable semantic search
-  - **DIAMOND BLASTP**: Sequence-based similarity with BioBTree integration
-    - 10,000x faster than traditional BLAST alignment
-    - All-vs-all BLASTP search across UniProt (SwissProt and TrEMBL)
-    - Configurable Top-K filtering for efficient storage
-    - TSV output for BioBTree identifier mapping and graph queries
-    - Parallel CPU processing with distributed chunking
-- **Incremental Updates**: Smart tracking system for efficient daily updates (PubMed supported)
-- **Vector Database**: Qdrant server with independent insertion workflow and upsert support
-- **HPC Ready**: Designed for SGE cluster with GPU support and Singularity containers
-- **Modular Architecture**: Independent data processing and database management
-- **Flexible Deployment**: Run Qdrant on GPU nodes for long-running sessions
+- **Target prediction** — for any molecule (a pasted SMILES, or any of the 30M patent compounds): ranked protein targets with a Tanimoto **confidence** + a supporting-neighbour **support** count, by exact-Tanimoto k-NN over a 1.25M-ligand ChEMBL reference (FPSim2). Validated held-out; chemistry is the only validated predictor.
+- **Patent provenance** — for any SureChEMBL compound: the patents that claim/disclose it (number, assignee, publication date, claimed flag), from a self-contained SureChEMBL parquet join.
+- **Supporting context** (retrieval, not prediction): clinical trials (MedCPT) and proteins (ESM-2, for selectivity) relevant to a target; patent text (S-BioBERT).
+- **Access** — a thin REST API + MCP server (`mcp_srv`) over three primitives (`query` / `predict` / `provenance`); the web atlas is a separate HTTP consumer.
+- **Reproducible** — every collection rebuilds from source via `bioyoda.sh` (Snakemake data modules + the `atlas` build chain), with small-data fixture tests (`bioyoda.sh test [--atlas]`).
+
+### Substrate (four modalities, ~74.5M vectors)
+
+| Modality | Embedding | Vectors |
+|---|---|---|
+| Patent compounds | Morgan ECFP4 (2048-bit) | ~30.9M |
+| Patent text | sentence-BioBERT | ~38.7M |
+| Clinical trials | MedCPT | ~4.3M |
+| Proteins (UniProt/SwissProt) | ESM-2 (1280-d) | ~0.57M |
+
+Chemistry (+ the 1.25M-ligand ChEMBL reference) powers prediction; trials and proteins are supporting context, explicitly not predictors.
+
+> PubMed/literature was removed (commodity + maintenance debt); the engine is intentionally focused on patent chemistry + targets.
 
 ## Quick Start
 
