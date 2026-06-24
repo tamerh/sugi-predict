@@ -1,0 +1,13 @@
+  1,248,456 molecules, 7,929 targets
+
+### SCORING EXPERIMENT — 1500 held-out queries, SCAFFOLD split, among 7,929 targets
+
+scoring                   recall@1  recall@5  recall@10
+conf (deployed)             76.4%     87.2%     91.3%
+vote (sim-weighted)         75.3%     88.6%     91.7%
+vote x IDF                  73.9%     88.2%     91.7%
+conf x IDF                  50.8%     74.9%     81.8%
+support (count)             75.1%     88.5%     91.7%
+
+best alternative = 'vote (sim-weighted)'  recall@5 88.6% vs deployed 87.2%
+  diff = +1.4%  95% CI [+0.3%, +2.5%]  -> SIGNIFICANT
