@@ -36,11 +36,19 @@ cmd_test() {
                 pipeline_mode=true
                 shift
                 ;;
+            --atlas)
+                # Atlas build-chain small-data tests (self-contained fixtures; needs a running Qdrant).
+                local py="/data/miniconda3/envs/bioyoda/bin/python"; [[ -x "$py" ]] || py="python3"
+                log_info "Atlas build-chain small-data tests"
+                "$py" "${COMMANDS_DIR}/../../tests/test_atlas_bake.py" || exit 1
+                exit 0
+                ;;
             --help|-h)
-                echo "Usage: bioyoda.sh test [--pipeline]"
+                echo "Usage: bioyoda.sh test [--pipeline] [--atlas]"
                 echo ""
-                echo "  Default: Run tests with fixtures (fast - 2-3 minutes)"
+                echo "  Default:    Run tests with fixtures (fast - 2-3 minutes)"
                 echo "  --pipeline: Run full pipeline test (slow - 15-20 minutes)"
+                echo "  --atlas:    Run atlas build-chain small-data tests (bake, ...)"
                 exit 0
                 ;;
             *)
