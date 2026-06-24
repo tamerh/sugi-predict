@@ -1,14 +1,14 @@
-# BioYoda
+# Patent Target Atlas — engine
 
-The open, reproducible engine behind the **Patent Target Atlas**.
+The open, reproducible **data engine** that builds and serves the **Patent Target Atlas**.
 
 ## Overview
 
-BioYoda builds and serves the **Patent Target Atlas**: ~30 million SureChEMBL patent compounds, each annotated with its likely human protein targets by chemical k-nearest-neighbour transfer from a 1.25M-pair ChEMBL ligand→target reference, joined to **patent provenance** (which patents claim each compound — assignee, publication date, claimed-vs-disclosed). The atlas is browsable both directions — *what does this molecule hit?* and *what patented chemistry is predicted against this target, and who claimed it?* — and served openly as a web atlas (`sugi.bio/patent-atlas`), a REST API, and an MCP server for AI agents.
+The engine builds and serves the **Patent Target Atlas**: ~30 million SureChEMBL patent compounds, each annotated with its likely human protein targets by chemical k-nearest-neighbour transfer from a 1.25M-pair ChEMBL ligand→target reference, joined to **patent provenance** (which patents claim each compound — assignee, publication date, claimed-vs-disclosed). The atlas is browsable both directions — *what does this molecule hit?* and *what patented chemistry is predicted against this target, and who claimed it?* — and served openly as a web atlas (`sugi.bio/patent-atlas`), a REST API, and an MCP server for AI agents.
 
 The engine also holds a small supporting multi-modal substrate (patent text, clinical trials, proteins) used as **retrieval context, not predictors** — chemical similarity is the only relationship validated as predictive. Everything runs on Qdrant, CPU-served (no query-time GPU), ~74.5M vectors, reproducible from source.
 
-> **Product vs engine:** the public-facing product is the *Patent Target Atlas*; *BioYoda* is the engine beneath it (prediction + provenance + substrate, exposed via REST + MCP). The web UI lives in a separate repo (`patent-atlas`) and talks to the engine only over HTTP.
+> **Product vs engine:** the public product is the *Patent Target Atlas*; this repo is the data engine beneath it (prediction + provenance + substrate, exposed via REST + MCP). The web UI is a separate repo (`patent-atlas-web`) that talks to the engine only over HTTP. *(Internally the engine is named `bioyoda` — paths, scripts, and the `mcp_srv` server use it.)*
 
 ## What it does
 
