@@ -25,6 +25,8 @@ Subcommands:
     targets [opts]   De-noise the reverse landscape: rewrite each compound's `targets` membership
                        from `predicted`, dropping single-weak hits (support==1 & conf<FLOOR) + top-N cap.
                        --floor F (default 0.4)  --cap N (default 50)  --dry-run  --resume  --limit N
+    text <stage>     Refresh patents_text to MedCPT on the June-2026 base (prepare|embed|insert).
+                       prepare=CPU shards, embed=GPU(pod)/CPU, insert=FAISS->patents_text_medcpt.
     grounding        Build the ChEMBL grounding JSONs (chembl_names, chembl_mechanisms).   [TODO]
     indexes          Build the web indexes (featured.json, compound_index.json).            [TODO]
 
@@ -47,6 +49,33 @@ cmd_atlas() {
             ;;
         targets)
             "$py" "${ROOT}/modules/compounds/bake_targets.py" "$@"
+            ;;
+        text)
+            # patents_text refresh -> MedCPT on the June-2026 base. Reproducible, device-agnostic:
+            # `embed` runs on GPU on a pod, or CPU here for small incremental deltas.
+            local stage=${1:-help}; shift || true
+            local SC="${ROOT}/raw_data/patents/surechembl/2026-06-01/patents.parquet"
+            local UH="${ROOT}/raw_data/patents/historical_uspto/uspto_historical.parquet"
+            local UG="${ROOT}/work/data/processed/patents/uspto_gap_enriched.parquet"
+            local IN="${ROOT}/work/data/medcpt_input/patents"
+            local OUT="${ROOT}/work/data/medcpt_output/patents"
+            case $stage in
+                prepare) "$py" "${ROOT}/modules/patents/scripts/prepare_medcpt_shards.py" \
+                            --patents "$SC" --uspto "$UH" "$UG" --out-dir "$IN" "$@" ;;
+                embed)   "$py" "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" \
+                            --input-dir "$IN" --output-dir "$OUT" "$@" ;;
+                insert)  "$py" "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" \
+                            --faiss-dir "$OUT" --collection patents_text_medcpt \
+                            --qdrant-url http://localhost:6333 --vector-size 768 "$@" ;;
+                *) cat <<'EOF'
+atlas text <stage> — patents_text refresh to MedCPT (June-2026 base):
+  prepare   CPU: June patents + USPTO full-text -> JSONL input shards
+  embed     MedCPT-Article -> FAISS (GPU on a pod for the full run; CPU for small deltas)
+  insert    FAISS -> Qdrant patents_text_medcpt (old patents_text left untouched)
+Full run: prepare (here) -> embed (RunPod) -> insert (here) -> flip engine routing to MedCPT.
+EOF
+                ;;
+            esac
             ;;
         grounding)
             log_warning "atlas grounding: build_grounding.py not yet committed (chembl_names/mechanisms still inline)"
