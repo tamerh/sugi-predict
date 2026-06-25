@@ -22,6 +22,9 @@ Subcommands:
     bake [options]   Bake patent provenance (top-N span) into the Qdrant patent_atlas payload.
                        --top N (default 20)  --snapshot DIR  --collection C
                        --dry-run  --resume  --limit N
+    targets [opts]   De-noise the reverse landscape: rewrite each compound's `targets` membership
+                       from `predicted`, dropping single-weak hits (support==1 & conf<FLOOR) + top-N cap.
+                       --floor F (default 0.4)  --cap N (default 50)  --dry-run  --resume  --limit N
     grounding        Build the ChEMBL grounding JSONs (chembl_names, chembl_mechanisms).   [TODO]
     indexes          Build the web indexes (featured.json, compound_index.json).            [TODO]
 
@@ -41,6 +44,9 @@ cmd_atlas() {
     case $subcommand in
         bake)
             "$py" "${ROOT}/modules/compounds/bake_provenance.py" "$@"
+            ;;
+        targets)
+            "$py" "${ROOT}/modules/compounds/bake_targets.py" "$@"
             ;;
         grounding)
             log_warning "atlas grounding: build_grounding.py not yet committed (chembl_names/mechanisms still inline)"
