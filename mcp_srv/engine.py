@@ -21,7 +21,7 @@ COLLECTIONS = {
     "chembl":                  ("chemical", 2048),   # ChEMBL reference ligands
     "patents_compounds":       ("chemical", 2048),   # SureChEMBL compound fingerprints
     "clinical_trials_medcpt":  ("text", 768),        # clinical trials (MedCPT)
-    "patents_text":            ("text", 768),        # patent text (MedCPT-compatible)
+    "patents_text":            ("text", 768),        # patent text (S-BioBERT — see embed_text_sbiobert)
     "esm2":                    ("protein", 1280),     # SwissProt ESM-2 protein embeddings
 }
 
@@ -48,6 +48,20 @@ def embed_text(text):
     with torch.no_grad():
         e = tok([text], truncation=True, padding=True, max_length=64, return_tensors="pt")
         return torch.nn.functional.normalize(m(**e).last_hidden_state[:, 0, :], dim=1)[0].numpy().tolist()
+
+
+_sbiobert = None
+def embed_text_sbiobert(text):
+    """S-BioBERT query encoder (768-d) for patents_text, which was embedded with this exact model
+    (modules/patents/scripts/process_patents.py). MedCPT is the wrong embedding space for it -- querying
+    patents_text with MedCPT returns near-random hits; with S-BioBERT it returns the right patents."""
+    global _sbiobert
+    if _sbiobert is None:
+        import os
+        os.environ.setdefault("HF_HUB_OFFLINE", "1"); os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        from sentence_transformers import SentenceTransformer
+        _sbiobert = SentenceTransformer("pritamdeka/S-BioBERT-snli-multinli-stsb")
+    return _sbiobert.encode(text).tolist()
 
 
 def embed_smiles(smiles):
@@ -119,7 +133,7 @@ def query(collection, text=None, smiles=None, accession=None, filter=None, limit
 
     qvec = None
     if text is not None:
-        qvec = embed_text(text)
+        qvec = embed_text_sbiobert(text) if collection == "patents_text" else embed_text(text)
     elif smiles is not None:
         qvec = embed_smiles(smiles)
         if qvec is None:
@@ -146,15 +160,18 @@ def count(collection, filter=None):
 
 
 # --------------------------------------------------------------------------- primitive 2: predict
-def predict(smiles, top=20, human_only=True):
-    """Chemical target prediction for an arbitrary molecule (the FPSim2 k-NN engine; not a Qdrant op)."""
+def predict(smiles, top=20, human_only=True, floor=0.3):
+    """Chemical target prediction for an arbitrary molecule (the FPSim2 k-NN engine; not a Qdrant op).
+    Predictions below `floor` (the calibrated novel-chemistry threshold, accuracy ~26% at 0.3--0.5 and
+    worse below) are dropped as noise; experimentally known targets are always kept regardless."""
     import target
     preds, _, supp = target.predict(smiles, human_only=human_only, with_support=True)
     kn = set(known_targets(smiles))
+    kept = [(acc, conf) for acc, conf in preds if conf >= floor or target.gene_sym(acc) in kn]
     out = [{"accession": acc, "gene": target.gene_sym(acc), "name": target.full_name(acc),
             "confidence": round(float(conf), 3), "support": supp.get(acc, 0), "band": target.band(conf),
             "known": target.gene_sym(acc) in kn}
-           for acc, conf in preds[:top]]
+           for acc, conf in kept[:top]]
     return {"smiles": smiles, "name": name(smiles), "n_targets": len(preds),
             "known": sorted(kn), "predictions": out}
 
@@ -180,6 +197,10 @@ def provenance(ids, max_per=8):
     if missing:
         import patent_provenance
         out.update(patent_provenance.compound_patents(missing, max_per=max_per))
+    import assignee                                    # canonicalize messy raw assignees for display
+    for v in out.values():
+        for pt in v.get("patents", []):
+            pt["assignee"] = assignee.canon(pt.get("assignee", ""))
     return {f"SCHEMBL{k}": v for k, v in out.items()}
 
 
