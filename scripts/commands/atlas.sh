@@ -27,6 +27,8 @@ Subcommands:
                        --floor F (default 0.4)  --cap N (default 50)  --dry-run  --resume  --limit N
     text <stage>     Refresh patents_text to MedCPT on the June-2026 base (prepare|embed|insert).
                        prepare=CPU shards, embed=GPU(pod)/CPU, insert=FAISS->patents_text_medcpt.
+    compounds <stg>  Refresh patent_atlas on the June-2026 compounds (chunk|predict|ingest).
+                       chunk=CPU split, predict=GPU(pod) k-NN, ingest=preds->patent_atlas.
     grounding        Build the ChEMBL grounding JSONs (chembl_names, chembl_mechanisms).   [TODO]
     indexes          Build the web indexes (featured.json, compound_index.json).            [TODO]
 
@@ -73,6 +75,31 @@ atlas text <stage> — patents_text refresh to MedCPT (June-2026 base):
   embed     MedCPT-Article -> FAISS (GPU on a pod for the full run; CPU for small deltas)
   insert    FAISS -> Qdrant patents_text_medcpt (old patents_text left untouched)
 Full run: prepare (here) -> embed (RunPod) -> insert (here) -> flip engine routing to MedCPT.
+EOF
+                ;;
+            esac
+            ;;
+        compounds)
+            # patent_atlas refresh on the June-2026 compounds. chunk(CPU) -> predict(GPU pod) -> ingest(CPU).
+            local stage=${1:-help}; shift || true
+            local SNAP="${ROOT}/raw_data/patents/surechembl/2026-06-01"
+            local CHUNKS="${ROOT}/raw_data/patents/chunked_compounds"
+            local REF="${ROOT}/work/chembl_reference"
+            local PREDS="${ROOT}/work/atlas_preds"
+            case $stage in
+                chunk)   "$py" "${ROOT}/modules/patents/scripts/chunk_compounds.py" \
+                            --input "$SNAP/compounds.parquet" --out-dir "$CHUNKS" --chunks 62 "$@" ;;
+                predict) "$py" "${ROOT}/modules/compounds/gpu/gpu_atlas_predict.py" \
+                            --ref "$REF/chembl_reference_morgan_r2_2048.h5" --targets "$REF/cid_targets.json" \
+                            --patents "$CHUNKS" --outdir "$PREDS" "$@" ;;
+                ingest)  "$py" "${ROOT}/modules/compounds/build_atlas_from_predictions.py" \
+                            --preds "$PREDS" --patents "$CHUNKS" "$@" ;;
+                *) cat <<'EOF'
+atlas compounds <stage> — patent_atlas refresh on the June-2026 compounds:
+  chunk     CPU: split June compounds.parquet -> chunked_compounds (62 chunks)
+  predict   k-NN to the ChEMBL ref -> per-chunk preds (GPU on a pod; CPU fallback for a smoke test)
+  ingest    preds -> Qdrant patent_atlas; then re-run `atlas bake` + `atlas targets` on June
+Full run: chunk (here) -> predict (RunPod) -> ingest (here) -> bake provenance -> de-noise.
 EOF
                 ;;
             esac
