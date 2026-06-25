@@ -161,11 +161,26 @@ def predict(smiles, top=20, human_only=True):
 
 # --------------------------------------------------------------------------- primitive 3: provenance
 def provenance(ids, max_per=8):
-    """SureChEMBL compound id(s) -> patent number / assignee / publication date / claimed flag (parquet join)."""
-    import patent_provenance
+    """SureChEMBL compound id(s) -> patent number / assignee / publication date / claimed flag.
+    Fast path: the foundational + current-frontier span is baked into the patent_atlas payload
+    (`prov` = {n, noise, patents}) by modules/compounds/bake_provenance.py, so read it straight from
+    the payload (no 1.5B-row parquet scan). Falls back to the live parquet join for any id absent from
+    the atlas or not yet baked. NB the baked span is currently top-20; max_per only caps it (raise via
+    a re-bake at higher --top to serve more)."""
     cids = [int(str(i).replace("SCHEMBL", "")) for i in ids]
-    raw = patent_provenance.compound_patents(cids, max_per=max_per)
-    return {f"SCHEMBL{k}": v for k, v in raw.items()}
+    out = {}
+    try:
+        for p in qc().retrieve("patent_atlas", ids=cids, with_payload=["prov"]):
+            pv = (p.payload or {}).get("prov")
+            if pv:
+                out[int(p.id)] = {"n_patents": pv["n"], "noise": pv["noise"], "patents": pv["patents"][:max_per]}
+    except Exception:
+        pass
+    missing = [c for c in cids if c not in out]
+    if missing:
+        import patent_provenance
+        out.update(patent_provenance.compound_patents(missing, max_per=max_per))
+    return {f"SCHEMBL{k}": v for k, v in out.items()}
 
 
 _NAMES = None
