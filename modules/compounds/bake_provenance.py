@@ -137,8 +137,34 @@ def main():
     # counting the true n but stop storing links (those compounds are noise, n >> NOISE_CAP, anyway).
     LINK_CAP = 300_000
     pf = pq.ParquetFile(a.sorted_path)
+    cid_col = pf.schema_arrow.names.index("compound_id")
+    nrg = pf.metadata.num_row_groups
+    # resume efficiently: the map is sorted, so skip whole row groups already fully baked
+    # instead of rescanning the 1.5B rows from the start.
+    start_rg = 0
+    if start_after >= 0:
+        start_rg = nrg
+        for rg in range(nrg):
+            st = pf.metadata.row_group(rg).column(cid_col).statistics
+            if st is not None and st.max is not None and st.max > start_after:
+                start_rg = rg
+                break
+        print(f"resume: start at row group {start_rg:,}/{nrg:,}", flush=True)
+
     cur_cid, cur_links, cur_n = None, [], 0
     ops, done, t0 = [], 0, time.time()
+
+    def commit(ops_to_write):
+        # tolerate a transient Qdrant error (e.g. a WAL/disk spike) with a short backoff
+        for attempt in range(4):
+            try:
+                qc.batch_update_points(collection_name=a.collection, update_operations=ops_to_write, wait=False)
+                return
+            except Exception as e:
+                if attempt == 3:
+                    raise
+                print(f"  write retry {attempt + 1}/3 after: {str(e)[:90]}", flush=True)
+                time.sleep(15)
 
     def flush(cid, links, n):
         nonlocal done, ops
@@ -148,15 +174,16 @@ def main():
             return
         ops.append(models.SetPayloadOperation(set_payload=models.SetPayload(payload={"prov": prov}, points=[cid])))
         if len(ops) >= a.batch:
-            qc.batch_update_points(collection_name=a.collection, update_operations=ops, wait=False)
+            commit(ops)
             ops = []
             write_ckpt(cid)
 
     stop = False
-    for batch in pf.iter_batches(columns=["compound_id", "patent_id", "field_id"], batch_size=1_000_000):
-        cids = batch.column(0).to_pylist()
-        pids = batch.column(1).to_pylist()
-        fids = batch.column(2).to_pylist()
+    for rg in range(start_rg, nrg):
+        t = pf.read_row_group(rg, columns=["compound_id", "patent_id", "field_id"])
+        cids = t.column(0).to_pylist()
+        pids = t.column(1).to_pylist()
+        fids = t.column(2).to_pylist()
         for i in range(len(cids)):
             cid = cids[i]
             if cid <= start_after:
@@ -172,13 +199,15 @@ def main():
                 cur_links.append((pids[i], fids[i]))
         if stop:
             break
-        print(f"  …{done:,} compounds baked ({done / max(time.time() - t0, 1):.0f}/s, at cid {cur_cid:,})", flush=True)
+        loc = f"{cur_cid:,}" if cur_cid is not None else "—"
+        print(f"  …{done:,} compounds baked ({done / max(time.time() - t0, 1):.0f}/s, at cid {loc})", flush=True)
 
     if not stop and cur_cid is not None:          # final compound
         flush(cur_cid, cur_links, cur_n)
     if ops and not a.dry_run:                      # final partial batch
-        qc.batch_update_points(collection_name=a.collection, update_operations=ops, wait=False)
-        write_ckpt(cur_cid)
+        commit(ops)
+        if cur_cid is not None:
+            write_ckpt(cur_cid)
     print(f"done: baked {done:,} compounds in {time.time() - t0:.0f}s "
           f"({'DRY RUN' if a.dry_run else 'written to ' + a.collection})", flush=True)
 
