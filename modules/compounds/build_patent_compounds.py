@@ -125,12 +125,17 @@ def _ingest(chunk_file):
 
 
 def main():
+    global NBRS, COMPOUNDS, PREDDIR
     ap = argparse.ArgumentParser()
     ap.add_argument("--workers", type=int, default=16)
     ap.add_argument("--collection", default="patent_compounds")
     ap.add_argument("--skip-align", action="store_true", help="reuse existing work/atlas_preds_aligned/")
     ap.add_argument("--align-only", action="store_true", help="run Pass 1+2 (score+align) then exit; no Qdrant")
+    ap.add_argument("--nbrs", default=NBRS, help="neighbours dir (default prod; override for test fixtures)")
+    ap.add_argument("--compounds", default=COMPOUNDS, help="chunked-compounds dir (default prod)")
+    ap.add_argument("--preddir", default=PREDDIR, help="aligned-preds scratch dir (default prod)")
     a = ap.parse_args()
+    NBRS, COMPOUNDS, PREDDIR = a.nbrs, a.compounds, a.preddir   # test mode points these at fixtures
     name = a.collection
 
     if not a.skip_align:

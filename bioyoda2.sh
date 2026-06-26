@@ -54,17 +54,20 @@ build(){
   for a in "$@"; do case $a in --full) mode=full;; --delta) mode=delta;; --prod) prod=1; suffix="";; esac; done
   case $collection in
     compounds)
-      local COLL="patent_compounds${suffix}"
-      local SNAP="${ROOT}/raw_data/patents/surechembl/2026-06-01"
-      local CHUNKS="${ROOT}/raw_data/patents/chunked_compounds"
-      local REF="${ROOT}/work/chembl_reference"
-      local NBRS="${ROOT}/work/atlas_nbrs"
-      local M="${ROOT}/modules/compounds"
+      local COLL="patent_compounds${suffix}" M="${ROOT}/modules/compounds" REF="${ROOT}/work/chembl_reference"
+      local SNAP CHUNKS NBRS PREDDIR WORKERS
+      if [[ -n "$prod" ]]; then   # --prod: real snapshot + full data
+        SNAP="${ROOT}/raw_data/patents/surechembl/2026-06-01"; CHUNKS="${ROOT}/raw_data/patents/chunked_compounds"
+        NBRS="${ROOT}/work/atlas_nbrs"; PREDDIR="${ROOT}/work/atlas_preds_aligned"; WORKERS=16
+      else                        # default: TEST fixtures (work/test/*) -> *_test collection, no GPU/prod
+        SNAP="${ROOT}/work/test"; CHUNKS="${ROOT}/work/test/chunks"
+        NBRS="${ROOT}/work/test/atlas_nbrs"; PREDDIR="${ROOT}/work/test/preds"; WORKERS=2
+      fi
       case $stage in
         chunk)      $PY "${ROOT}/modules/patents/scripts/chunk_compounds.py" --input "$SNAP/compounds.parquet" --out-dir "$CHUNKS" --chunks 62 ;;
         predict)    log "GPU stage — MUST run under tmux on the pod (cupy needs a TTY)"
                     $PY "$M/gpu/gpu_atlas_fused.py" --refsmi "$REF/reference.tsv" --patents "$CHUNKS" --outdir "$NBRS" --knn 100 --procs 24 ;;
-        ingest)     $PY "$M/build_patent_compounds.py" --collection "$COLL" --workers 16 ;;
+        ingest)     $PY "$M/build_patent_compounds.py" --collection "$COLL" --nbrs "$NBRS" --compounds "$CHUNKS" --preddir "$PREDDIR" --workers "$WORKERS" ;;
         provenance) $PY "$M/bake_provenance.py" --collection "$COLL" --snapshot "$SNAP" ;;
         denoise)    $PY "$M/bake_targets.py" --collection "$COLL" --floor 0.4 --cap 50 ;;
         all)
