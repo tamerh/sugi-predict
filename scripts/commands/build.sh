@@ -82,6 +82,8 @@ _dispatch(){
     compounds)
       local COLL="patent_compounds${suffix}" M="${ROOT}/modules/compounds" REF="${ROOT}/work/chembl_reference"
       local SNAP CHUNKS NBRS PREDDIR WORKERS
+      # --delta workspace (incremental): kept separate so it NEVER clobbers the full atlas_nbrs; new neighbours merge in
+      local DCHUNKS="${ROOT}/work/atlas_delta/chunks" DNBRS="${ROOT}/work/atlas_delta/nbrs"
       if [[ -n "$prod" ]]; then   # --prod: real snapshot + full data
         SNAP="${ROOT}/raw_data/patents/surechembl/2026-06-01"; CHUNKS="${ROOT}/raw_data/patents/chunked_compounds"
         NBRS="${ROOT}/work/atlas_nbrs"; PREDDIR="${ROOT}/work/atlas_preds_aligned"; WORKERS=16
@@ -90,10 +92,26 @@ _dispatch(){
         NBRS="${ROOT}/work/test/atlas_nbrs"; PREDDIR="${ROOT}/work/test/preds"; WORKERS=2
       fi
       case $stage in
-        chunk)      $PY "${ROOT}/modules/patents/scripts/chunk_compounds.py" --input "$SNAP/compounds.parquet" --out-dir "$CHUNKS" --chunks 62 ;;
-        predict)    if pod_configured; then pod_predict "$CHUNKS" "$REF" "$NBRS"
-                    else log "GPU stage — set POD_HOST/POD_PORT/POD_KEY for the pod (auto push/run/pull), or run locally if a GPU is present"
-                         $PY "$M/gpu/gpu_atlas_fused.py" --refsmi "$REF/reference.tsv" --patents "$CHUNKS" --outdir "$NBRS" --knn 100 --procs 24; fi ;;
+        # INCREMENTAL (--delta, default): chunk + predict ONLY the compounds not already in atlas_nbrs, then
+        #   merge the new neighbours into atlas_nbrs additively — the reused ~30M neighbours are NEVER recomputed.
+        #   Proven in the June run: an 897K delta took 97s vs ~10h for a full re-run. --full forces the whole snapshot.
+        chunk)
+          if [[ $mode == delta ]]; then
+            $PY "${ROOT}/modules/patents/scripts/chunk_compounds.py" --input "$SNAP/compounds.parquet" --out-dir "$DCHUNKS" --delta --nbrs "$NBRS"
+          else
+            $PY "${ROOT}/modules/patents/scripts/chunk_compounds.py" --input "$SNAP/compounds.parquet" --out-dir "$CHUNKS" --chunks 62
+          fi ;;
+        predict)
+          # delta runs the fused k-NN on the (small) delta chunks -> a temp dir; full runs it on every chunk.
+          local _pc="$CHUNKS" _po="$NBRS"; [[ $mode == delta ]] && { _pc="$DCHUNKS"; _po="$DNBRS"; }
+          if pod_configured; then pod_predict "$_pc" "$REF" "$_po"
+          else log "GPU stage — set POD_HOST/POD_PORT/POD_KEY for the pod (auto push/run/pull), or run locally if a GPU is present"
+               $PY "$M/gpu/gpu_atlas_fused.py" --refsmi "$REF/reference.tsv" --patents "$_pc" --outdir "$_po" --knn 100 --procs 24; fi
+          if [[ $mode == delta ]]; then   # fold the delta neighbours into atlas_nbrs under distinct names (additive, never overwrites)
+            local _ts _k=1; _ts=$(date +%Y%m%d-%H%M%S)
+            for f in "$DNBRS"/nbrs_*.parquet; do [[ -e "$f" ]] || continue; cp "$f" "$NBRS/nbrs_delta_${_ts}_$(printf %04d "$_k").parquet"; _k=$((_k+1)); done
+            log "merged $((_k-1)) delta neighbour file(s) into atlas_nbrs (reused ~30M untouched)"
+          fi ;;
         ingest)     $PY "$M/build_patent_compounds.py" --collection "$COLL" --nbrs "$NBRS" --compounds "$CHUNKS" --preddir "$PREDDIR" --workers "$WORKERS" ;;
         provenance) $PY "$M/bake_provenance.py" --collection "$COLL" --snapshot "$SNAP" ;;
         denoise)    $PY "$M/bake_targets.py" --collection "$COLL" --floor 0.4 --cap 50 ;;
@@ -114,8 +132,20 @@ _dispatch(){
     *) cat <<EOF
 bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
   collections: compounds | text | reference | proteins | trials
-  compounds stages: all | chunk | predict | ingest | enrich | provenance | denoise | defer | build
-  Defaults to *_test collections + small fixtures. --prod targets real collections.
+  compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build
+
+  --delta (default, incremental):  process ONLY what changed since the last build.
+      chunk/predict  -> compute the fused k-NN for compounds NOT already in work/atlas_nbrs/, then merge the
+                        new neighbours in additively (the reused ~30M are never recomputed). [chunk/predict: DONE]
+      ingest/provenance/denoise -> upsert/bake only the delta (additive). [TODO — currently still full]
+  --full:  rebuild the whole snapshot from scratch (the one-time bootstrap, e.g. the June 2026 run).
+  --prod:  target the real collections + full data. Default is *_test collections + small fixtures (safe dev).
+
+  Efficiency: ingest -> provenance -> denoise run inside ONE deferred-index window (a single Qdrant
+  optimization, not one per stage). GPU stages auto push/run/pull on a pod when POD_HOST/POD_PORT/POD_KEY set.
+
+  e.g. a monthly refresh:  POD_HOST=root@ip POD_PORT=N POD_KEY=~/.ssh/k \
+         bioyoda.sh build compounds all --delta --prod
 EOF
     ;;
   esac
