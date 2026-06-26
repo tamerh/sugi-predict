@@ -776,7 +776,9 @@ def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                     id=point_id,
                     vector=vectors[i].tolist(),
                     payload={
-                        **meta,  # Include all metadata fields
+                        # all metadata EXCEPT the embedded body — the vector carries the semantics,
+                        # storing chunk_text would bloat the collection by the whole text corpus
+                        **{k: v for k, v in meta.items() if k != 'chunk_text'},
                         'source': meta.get('source', collection_name.split('_')[0]),
                         'date_processed': datetime.now().isoformat()
                     }
