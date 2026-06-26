@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 ###############################################################################
-# bioyoda2.sh — next-gen orchestrator (REORG, dev). Isolated from prod bioyoda.sh.
+# commands/build.sh — the bioyoda.sh `build` command (reorg). Unified collection build/refresh.
 #
-# Clean shape:   bioyoda2.sh build <collection> <stage> [--full|--delta] [--prod]
+# Clean shape:   bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
 # Collections:   compounds | text | reference | proteins | trials
 #
 # Bakes in the efficiency fixes learned in the June refresh:
@@ -14,8 +14,8 @@
 #
 # SAFETY: defaults to *_test collections + small fixtures. Only --prod targets real collections.
 ###############################################################################
-set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMANDS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${COMMANDS_DIR}/../.." && pwd)"
 
 # --- portable env resolution (drop the hardcoded /data/miniconda3/... path) ---
 if [[ -x /data/miniconda3/envs/bioyoda/bin/python ]]; then PY=/data/miniconda3/envs/bioyoda/bin/python
@@ -23,7 +23,7 @@ elif command -v conda >/dev/null 2>&1 && conda env list 2>/dev/null | grep -q '^
 else PY=python3; fi
 QURL="${QDRANT_URL:-http://localhost:6333}"
 
-log(){ printf '\033[36m[bioyoda2]\033[0m %s\n' "$*"; }
+log(){ printf '\033[36m[build]\033[0m %s\n' "$*"; }
 
 # --- the deferred-indexing window: run payload-writing stages, optimize ONCE at the end ---
 qdrant_defer(){   # $1 = collection
@@ -112,7 +112,7 @@ _dispatch(){
       esac ;;
     text|reference|proteins|trials) log "$collection pipeline: TODO (Phase 2)";;
     *) cat <<EOF
-bioyoda2.sh build <collection> <stage> [--full|--delta] [--prod]
+bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
   collections: compounds | text | reference | proteins | trials
   compounds stages: all | chunk | predict | ingest | enrich | provenance | denoise | defer | build
   Defaults to *_test collections + small fixtures. --prod targets real collections.
@@ -121,7 +121,6 @@ EOF
   esac
 }
 
-case "${1:-}" in
-  build) shift; build "$@";;
-  *) echo "usage: bioyoda2.sh build <collection> <stage> [--full|--delta] [--prod]";;
-esac
+
+# entry point (sourced by bioyoda.sh)
+cmd_build(){ build "$@"; }

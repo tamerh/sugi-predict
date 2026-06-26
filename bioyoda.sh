@@ -183,6 +183,10 @@ main() {
             source "${SCRIPT_DIR}/commands/atlas.sh"
             cmd_atlas "$@"
             ;;
+        build)
+            source "${SCRIPT_DIR}/commands/build.sh"
+            cmd_build "$@"
+            ;;
 
         # Testing
         test)
