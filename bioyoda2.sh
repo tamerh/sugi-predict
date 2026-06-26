@@ -54,19 +54,31 @@ build(){
   for a in "$@"; do case $a in --full) mode=full;; --delta) mode=delta;; --prod) prod=1; suffix="";; esac; done
   case $collection in
     compounds)
-      # full chain wrapped in ONE deferred-indexing window when stage=all
       local COLL="patent_compounds${suffix}"
+      local SNAP="${ROOT}/raw_data/patents/surechembl/2026-06-01"
+      local CHUNKS="${ROOT}/raw_data/patents/chunked_compounds"
+      local REF="${ROOT}/work/chembl_reference"
+      local NBRS="${ROOT}/work/atlas_nbrs"
+      local M="${ROOT}/modules/compounds"
       case $stage in
+        chunk)      $PY "${ROOT}/modules/patents/scripts/chunk_compounds.py" --input "$SNAP/compounds.parquet" --out-dir "$CHUNKS" --chunks 62 ;;
+        predict)    log "GPU stage — MUST run under tmux on the pod (cupy needs a TTY)"
+                    $PY "$M/gpu/gpu_atlas_fused.py" --refsmi "$REF/reference.tsv" --patents "$CHUNKS" --outdir "$NBRS" --knn 100 --procs 24 ;;
+        ingest)     $PY "$M/build_patent_compounds.py" --collection "$COLL" --workers 16 ;;
+        provenance) $PY "$M/bake_provenance.py" --collection "$COLL" --snapshot "$SNAP" ;;
+        denoise)    $PY "$M/bake_targets.py" --collection "$COLL" --floor 0.4 --cap 50 ;;
         all)
-          log "build compounds -> $COLL (mode=$mode) [deferred-index window]"
+          # ONE deferred-index window over every payload pass -> a single optimization
+          log "build compounds -> $COLL (mode=$mode) [one deferred-index window]"
           qdrant_defer "$COLL"
-          # ingest -> enrich -> provenance -> denoise all run with indexing paused...
-          log "  (stages would run here against $COLL, indexing deferred)"
-          qdrant_build "$COLL"   # ...then ONE optimization
+          build compounds ingest     ${prod:+--prod}
+          build compounds provenance ${prod:+--prod}
+          build compounds denoise    ${prod:+--prod}
+          qdrant_build "$COLL"
           ;;
-        defer)  qdrant_defer "patent_compounds${suffix}" ;;
-        build)  qdrant_build "patent_compounds${suffix}" ;;
-        *) echo "compounds stages: all | chunk | predict | ingest | enrich | provenance | denoise | defer | build"; ;;
+        defer)  qdrant_defer "$COLL" ;;
+        build)  qdrant_build "$COLL" ;;
+        *) echo "compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build"; ;;
       esac ;;
     text|reference|proteins|trials) log "$collection pipeline: TODO (Phase 2)";;
     *) cat <<EOF
