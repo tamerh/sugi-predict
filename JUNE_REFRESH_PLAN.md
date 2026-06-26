@@ -101,3 +101,9 @@ re-trigger. Wire the whole compound pipeline to share one deferred window + a si
 ## Tier-1/2 still open (not June-blocking)
 - #3 unify served `chembl` 683K → 1.25M (CPU)  · target_genes full-name fix · grounding/index builders to commit
 - patents_text engine routing: currently S-BioBERT stopgap; flip to MedCPT after the new collection is in + verified
+
+## bake_targets: write only CHANGED memberships (not all 30M) — denoise optimization fix
+The denoise rewrote `targets` on ALL 30,937,359 compounds (even unchanged ones), so its single deferred-index
+optimization became a FULL-collection re-merge (disk 294G->549G churn, ~hours). Fix: bake_targets should
+set_payload only where the de-noised `targets` differs from the stored one (~6% touched), so the optimization
+is proportional. Same theme as the deferred-index window — minimize what each pass actually rewrites.
