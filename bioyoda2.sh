@@ -48,6 +48,26 @@ print("  [build] GREEN:", qc.count(n).count, "points")
 PY
 }
 
+# --- pod-sync: automate the GPU hop (push -> tmux run -> monitor -> pull). Blueprint: work/medcpt_orchestrator.sh ---
+# Config from env: POD_HOST (root@ip), POD_PORT, POD_KEY. Without them, GPU stages run locally if a GPU is present.
+_pssh(){ ssh -i "${POD_KEY}" -p "${POD_PORT}" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 "${POD_HOST}" "$@"; }
+_pup(){  rsync -a -e "ssh -i ${POD_KEY} -p ${POD_PORT} -o StrictHostKeyChecking=accept-new" "$@"; }
+pod_configured(){ [[ -n "${POD_HOST:-}" && -n "${POD_PORT:-}" && -n "${POD_KEY:-}" ]]; }
+pod_predict(){   # $1=chunks dir  $2=ref dir  $3=local nbrs out  — run fused k-NN on the pod
+  local chunks="$1" ref="$2" out="$3" n; n=$(ls "$chunks"/compounds_chunk_*.parquet 2>/dev/null | wc -l)
+  log "[pod] push reference + $n chunks + fused kernel -> ${POD_HOST}"
+  _pssh "mkdir -p /atlas/knn/ref /atlas/knn/patents /atlas/knn/nbrs"
+  _pup "$ref/reference.tsv" "${POD_HOST}:/atlas/knn/ref/"
+  _pup "$chunks/" "${POD_HOST}:/atlas/knn/patents/"
+  _pup "${ROOT}/modules/compounds/gpu/gpu_atlas_fused.py" "${POD_HOST}:/atlas/"
+  log "[pod] launch fused k-NN under tmux (cupy needs a TTY)"
+  _pssh "cd /atlas && tmux kill-session -t knn 2>/dev/null; tmux new-session -d -s knn 'PYTHONUNBUFFERED=1 python -u gpu_atlas_fused.py --refsmi knn/ref/reference.tsv --patents knn/patents --outdir knn/nbrs --knn 100 --procs 24 > fused.log 2>&1; echo EXIT=\$? >> fused.log'"
+  log "[pod] monitoring ($n chunks expected)..."
+  until [ "$(_pssh 'ls /atlas/knn/nbrs/*.parquet 2>/dev/null | wc -l')" -ge "$n" ] || _pssh 'grep -q EXIT= /atlas/fused.log 2>/dev/null'; do sleep 60; done
+  log "[pod] pull nbrs -> ${out#${ROOT}/}"; mkdir -p "$out"; _pup "${POD_HOST}:/atlas/knn/nbrs/" "$out/"
+  log "[pod] predict complete"
+}
+
 build(){   # logging wrapper — every stage tees to logs/build/<collection>/<stage>-<ts>.log (organized, not /tmp)
   local _c="${1:-misc}" _s="${2:-_}"; local _d="${ROOT}/logs/build/${_c}"; mkdir -p "$_d"
   local _lf="${_d}/${_s}-$(date +%Y%m%d-%H%M%S).log"
@@ -71,8 +91,9 @@ _dispatch(){
       fi
       case $stage in
         chunk)      $PY "${ROOT}/modules/patents/scripts/chunk_compounds.py" --input "$SNAP/compounds.parquet" --out-dir "$CHUNKS" --chunks 62 ;;
-        predict)    log "GPU stage — MUST run under tmux on the pod (cupy needs a TTY)"
-                    $PY "$M/gpu/gpu_atlas_fused.py" --refsmi "$REF/reference.tsv" --patents "$CHUNKS" --outdir "$NBRS" --knn 100 --procs 24 ;;
+        predict)    if pod_configured; then pod_predict "$CHUNKS" "$REF" "$NBRS"
+                    else log "GPU stage — set POD_HOST/POD_PORT/POD_KEY for the pod (auto push/run/pull), or run locally if a GPU is present"
+                         $PY "$M/gpu/gpu_atlas_fused.py" --refsmi "$REF/reference.tsv" --patents "$CHUNKS" --outdir "$NBRS" --knn 100 --procs 24; fi ;;
         ingest)     $PY "$M/build_patent_compounds.py" --collection "$COLL" --nbrs "$NBRS" --compounds "$CHUNKS" --preddir "$PREDDIR" --workers "$WORKERS" ;;
         provenance) $PY "$M/bake_provenance.py" --collection "$COLL" --snapshot "$SNAP" ;;
         denoise)    $PY "$M/bake_targets.py" --collection "$COLL" --floor 0.4 --cap 50 ;;
