@@ -17,9 +17,9 @@ MAX_LIMIT = 100
 
 # collection -> (modality, dim). modality decides how a free-text/smiles/accession query is embedded.
 COLLECTIONS = {
-    "patent_atlas":            ("chemical", 2048),   # 30M patent compounds, predicted targets + provenance
+    "patent_atlas":            ("chemical", 2048),   # OLD Dec atlas (live until patent_compounds flip)
+    "patent_compounds":        ("chemical", 2048),   # unified: all compounds + structure + predictions + provenance
     "chembl":                  ("chemical", 2048),   # ChEMBL reference ligands
-    "patents_compounds":       ("chemical", 2048),   # SureChEMBL compound fingerprints
     "clinical_trials_medcpt":  ("text", 768),        # clinical trials (MedCPT)
     "patents_text":            ("text", 768),        # patent text (MedCPT; Qdrant alias -> patents_text_medcpt)
     "esm2":                    ("protein", 1280),     # SwissProt ESM-2 protein embeddings
