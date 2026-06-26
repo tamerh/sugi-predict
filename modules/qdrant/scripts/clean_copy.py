@@ -7,28 +7,50 @@ index state is confused and a restart just reloads the same tangle. This moves t
 collection (un-confused optimizer) and builds ONE clean HNSW with the intended profile (big segments + binary
 quant -> fast query latency). No recompute. The source is left intact as a fallback until you swap the alias.
 
-  python clean_copy.py --src patent_compounds --dst patent_compounds_v2
+PARALLEL: collect ids once (cheap, ids-only scroll), partition round-robin, N workers each retrieve-by-id
+(vectors+payloads) and upsert. Serial single-process copy of 30M x 2048-float vectors is ~250/s (~a day);
+16 workers brings it to ~tens of minutes.
+
+  python clean_copy.py --src patent_compounds --dst patent_compounds_v2 --workers 16
   # then, after verifying dst is green + correct:  delete src, create alias src -> dst
 """
 import sys, time, argparse
+import multiprocessing as mp
 sys.path.insert(0, "/data/bioyoda")
 from qdrant_client import QdrantClient, models
 from modules.qdrant.collection_profiles import (MAX_SEGMENT_SIZE, MEMMAP_THRESHOLD,
                                                  DEFER_THRESHOLD, BUILD_THRESHOLD, MAX_INDEXING_THREADS)
+
+QURL = "http://localhost:6333"
+_W = {}
+
+
+def _init(src, dst):
+    _W.update(src=src, dst=dst, qc=QdrantClient(url=QURL, timeout=600, check_compatibility=False))
+
+
+def _copy(id_part):
+    """retrieve this id partition (vectors+payloads) from src, upsert to dst."""
+    qc, src, dst = _W["qc"], _W["src"], _W["dst"]
+    n = 0
+    for i in range(0, len(id_part), 1000):
+        ids = id_part[i:i + 1000]
+        pts = qc.retrieve(src, ids=ids, with_payload=True, with_vectors=True)
+        if pts:
+            qc.upsert(dst, [models.PointStruct(id=p.id, vector=p.vector, payload=p.payload) for p in pts], wait=False)
+            n += len(pts)
+    return n
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", required=True)
     ap.add_argument("--dst", required=True)
-    ap.add_argument("--qdrant", default="http://localhost:6333")
-    ap.add_argument("--scroll", type=int, default=2000)
-    ap.add_argument("--batch", type=int, default=500)   # keep upsert request < 33MB (prov payloads are big)
+    ap.add_argument("--workers", type=int, default=16)
     a = ap.parse_args()
-    qc = QdrantClient(url=a.qdrant, timeout=600, check_compatibility=False)
+    qc = QdrantClient(url=QURL, timeout=600, check_compatibility=False)
 
-    src_info = qc.get_collection(a.src)
-    dim = src_info.config.params.vectors.size
+    dim = qc.get_collection(a.src).config.params.vectors.size
     total = qc.count(a.src).count
     print(f"src {a.src}: {total:,} points, dim {dim}", flush=True)
 
@@ -36,7 +58,7 @@ def main():
     qc.update_collection(a.src, optimizer_config=models.OptimizersConfigDiff(indexing_threshold=DEFER_THRESHOLD))
     print("  source optimizer paused", flush=True)
 
-    # 1) fresh collection, SAME profile, indexing DEFERRED during the copy
+    # fresh collection, SAME profile, indexing DEFERRED during the copy
     if qc.collection_exists(a.dst):
         qc.delete_collection(a.dst)
     qc.create_collection(a.dst,
@@ -51,26 +73,28 @@ def main():
         qc.create_payload_index(a.dst, f, field_schema=t)
     print(f"  created {a.dst} (profile preserved, indexing deferred)", flush=True)
 
-    # 2) copy every point (vectors + payloads) — no recompute
-    copied = 0; offset = None; t0 = time.time()
+    # collect all ids (cheap: ids-only scroll), partition round-robin
+    print("  collecting ids ...", flush=True)
+    ids = []; offset = None
     while True:
-        pts, offset = qc.scroll(a.src, limit=a.scroll, offset=offset, with_payload=True, with_vectors=True)
-        if not pts:
-            break
-        for i in range(0, len(pts), a.batch):
-            b = pts[i:i + a.batch]
-            qc.upsert(a.dst, [models.PointStruct(id=p.id, vector=p.vector, payload=p.payload) for p in b], wait=False)
-        copied += len(pts)
-        if copied % 200_000 < a.scroll:
-            r = copied / max(time.time() - t0, 1)
-            print(f"  copied {copied:,}/{total:,} ({r:.0f}/s, eta {(total-copied)/max(r,1)/60:.0f}min)", flush=True)
+        pts, offset = qc.scroll(a.src, limit=20000, offset=offset, with_payload=False, with_vectors=False)
+        ids.extend(p.id for p in pts)
         if offset is None:
             break
-    print(f"copied {copied:,} in {time.time()-t0:.0f}s; waiting for flush...", flush=True)
-    while qc.count(a.dst).count < total:
+    print(f"  {len(ids):,} ids; copying with {a.workers} workers ...", flush=True)
+    parts = [ids[i::a.workers] for i in range(a.workers)]
+
+    copied = 0; t0 = time.time()
+    with mp.Pool(a.workers, initializer=_init, initargs=(a.src, a.dst)) as pool:
+        for n in pool.imap_unordered(_copy, parts):
+            copied += n
+            r = copied / max(time.time() - t0, 1)
+            print(f"  copied {copied:,}/{total:,} ({r:.0f}/s)", flush=True)
+    print(f"copied {copied:,} in {time.time()-t0:.0f}s; waiting for flush ...", flush=True)
+    while qc.count(a.dst).count < total * 0.999:
         time.sleep(10)
 
-    # 3) ONE clean HNSW build on the un-confused collection
+    # ONE clean HNSW build on the un-confused collection
     qc.update_collection(a.dst, optimizer_config=models.OptimizersConfigDiff(indexing_threshold=BUILD_THRESHOLD))
     print("  HNSW build triggered (single, clean)", flush=True)
     while True:
