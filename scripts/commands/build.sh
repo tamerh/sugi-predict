@@ -126,7 +126,11 @@ _dispatch(){
           ;;
         defer)  qdrant_defer "$COLL" ;;
         build)  qdrant_build "$COLL" ;;
-        *) echo "compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build"; ;;
+        # rebuild: clean-copy into a fresh collection + one clean HNSW build. Use when the optimizer state gets
+        #   tangled by repeated stop-start optimizations (a restart only reloads the same tangle). No recompute;
+        #   source left intact as a fallback. After verifying ${COLL}_v2 is green: swap alias, drop the old.
+        rebuild) $PY "${ROOT}/modules/qdrant/scripts/clean_copy.py" --src "$COLL" --dst "${COLL}_v2" ;;
+        *) echo "compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build | rebuild"; ;;
       esac ;;
     text|reference|proteins|trials) log "$collection pipeline: TODO (Phase 2)";;
     *) cat <<EOF
