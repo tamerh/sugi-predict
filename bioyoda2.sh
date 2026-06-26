@@ -48,7 +48,13 @@ print("  [build] GREEN:", qc.count(n).count, "points")
 PY
 }
 
-build(){
+build(){   # logging wrapper — every stage tees to logs/build/<collection>/<stage>-<ts>.log (organized, not /tmp)
+  local _c="${1:-misc}" _s="${2:-_}"; local _d="${ROOT}/logs/build/${_c}"; mkdir -p "$_d"
+  local _lf="${_d}/${_s}-$(date +%Y%m%d-%H%M%S).log"
+  [[ "$_s" != _ && "$_s" != help ]] && log "log -> ${_lf#${ROOT}/}"
+  _dispatch "$@" 2>&1 | tee "$_lf"; return "${PIPESTATUS[0]}"
+}
+_dispatch(){
   local collection="${1:-}" stage="${2:-}"; shift 2 || true
   local mode=delta prod="" suffix="_test"
   for a in "$@"; do case $a in --full) mode=full;; --delta) mode=delta;; --prod) prod=1; suffix="";; esac; done
