@@ -21,7 +21,7 @@ COLLECTIONS = {
     "chembl":                  ("chemical", 2048),   # ChEMBL reference ligands
     "patents_compounds":       ("chemical", 2048),   # SureChEMBL compound fingerprints
     "clinical_trials_medcpt":  ("text", 768),        # clinical trials (MedCPT)
-    "patents_text":            ("text", 768),        # patent text (S-BioBERT — see embed_text_sbiobert)
+    "patents_text":            ("text", 768),        # patent text (MedCPT; Qdrant alias -> patents_text_medcpt)
     "esm2":                    ("protein", 1280),     # SwissProt ESM-2 protein embeddings
 }
 
@@ -133,7 +133,7 @@ def query(collection, text=None, smiles=None, accession=None, filter=None, limit
 
     qvec = None
     if text is not None:
-        qvec = embed_text_sbiobert(text) if collection == "patents_text" else embed_text(text)
+        qvec = embed_text(text)        # all text collections now MedCPT (patents_text aliases patents_text_medcpt)
     elif smiles is not None:
         qvec = embed_smiles(smiles)
         if qvec is None:
