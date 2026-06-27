@@ -4,7 +4,7 @@ description: |
   compound stages. DAG: chunk -> predict (fused k-NN, GPU/tmux) -> [defer] ingest -> provenance -> denoise
   -> [build]. The defer/build tasks bracket all payload passes so they share ONE Qdrant optimization
   (the deferred-index window). mode=delta reuses work/atlas_nbrs/ and predicts only June-new compounds.
-  Compute is bioyoda2.sh build compounds <stage> (single source of truth for the stage logic).
+  Compute is bioyoda.sh build compounds <stage> (single source of truth for the stage logic).
 version: 1
 publish: {mode: none}
 params:

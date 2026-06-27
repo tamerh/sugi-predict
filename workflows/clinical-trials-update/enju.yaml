@@ -1,0 +1,15 @@
+name: "clinical_trials_medcpt — incremental update (biobtree source, MedCPT)"
+description: |
+  Refresh clinical_trials_medcpt from biobtree's trials.json (biobtree owns the AACT download/extract/process).
+  DAG: chunk (incremental — only trials whose content hash changed vs the tracking DB) -> embed (MedCPT-Article;
+  GPU on a pod, set POD_HOST/POD_PORT/POD_KEY, or local CPU ~7 text/s) -> insert (upsert by nct_id + commit the
+  deferred tracking hashes). Replaces the old S-BioBERT Snakemake (modules/clinical_trials/Snakefile).
+  Compute = bioyoda.sh build trials <stage> --prod (single source of truth for the stage logic; bash steps, Enju DAG).
+version: 1
+publish: {mode: none}
+params:
+  - {name: mode, type: string, required: false, description: "full | delta (default delta = only changed/new trials vs the tracking DB)"}
+tasks:
+  - {id: chunk,                   script: workflows/clinical-trials-update/scripts/chunk.sh,  prompt: "Chunk biobtree trials.json -> MedCPT-input JSONL shards. delta = only changed/new trials."}
+  - {id: embed,  needs: [chunk],  script: workflows/clinical-trials-update/scripts/embed.sh,  prompt: "MedCPT-Article embed the delta shards. GPU on a pod (POD_HOST/POD_PORT/POD_KEY) or local CPU."}
+  - {id: insert, needs: [embed],  script: workflows/clinical-trials-update/scripts/insert.sh, prompt: "Upsert by nct_id into clinical_trials_medcpt; commit the tracking hashes only after success."}
