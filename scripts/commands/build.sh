@@ -134,7 +134,15 @@ _dispatch(){
         swap)    $PY "${ROOT}/modules/qdrant/scripts/swap_alias.py" --name "$COLL" ;;
         *) echo "compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build | rebuild | swap"; ;;
       esac ;;
-    text|reference|proteins|trials) log "$collection pipeline: TODO (Phase 2)";;
+    reference)
+      # ChEMBL ligand->target answer-key as a served Qdrant collection (FPs recomputed from reference.tsv; no GPU).
+      # The full 1.25M lives in work/chembl_reference/reference.tsv; rebuild whenever that reference is refreshed.
+      local COLL="chembl${suffix}"
+      case $stage in
+        chembl) $PY "${ROOT}/modules/qdrant/scripts/build_chembl_collection.py" --collection "$COLL" --ref "${ROOT}/work/chembl_reference" ;;
+        *) echo "reference stages: chembl  (make/fpsim2 TODO)"; ;;
+      esac ;;
+    text|proteins|trials) log "$collection pipeline: TODO (Phase 2)";;
     *) cat <<EOF
 bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
   collections: compounds | text | reference | proteins | trials

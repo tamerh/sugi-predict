@@ -8,7 +8,7 @@ Payload: {cid (pubchem), smiles, targets:[UniProt], source}. Point id = pubchem 
 Enables: general similarity over ChEMBL, filter ligands by target, cross-modal joins (patent↔chembl↔lit).
 (The target-prediction engine keeps using the exact-Tanimoto FPSim2 index for its confidence.)
 """
-import sys, json, time
+import sys, json, time, argparse
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs
@@ -17,8 +17,12 @@ from qdrant_client import QdrantClient, models
 sys.path.insert(0, "/data/bioyoda")
 from modules.qdrant.collection_profiles import (MAX_SEGMENT_SIZE, MEMMAP_THRESHOLD,
                                                 DEFER_THRESHOLD, BUILD_THRESHOLD, MAX_INDEXING_THREADS)
-REF = "/data/bioyoda/work/chembl_reference"; NAME = "chembl"
-c = QdrantClient(url="http://localhost:6333", timeout=600)
+ap = argparse.ArgumentParser()
+ap.add_argument("--collection", default="chembl")
+ap.add_argument("--ref", default="/data/bioyoda/work/chembl_reference")
+args = ap.parse_args()
+REF = args.ref; NAME = args.collection
+c = QdrantClient(url="http://localhost:6333", timeout=600, check_compatibility=False)
 
 if c.collection_exists(NAME):
     print(f"deleting existing {NAME}"); c.delete_collection(NAME)
