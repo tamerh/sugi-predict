@@ -136,8 +136,7 @@ Its properties:
 - It is strongly **target-class dependent**: high for proteins that are the *subject*
   of patents (nuclear receptors, aminergic GPCRs 90–100%, EGFR 73%), low for those
   appearing as selectivity counter-screens (hERG, SCN5A 2–4%). It survives a strict
-  same-classification null (~14× gap), so it is genuinely — but only weakly —
-  independent. We read it as corroborating, never confirmatory.
+  same-classification null (~14× gap), so it is independent of the chemistry, though weak.
 
 ## Validation — lead with the realistic number
 

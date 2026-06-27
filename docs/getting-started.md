@@ -1,7 +1,7 @@
 # Getting started
 
-Four ways to use Sugi Predict, by audience. Predictions are predicted, not catalogued —
-read the signals: `confidence` is the best Tanimoto to a backing ChEMBL ligand, `support` is
+Four ways to use Sugi Predict, by audience. Targets are predicted by chemical similarity;
+the signals: `confidence` is the best Tanimoto to a backing ChEMBL ligand, `support` is
 how many of the 20 nearest neighbours agree, and below ~0.3 is novel/whitespace chemistry.
 Deployment-realistic recall@1 is ~41% (the 83%/77% figures are upper bounds). See
 [how-it-works.md](how-it-works.md) for the method.
@@ -41,7 +41,7 @@ curl -s http://localhost:8011/api/count \
   -H 'Content-Type: application/json' \
   -d '{"collection":"patent_compounds","filter":{"targets":"P00533","best_tanimoto":{"gte":0.6}}}'
 
-# Does the patent full-text body corroborate the chemistry-predicted target(s)?
+# Is the patent abstract consistent with the chemistry-predicted target(s)?
 curl 'http://localhost:8011/api/patent-text-support?compound_id=12345'
 
 # Chemically nearest patent compounds (vector search on the Morgan fingerprint)
