@@ -104,156 +104,28 @@ qdrant_rebuild() {
     "$py" /data/bioyoda/modules/qdrant/scripts/rebuild_collection.py "$@"
 }
 
-# Start Qdrant server
-qdrant_start() {
-    local mode="local"
-    local runtime_hours=48
-    local memory_mb=32000
-    local out_dir=""
+# --- Qdrant container lifecycle (docker compose: deploy/docker-compose.bioyoda.yml) ---
+QDRANT_COMPOSE="${COMMANDS_DIR}/../../deploy/docker-compose.bioyoda.yml"
 
-    # Parse arguments
-    parse_common_args "$@"
-
-    # Parse qdrant-specific arguments from REMAINING_ARGS
-    local i=0
-    while [[ $i -lt ${#REMAINING_ARGS[@]} ]]; do
-        case ${REMAINING_ARGS[$i]} in
-            --mode)
-                mode="${REMAINING_ARGS[$((i+1))]}"
-                ((i+=2))
-                ;;
-            --runtime)
-                runtime_hours="${REMAINING_ARGS[$((i+1))]}"
-                ((i+=2))
-                ;;
-            --memory)
-                memory_mb="${REMAINING_ARGS[$((i+1))]}"
-                ((i+=2))
-                ;;
-            --out-dir)
-                out_dir="${REMAINING_ARGS[$((i+1))]}"
-                ((i+=2))
-                ;;
-            *)
-                ((i++))
-                ;;
-        esac
-    done
-
-    # Resolve config
-    local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-
-    # Validate/prepare out_dir if provided
-    if [[ -n "$out_dir" ]]; then
-        # Make absolute path
-        if [[ ! "$out_dir" = /* ]]; then
-            out_dir="$(pwd)/$out_dir"
-        fi
-
-        # Handle existing directory with subdirectories
-        if [[ -d "$out_dir/storage" ]] && [[ -d "$out_dir/snapshots" ]]; then
-            log_info "Using existing Qdrant storage: $out_dir"
-        elif [[ "$(basename $out_dir)" == "storage" ]]; then
-            out_dir="$(dirname $out_dir)"
-            log_info "Adjusted path to parent directory: $out_dir"
-        else
-            # Create directory structure for new storage
-            log_info "Creating Qdrant storage directory: $out_dir"
-            mkdir -p "$out_dir/storage"
-            mkdir -p "$out_dir/snapshots"
-        fi
-    fi
-
-    log_info "Starting Qdrant server (mode=${mode})"
-
-    local base_dir=$(get_base_dir "$active_config")
-    ensure_directories "$active_config"
-
-    local timestamp=$(get_timestamp)
-
-    # Get storage path from config (or use --out-dir if provided)
-    local storage_path
-    if [[ -n "$out_dir" ]]; then
-        storage_path="$out_dir"
-        log_info "Using specified storage: ${storage_path}"
-    else
-        storage_path=$(get_qdrant_storage_path "$active_config")
-        log_info "Using configured storage: ${storage_path}"
-    fi
-
-    # Call start_server.sh
-    bash modules/qdrant/scripts/start_server.sh \
-        --container modules/qdrant/setup/singularity/qdrant.sif \
-        --config config/qdrant_config.yaml \
-        --storage "${storage_path}" \
-        --memory-mb "${memory_mb}" \
-        --runtime "$((runtime_hours * 3600))" \
-        --job-name q_server \
-        --mode "${mode}" \
-        --connection-info "${storage_path}/connection_info.txt" \
-        --log "${base_dir}/logs/qdrant/server_${timestamp}.log" \
-        --out-dir "${storage_path}"
-
-    if [[ $? -eq 0 ]]; then
-        log_success "Qdrant server started successfully"
-        if [[ -f "${storage_path}/connection_info.txt" ]]; then
-            echo ""
-            cat "${storage_path}/connection_info.txt"
-        fi
-    else
-        log_error "Failed to start Qdrant server"
-        exit 1
-    fi
+qdrant_start() {     # bring up the Qdrant container (data persists in the mounted volume qdrant/storage)
+    log_info "qdrant: docker compose up -d"
+    docker compose -p bioyoda -f "$QDRANT_COMPOSE" up -d qdrant && qdrant_status
 }
 
-# Stop Qdrant server
-qdrant_stop() {
-    parse_common_args "$@"
-    local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-    local storage_path=$(get_qdrant_storage_path "$active_config")
-
-    log_info "Stopping Qdrant server (storage=${storage_path})..."
-
-    QDRANT_STORAGE_PATH="${storage_path}" \
-    bash modules/qdrant/scripts/stop_server.sh
+qdrant_stop() {      # stop the container (data volume untouched)
+    log_info "qdrant: docker compose stop"
+    docker compose -p bioyoda -f "$QDRANT_COMPOSE" stop qdrant
 }
 
-# Restart Qdrant with existing storage
-qdrant_restart() {
-    local storage_path="$1"
-
-    # Use configured path if not provided
-    if [[ -z "$storage_path" ]]; then
-        storage_path=$(get_qdrant_storage_path)
-        log_info "Using configured storage: $storage_path"
-    fi
-
-    # Validate path exists
-    if [[ ! -d "$storage_path" ]]; then
-        log_error "Storage directory not found: $storage_path"
-        log_error "Run './bioyoda.sh qdrant start' first to create it"
-        exit 1
-    fi
-
-    log_info "Restarting Qdrant with storage: $storage_path"
-
-    # Stop current instance
-    log_info "Stopping current Qdrant instance (if any)..."
-    qdrant_stop 2>/dev/null || true
-    sleep 2
-
-    # Start with existing storage
-    qdrant_start --out-dir "$storage_path"
+qdrant_restart() {   # restart (e.g. to clear a wedged optimizer); data persists
+    log_info "qdrant: docker compose restart"
+    docker compose -p bioyoda -f "$QDRANT_COMPOSE" restart qdrant && qdrant_status
 }
 
-# Check Qdrant status
-qdrant_status() {
-    parse_common_args "$@"
-    local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-    local storage_path=$(get_qdrant_storage_path "$active_config")
-
-    QDRANT_STORAGE_PATH="${storage_path}" \
-    bash modules/qdrant/scripts/check_status.sh
+qdrant_status() {    # container state + health + memory
+    docker compose -p bioyoda -f "$QDRANT_COMPOSE" ps qdrant 2>/dev/null
+    docker stats --no-stream --format '  mem {{.MemUsage}}  cpu {{.CPUPerc}}' qdrant-bioyoda 2>/dev/null
+    curl -sf http://localhost:6333/healthz >/dev/null 2>&1 && echo "  healthz: OK" || echo "  healthz: DOWN"
 }
 
 # Insert data to Qdrant
