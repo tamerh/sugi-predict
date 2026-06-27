@@ -54,7 +54,7 @@ declare -g REMAINING_ARGS=()
 
 # Parse common arguments used across multiple commands
 # Usage: parse_common_args "$@"
-# Sets global variables: EXECUTION_MODE, CORES, JOBS, CUSTOM_CONFIG, USE_TEST, BACKGROUND, UPDATE_MODE, DRYRUN, REMAINING_ARGS, PROCESS_TARGET
+# Sets global variables: EXECUTION_MODE, CORES, JOBS, CUSTOM_CONFIG, USE_TEST, BACKGROUND, UPDATE_MODE, DRYRUN, REMAINING_ARGS
 parse_common_args() {
     # Reset globals
     EXECUTION_MODE="local"
@@ -65,7 +65,6 @@ parse_common_args() {
     BACKGROUND=false
     UPDATE_MODE="full"
     DRYRUN=""
-    PROCESS_TARGET=""
     REMAINING_ARGS=()
 
     while [[ $# -gt 0 ]]; do
@@ -100,18 +99,6 @@ parse_common_args() {
                 DRYRUN="-n"
                 shift
                 ;;
-            --compounds-only)
-                PROCESS_TARGET="patents_compounds_only"
-                shift
-                ;;
-            --text-only)
-                PROCESS_TARGET="patents_text_only"
-                shift
-                ;;
-            --biobtree)
-                PROCESS_TARGET="patents_biobtree"
-                shift
-                ;;
             --)
                 # Stop parsing options, collect rest as remaining args
                 shift
@@ -137,27 +124,6 @@ check_conda_env() {
     if ! conda env list 2>/dev/null | grep -q "^${env_name} "; then
         log_error "Conda environment '${env_name}' not found!"
         log_info "Please create it with: conda env create -f tamer.yml"
-        return 1
-    fi
-    return 0
-}
-
-# Check if snakemake is available
-check_snakemake() {
-    if ! command -v snakemake &> /dev/null; then
-        log_error "Snakemake not found!"
-        log_info "Please activate conda environment first: conda activate ${DEFAULT_CONDA_ENV}"
-        log_info "If snakemake not installed: mamba install -n ${DEFAULT_CONDA_ENV} -c bioconda snakemake"
-        return 1
-    fi
-    return 0
-}
-
-# Check if graphviz dot is available
-check_graphviz() {
-    if ! command -v dot &> /dev/null; then
-        log_error "Graphviz 'dot' command not found."
-        log_info "Install with: conda install graphviz"
         return 1
     fi
     return 0

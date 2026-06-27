@@ -2,16 +2,13 @@
 ##############################################################################
 #
 #   BioYoda Maintenance Commands
-#   Status, clean, validate, dryrun, dag, unlock, and stop commands
+#   Status, clean, validate, stop, start-all, stop-all commands
 #
 ##############################################################################
 
 # Source common libraries
 COMMANDS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${COMMANDS_DIR}/../lib/common.sh"
-
-# Default snakefile for operations
-DEFAULT_SNAKEFILE="modules/Snakefile"
 
 # Show pipeline status
 cmd_status() {
@@ -77,26 +74,12 @@ cmd_status() {
 
 # Validate module outputs
 cmd_validate() {
-    local module="${1:-pubmed}"
+    local module="${1:-qdrant}"
     local base_dir=$(get_base_dir)
 
     log_info "Validating module: ${module}"
 
     case $module in
-        pubmed)
-            if [[ ! -f "${base_dir}/data/merged/pubmed/master_pubmed.index" ]]; then
-                log_error "PubMed index not found. Run pipeline first."
-                exit 1
-            fi
-
-            snakemake --snakefile "$DEFAULT_SNAKEFILE" --configfile "$DEFAULT_CONFIG" \
-                pubmed_validate --cores 1 --use-conda
-
-            if [[ -f "${base_dir}/data/merged/pubmed/validation_report.txt" ]]; then
-                echo ""
-                cat "${base_dir}/data/merged/pubmed/validation_report.txt"
-            fi
-            ;;
         qdrant)
             if [[ ! -f "${base_dir}/data/qdrant/connection_info.txt" ]]; then
                 log_error "Qdrant server not running or connection info not found."
@@ -110,7 +93,7 @@ cmd_validate() {
             curl -s "$QDRANT_URL/collections" | python -m json.tool 2>/dev/null || log_warning "Failed to connect to Qdrant"
 
             # Check specific collections
-            for collection in pubmed_abstracts clinical_trials; do
+            for collection in patent_compounds chembl clinical_trials_medcpt patents_text esm2; do
                 if curl -s "$QDRANT_URL/collections/${collection}" >/dev/null 2>&1; then
                     log_success "${collection} collection accessible"
                     curl -s "$QDRANT_URL/collections/${collection}" | python -m json.tool 2>/dev/null | grep -E "(points_count|status)" || true
@@ -175,53 +158,6 @@ cmd_clean() {
             exit 1
             ;;
     esac
-}
-
-# Dry run to see what would execute
-cmd_dryrun() {
-    local module="${1:-all}"
-
-    log_info "Performing dry run for module: ${module}"
-
-    check_snakemake || exit 1
-
-    local target=""
-    if [[ "$module" != "all" ]]; then
-        target="-- ${module}"
-    fi
-
-    snakemake --snakefile "$DEFAULT_SNAKEFILE" --configfile "$DEFAULT_CONFIG" \
-        --dryrun --printshellcmds $target
-}
-
-# Generate workflow DAG
-cmd_dag() {
-    local module="${1:-all}"
-    local output_file="workflow_dag.pdf"
-
-    log_info "Generating DAG for module: ${module}"
-
-    check_snakemake || exit 1
-    check_graphviz || exit 1
-
-    local target=""
-    if [[ "$module" != "all" ]]; then
-        target="-- ${module}"
-    fi
-
-    snakemake --snakefile "$DEFAULT_SNAKEFILE" --configfile "$DEFAULT_CONFIG" \
-        --dag $target | dot -Tpdf > "$output_file"
-
-    log_success "DAG saved to: ${output_file}"
-}
-
-# Unlock working directory
-cmd_unlock() {
-    log_info "Unlocking working directory..."
-
-    snakemake --snakefile "$DEFAULT_SNAKEFILE" --configfile "$DEFAULT_CONFIG" --unlock
-
-    log_success "Directory unlocked"
 }
 
 # Stop a running pipeline

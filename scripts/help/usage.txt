@@ -4,50 +4,41 @@ Usage: bioyoda.sh <command> [options]
 
 COMMANDS:
     start                     Start Qdrant server
-    stop                      Stop Qdrant server
-    enju <module>             Run data processing as an Enju DAG (preferred)
-    run <module>              Run data processing via local Snakemake
-    status                    Show pipeline status
+    stop                      Stop Qdrant server (or a running pipeline)
+    build <collection> <stg>  Build/refresh a Qdrant collection (chunk/embed/ingest/insert/...)
+    atlas <subcommand>        Patent-atlas build steps (bake/targets/text/compounds)
+    compounds <subcommand>    Compound tooling (FPSim2 / FTO / prediction)
+    enju <module>             Run data processing as an Enju DAG (preferred orchestration)
     qdrant <subcommand>       Manage Qdrant vector database
+    status                    Show pipeline status
+    validate [module]         Validate module outputs (default: qdrant)
+    clean [module]            Clean intermediate files
     test [--pipeline]         Run test suite
     snapshot --name <name>    Create isolated code snapshot
-    validate <module>         Validate module outputs
-    clean [module]            Clean intermediate files
-    dryrun <module>           Show what would be executed
-    dag <module>              Generate workflow DAG visualization
     push <module>             Sync data/code to Google Drive (for Colab GPU)
     pull <module>             Pull processed results from Google Drive
-    unlock                    Unlock working directory after crash
     help                      Show this help message
     version                   Show version information
 
-DATA PROCESSING MODULES:
-    pubmed                    PubMed literature (30M+ abstracts)
-    clinical_trials           Clinical trials data (500K+ trials)
-    patents                   Patents (43M+ patents, 30M+ compounds)
-    esm2                      Protein embeddings (ESM-2 model)
-    diamond                   Protein sequence similarity (DIAMOND BLASTP)
-    all                       Run all modules
+ORCHESTRATION:
+    Snakemake is retired. Collections are built via `bioyoda.sh build <collection> ...`
+    (collections: compounds | text | reference | proteins | trials) and conducted by the
+    Enju *-update workflows. GPU stages run on a pod (POD_HOST/POD_PORT/POD_KEY).
+
+SERVED COLLECTIONS:
+    patent_compounds          Patent compounds (alias -> patent_compounds_v2)
+    chembl                    ChEMBL reference ligands
+    clinical_trials_medcpt    Clinical trials (MedCPT)
+    patents_text              Patent text (alias -> patents_text_medcpt)
+    esm2                      Protein embeddings (ESM-2)
 
 QDRANT SUBCOMMANDS:
-    start                     Start Qdrant server (local or cluster)
+    start                     Start Qdrant server (docker compose)
     stop                      Stop Qdrant server
     restart [path]            Restart with existing storage (auto-detect or specify path)
     status                    Check server status and collections
-    insert <dataset>          Insert data (pubmed, clinical_trials, patents, esm2, all)
-    stop-insert <dataset>     Stop a running insertion job
-
-RUN OPTIONS:
-    --local                   Run locally (default; only mode)
-    --bg, -b                  Run in background with nohup
-    --cores N                 Number of cores (default: 1)
-    --config FILE             Use custom config file
-    --test                    Use test configuration
-    --mode <full|update>      Processing mode (default: full)
-    --dryrun                  Show what would be executed
-    --compounds-only          Process only compounds (patents module, CPU optimized)
-    --text-only               Process only text embeddings (patents module)
-    --biobtree                Convert patents to JSON for biobtree ingestion
+    reindex <collection>      Trigger HNSW index build after a bulk build
+    rebuild <collection>      Rebuild a collection from its profile
 
 QDRANT START OPTIONS:
     --runtime <hours>         Runtime in hours (default: 48)
@@ -64,24 +55,22 @@ EXAMPLES:
     bioyoda.sh start
     bioyoda.sh stop
 
-    # Data processing (Enju DAG — preferred)
+    # Build / refresh collections
+    bioyoda.sh build compounds all          # patent_compounds (chunk/predict/ingest/...)
+    bioyoda.sh build trials insert          # clinical_trials_medcpt
+    bioyoda.sh build reference chembl       # chembl
+    bioyoda.sh atlas text insert            # patents_text (-> patents_text_medcpt)
+    bioyoda.sh build proteins insert        # esm2
+
+    # Data processing as an Enju DAG (preferred)
     bioyoda.sh enju pubmed
     bioyoda.sh enju all
 
-    # Or plain local Snakemake
-    bioyoda.sh run pubmed --local
-    bioyoda.sh run pubmed --test --local
-
-    # Patents: separate text vs compounds processing
-    bioyoda.sh run patents --local --cores 8 --compounds-only   # CPU (RDKit fingerprints)
-    bioyoda.sh run patents --local --cores 4 --text-only        # Or use Colab GPU
-    bioyoda.sh run patents --local --biobtree                   # Convert to biobtree JSON
-
     # Qdrant operations
-    bioyoda.sh qdrant start                                  # Start locally (Singularity)
+    bioyoda.sh qdrant start                                  # Start locally
     bioyoda.sh qdrant start --out-dir /scratch/qdrant_data  # Use existing storage
     bioyoda.sh qdrant restart                                # Auto-detect and restart
-    bioyoda.sh qdrant insert pubmed                          # Insert data (local)
+    bioyoda.sh qdrant reindex patent_compounds --monitor     # Trigger + monitor HNSW build
     bioyoda.sh qdrant status
     bioyoda.sh qdrant stop
 
@@ -97,16 +86,12 @@ EXAMPLES:
     # Google Drive sync (for Colab GPU processing)
     bioyoda.sh push patents                     # Push data + code to Drive
     bioyoda.sh push patents --code-only         # Push only scripts (fast)
-    bioyoda.sh push clinical_trials             # Push clinical trials data
-    bioyoda.sh push esm2                        # Push ESM2 protein data
     bioyoda.sh push pubmed --dry-run            # Preview what would sync
     bioyoda.sh pull patents                     # Pull processed results
-    bioyoda.sh pull clinical_trials             # Pull clinical trials results
-    bioyoda.sh pull esm2                        # Pull ESM2 embeddings
 
     # Maintenance
     bioyoda.sh status
+    bioyoda.sh validate qdrant
     bioyoda.sh stop pubmed --clean
-    bioyoda.sh unlock
 
 For more information: https://github.com/tamerh/bioyoda

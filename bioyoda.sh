@@ -16,19 +16,16 @@
 #   ./bioyoda.sh stop
 #
 #   # Data processing pipelines
+#   ./bioyoda.sh build compounds all                    # Build a collection (chunk/predict/ingest/...)
 #   ./bioyoda.sh enju pubmed                            # Run as an Enju DAG (preferred)
 #   ./bioyoda.sh enju clinical_trials                   # Enju DAG: prepare -> fan-out -> merge
-#   ./bioyoda.sh run pubmed --local                     # Run via local Snakemake
-#   ./bioyoda.sh run pubmed --test --local              # Test with small dataset
-#   (SGE/cluster execution retired — Enju distributes across citizens, not qsub)
+#   (SGE/cluster + Snakemake retired — orchestration = `build` steps + Enju *-update workflows)
 #
 #   # Qdrant vector database
 #   ./bioyoda.sh qdrant start                                      # Start locally
-#   ./bioyoda.sh qdrant start --mode cluster --queue gpu --runtime 168
 #   ./bioyoda.sh qdrant start --out-dir /path/to/existing/storage  # Use existing data
 #   ./bioyoda.sh qdrant restart                                    # Auto-detect and restart
-#   ./bioyoda.sh qdrant insert pubmed                              # Insert data (local)
-#   ./bioyoda.sh qdrant stop-insert pubmed                         # Stop insertion
+#   ./bioyoda.sh qdrant reindex patent_compounds --monitor         # Trigger HNSW index build
 #   ./bioyoda.sh qdrant status                                     # Check status
 #   ./bioyoda.sh qdrant stop                                       # Stop server
 #
@@ -53,9 +50,6 @@
 #   ./bioyoda.sh validate pubmed                        # Validate outputs
 #   ./bioyoda.sh clean pubmed                           # Clean intermediate files
 #   ./bioyoda.sh stop pubmed --clean                    # Stop and clean
-#   ./bioyoda.sh dryrun pubmed                          # Show what would run
-#   ./bioyoda.sh dag pubmed                             # Generate workflow DAG
-#   ./bioyoda.sh unlock                                 # Unlock after crash
 #
 #   # Help
 #   ./bioyoda.sh help                                   # Show full help
@@ -124,7 +118,7 @@ main() {
                 echo ""
                 echo "Did you mean:"
                 echo "  bioyoda.sh start              # Start Qdrant server"
-                echo "  bioyoda.sh run $1             # Run data processing pipeline"
+                echo "  bioyoda.sh build $1           # Build/refresh a data collection"
                 exit 1
             fi
             source "${SCRIPT_DIR}/commands/maintenance.sh"
@@ -141,12 +135,6 @@ main() {
                 source "${SCRIPT_DIR}/commands/maintenance.sh"
                 cmd_stop_all "$@"
             fi
-            ;;
-
-        # Data processing (Snakemake, local)
-        run)
-            source "${SCRIPT_DIR}/commands/run.sh"
-            cmd_run "$@"
             ;;
 
         # Data processing (Enju DAG — distribution via citizens, not SGE)
@@ -214,21 +202,6 @@ main() {
         clean)
             source "${SCRIPT_DIR}/commands/maintenance.sh"
             cmd_clean "$@"
-            ;;
-
-        dryrun)
-            source "${SCRIPT_DIR}/commands/maintenance.sh"
-            cmd_dryrun "$@"
-            ;;
-
-        dag)
-            source "${SCRIPT_DIR}/commands/maintenance.sh"
-            cmd_dag "$@"
-            ;;
-
-        unlock)
-            source "${SCRIPT_DIR}/commands/maintenance.sh"
-            cmd_unlock "$@"
             ;;
 
         # Help and version
