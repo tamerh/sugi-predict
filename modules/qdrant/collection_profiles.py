@@ -25,7 +25,8 @@ PROFILES = {
         "quant": INT8,
         "faiss_source": "work/data/medcpt_output/pubmed",
         "query_encoder": "ncbi/MedCPT-Query-Encoder",       # asymmetric; corpus = Article-Encoder
-        "notes": "hot literature; vectors in-RAM for lowest latency (~16ms).",
+        "notes": "hot literature; vectors in-RAM for lowest latency (~16ms). NOT currently served (no prod "
+                 "PubMed collection at present); recipe kept live for `bioyoda.sh build text` + pubmed-update.",
     },
     "clinical_trials_medcpt": {
         "dim": 768, "vectors_on_disk": False, "hnsw_m": 16, "hnsw_ef": 100,
@@ -58,14 +59,23 @@ PROFILES = {
                  "general target-labeled modality (payload: cid, smiles, targets[UniProt]). Symmetric with "
                  "patents_compounds; exact-Tanimoto prediction still uses the FPSim2 index (work/chembl_reference).",
     },
+    # LEGACY raw-FP recipe (NOT the served collection). This rebuilds the structure-only Morgan-FP
+    # collection from the Dec patents FAISS source. The SERVED compound collection is `patent_compounds`
+    # (Qdrant alias -> patent_compounds_v2): raw FPs PLUS predictions/provenance/denoised targets, assembled
+    # from work/atlas_nbrs by build_patent_compounds.py — there is no single FAISS dir for it, so it is built
+    # via `bioyoda.sh build compounds ...` (ingest/provenance/denoise/build) and rebuilt via clean_copy.py ->
+    # swap_alias.py, NOT via `qdrant rebuild`. Kept here only as the raw-substrate recipe; key left as-is so a
+    # legacy raw rebuild still resolves. Do NOT point this at the served collection.
     "patents_compounds": {
         "dim": 2048, "vectors_on_disk": True, "hnsw_m": 32, "hnsw_ef": 256,
         "quant": BINARY,
         "faiss_source": "snapshots/patents_latest/data/processed/patents/compounds",
         "faiss_source_extra": ["work/data/processed/patents/compounds_new"],  # +86,889 parity batch
         "query_encoder": None,  # compound: query is a Morgan/ECFP4 fingerprint (RDKit)
-        "notes": "30.94M fingerprints; BINARY quant (always_ram, ~8GB) — built in 78min, ~17ms queries, "
-                 "90% recall@100 vs exact Tanimoto. Tool does exact-Tanimoto rerank on candidates.",
+        "notes": "LEGACY raw substrate (structure-only, no predictions): 30.94M fingerprints, BINARY quant "
+                 "(always_ram, ~8GB) — built in 78min, ~17ms queries, 90% recall@100 vs exact Tanimoto. "
+                 "Superseded as the served layer by patent_compounds (alias -> patent_compounds_v2), which "
+                 "adds predictions/provenance and is built by `bioyoda.sh build compounds`, not from FAISS.",
     },
 }
 

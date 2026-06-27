@@ -2,14 +2,15 @@
 ##############################################################################
 #
 #   BioYoda Qdrant Commands
-#   Manages Qdrant vector database (start/stop/insert/status)
+#   Manages Qdrant vector database (start/stop/status/reindex/rebuild).
+#   NB inserts are no longer here: collections are built via `bioyoda.sh build <collection> insert`
+#   (the retired Snakemake insert path was removed along with modules/qdrant/Snakefile).
 #
 ##############################################################################
 
 # Source common libraries
 COMMANDS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${COMMANDS_DIR}/../lib/common.sh"
-source "${COMMANDS_DIR}/../lib/snakemake.sh"
 
 # Show qdrant help
 qdrant_help() {
@@ -19,13 +20,12 @@ Qdrant Vector Database Management
 Usage: bioyoda.sh qdrant <subcommand> [options]
 
 Subcommands:
-    start         Start Qdrant server (local, Singularity)
+    start         Start Qdrant server (docker compose)
     stop          Stop Qdrant server
     restart       Restart with existing storage directory
     status        Check Qdrant server status and collections
-    insert        Insert data to Qdrant
-    stop-insert   Stop a running insertion job
-    reindex       Trigger HNSW index build after bulk insertion
+    reindex       Trigger HNSW index build after a bulk build
+    rebuild       Rebuild a collection from its profile (clean copy + HNSW)
 
 Start Options:
     --runtime <hours>         Runtime in hours (default: 48)
@@ -34,32 +34,25 @@ Start Options:
     --test                    Use test configuration
     --config <file>           Use custom config file
 
-Insert Options:
-    --local                   Run insertion locally (default; only mode)
-    --bg, -b                  Run in background
-    --cores N                 Number of cores
-    --test                    Use test configuration
-
 Reindex Options:
     --threshold N             Indexing threshold (default: 20000)
     --monitor                 Monitor indexing progress after triggering
     --timeout N               Monitoring timeout in seconds (default: wait forever)
 
-Datasets:
-    pubmed              PubMed abstracts
-    clinical_trials     Clinical trials data
-    patents             All patents data (text + compounds)
-    patents_text        Patents text only
-    patents_compounds   Patents compounds only
-    esm2                Protein embeddings (ESM-2)
-    all                 All datasets
+Collections (served):
+    patent_compounds        Patent compounds (alias -> patent_compounds_v2)
+    chembl                  ChEMBL reference ligands
+    clinical_trials_medcpt  Clinical trials (MedCPT)
+    patents_text            Patent text (MedCPT; alias -> patents_text_medcpt)
+    esm2                    Protein embeddings (ESM-2)
+    all                     All collections
+
+NB to ingest/build a collection, use `bioyoda.sh build <collection> ...` (the insert path moved there).
 
 Examples:
     bioyoda.sh qdrant start
     bioyoda.sh qdrant start --out-dir /path/to/existing/qdrant  # Restart with existing storage
     bioyoda.sh qdrant restart                                   # Auto-detect and restart
-    bioyoda.sh qdrant insert pubmed                             # Insert (local)
-    bioyoda.sh qdrant stop-insert pubmed
     bioyoda.sh qdrant reindex patent_compounds                  # Trigger HNSW indexing
     bioyoda.sh qdrant reindex patent_compounds --monitor        # Trigger and monitor progress
     bioyoda.sh qdrant reindex all                               # Reindex all collections
@@ -83,8 +76,6 @@ cmd_qdrant() {
         stop)        qdrant_stop "$@" ;;
         restart)     qdrant_restart "$@" ;;
         status)      qdrant_status "$@" ;;
-        insert)      qdrant_insert "$@" ;;
-        stop-insert) qdrant_stop_insert "$@" ;;
         reindex)     qdrant_reindex "$@" ;;
         rebuild)     qdrant_rebuild "$@" ;;
         help|--help|-h) qdrant_help ;;
@@ -128,108 +119,7 @@ qdrant_status() {    # container state + health + memory
     curl -sf http://localhost:6333/healthz >/dev/null 2>&1 && echo "  healthz: OK" || echo "  healthz: DOWN"
 }
 
-# Insert data to Qdrant
-qdrant_insert() {
-    if [[ $# -eq 0 ]]; then
-        log_error "No dataset specified for insertion"
-        echo ""
-        echo "Available datasets:"
-        echo "  pubmed              PubMed abstracts"
-        echo "  clinical_trials     Clinical trials data"
-        echo "  patents             All patents (text + compounds)"
-        echo "  patents_text        Patents text only"
-        echo "  patents_compounds   Patents compounds only"
-        echo "  esm2                Protein embeddings"
-        echo "  all                 All datasets"
-        exit 1
-    fi
-
-    local dataset=$1
-    shift
-
-    # Parse arguments
-    parse_common_args "$@"
-
-    log_info "Inserting ${dataset} to Qdrant (local)"
-
-    check_snakemake || exit 1
-
-    # Resolve config
-    local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-
-    local base_dir=$(get_base_dir "$active_config")
-    ensure_directories "$active_config"
-
-    local pid_dir="${base_dir}/logs/pids"
-    local pid_base="${pid_dir}/qdrant_insert_${dataset}"
-    local main_log="${base_dir}/logs/qdrant/insert_${dataset}_main.log"
-
-    # Check if already running
-    if ! check_not_running "${pid_base}.${EXECUTION_MODE}.pid" "Qdrant insertion ${dataset}"; then
-        log_info "Use './bioyoda.sh qdrant stop-insert ${dataset}' to stop it first"
-        exit 1
-    fi
-
-    # Log execution info (local only — cluster/SGE retired)
-    log_local_info "$CORES"
-
-    # Build Snakemake command
-    local snakemake_cmd=$(build_qdrant_insert_command \
-        "$active_config" \
-        "$CORES" \
-        "$USE_TEST" \
-        "$dataset"
-    )
-
-    if [[ -z "$snakemake_cmd" ]]; then
-        exit 1
-    fi
-
-    # Execute with tracking
-    run_with_tracking \
-        "$snakemake_cmd" \
-        "$pid_base" \
-        "$main_log" \
-        "$BACKGROUND" \
-        "$EXECUTION_MODE"
-
-    if [[ "$BACKGROUND" == "true" ]]; then
-        log_info "To stop: ./bioyoda.sh qdrant stop-insert ${dataset}"
-        log_info "Rule logs directory: ${base_dir}/logs/qdrant/"
-    fi
-}
-
-# Stop Qdrant insertion
-qdrant_stop_insert() {
-    if [[ $# -eq 0 ]]; then
-        log_error "No dataset specified"
-        echo ""
-        echo "Available datasets:"
-        echo "  pubmed, clinical_trials, patents, patents_text,"
-        echo "  patents_compounds, esm2, all"
-        exit 1
-    fi
-
-    local dataset=$1
-    shift
-
-    parse_common_args "$@"
-
-    log_info "Stopping Qdrant insertion for ${dataset}..."
-
-    local active_config=$(resolve_config "$USE_TEST" "$CUSTOM_CONFIG")
-    local base_dir=$(get_base_dir "$active_config")
-    local pid_base="${base_dir}/logs/pids/qdrant_insert_${dataset}"
-
-    stop_process "$pid_base" "qdrant_insert_${dataset}" "$base_dir" "true"
-
-    # Also clean Qdrant-specific locks
-    rm -rf modules/qdrant/.snakemake/locks/ 2>/dev/null || true
-
-    log_success "Stop completed"
-}
-
-# Trigger HNSW index build after bulk insertion
+# Trigger HNSW index build after a bulk build
 qdrant_reindex() {
     if [[ $# -eq 0 ]]; then
         log_error "No collection specified for reindexing"
