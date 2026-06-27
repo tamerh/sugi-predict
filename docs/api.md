@@ -5,10 +5,10 @@ give identical answers: a **REST API** under `/api`, and an **MCP server** for a
 are thin wrappers over the same engine primitives — nothing here writes; every route is a
 Qdrant search/scroll/count or the FPSim2 k-NN predictor.
 
-> **Honest framing.** Targets are **predicted, not catalogued** — chemical k-NN to ChEMBL
-> ligands. Only chemistry is validated as predictive. `patent-text-support` is a weak
-> abstract-level consistency check (does the patent body independently rank a predicted
-> target high?), **not** corroboration. See [how-it-works.md](how-it-works.md).
+> Targets are **predicted** by chemical k-NN to ChEMBL ligands, not measured activity.
+> Only chemistry is used to predict targets; the other collections are retrieval context.
+> `patent-text-support` reports whether a patent's abstract is textually about a predicted
+> target — a consistency signal, not a binding measurement. See [how-it-works.md](how-it-works.md).
 
 **Base URL:** `http://localhost:8011/api` (port `8011`; configurable via `BIOYODA_PORT`).
 Run the server with `python -m mcp_srv --mode http`. Health probe: `GET /health`.
@@ -107,7 +107,7 @@ curl -X POST "http://localhost:8011/api/count" \
 
 Predict protein targets for an arbitrary SMILES (FPSim2 chemical k-NN to the ChEMBL
 reference — the predictor, not a lookup). Predictions below the calibrated `floor` (0.3)
-are dropped as novel-chemistry noise; experimentally **known** targets are always kept.
+are dropped below the novel-chemistry floor; experimentally **known** targets are always kept.
 
 | Param | Default | Notes |
 |---|---|---|
@@ -243,6 +243,6 @@ bioyoda_provenance(ids=["SCHEMBL964"], max_per=5)
 ## See also
 
 - [../README.md](../README.md) — the engine repo
-- [how-it-works.md](how-it-works.md) — the prediction method + what the honesty signals mean
+- [how-it-works.md](how-it-works.md) — the prediction method + the confidence and support signals
 - [getting-started.md](getting-started.md) — browse, query, drive from an agent, rebuild
 - [cli.md](cli.md) — `bioyoda.sh` build + serve commands

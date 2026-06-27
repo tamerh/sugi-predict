@@ -20,7 +20,7 @@ Everything rests on the **molecular-similarity principle** — structurally simi
 molecules tend to bind the same proteins. This is the same well-established idea
 behind SEA, SwissTargetPrediction, and PPB2; Sugi Predict's contribution is not a
 new algorithm but running that established method *openly and reproducibly over the
-entire patent record*, with held-out validation and honest confidence on every call.
+entire patent record*, with held-out validation and a calibrated confidence on every call.
 
 A prediction is therefore an explicit, limited statement: **"this molecule lies in
 the chemical neighbourhood of known ligands of target X"** — not an assertion that
@@ -50,7 +50,7 @@ transfers their targets ([`modules/compounds/target.py`](../modules/compounds/ta
   the **human gene** level — non-human orthologs are collapsed to their human
   counterpart, which alone lifts top-1 recovery on the drug panel from 44% to 56%.
 
-**The abstention is the honest core.** Below a nearest-neighbour Tanimoto of 0.3 a
+Below a nearest-neighbour Tanimoto of 0.3 a
 query has no close known analogue. It is labelled **novel** (chemical whitespace)
 and is *not* given a confident prediction — it is flagged to be read with caution.
 Confidence bands: HIGH ≥0.5, MODERATE ≥0.4, LOW ≥0.3, NOVEL below.
@@ -93,14 +93,12 @@ compound's target, so the patent-text check below is suppressed for them. Only
 publication date is available locally; priority/filing dates would need external
 family enrichment.
 
-## The supporting substrate (context, not predictor)
+## The supporting substrate
 
-The engine holds a small multi-modal substrate beyond chemistry. It is **retrieval
-context, explicitly not a predictor** — chemical similarity is the *only*
-relationship validated as predictive here. Two candidate predictive routes were
-tested on the same harness and **dropped** because they did not beat baseline:
-peptide sequence-embedding similarity (chance) and protein-homology repurposing
-(below random). Only ligand→target chemical similarity survived.
+The engine holds a small multi-modal substrate beyond chemistry. It is used as
+**retrieval context**, not as a predictor: only chemical (ligand→target) similarity
+is used to predict targets. The substrate is queried by similarity to surface
+relevant material around a compound or target.
 
 | Modality | Embedding | Vectors | Role |
 |---|---|---|---|
@@ -113,7 +111,7 @@ peptide sequence-embedding similarity (chance) and protein-homology repurposing
 Trials and proteins are queried by similarity to surface relevant context around a
 target; they never inform a prediction.
 
-## The patent-text consistency check (honest framing)
+## Patent-text consistency check
 
 A panel on the compound page asks: does the compound's own **patent abstract** rank
 its chemistry-predicted target highly? We score the patent text against every human
@@ -124,13 +122,11 @@ count a target as supported when it lands in the text's **top 10 of 4,885**
 at request time — both sides are precomputed, L2-normalised vectors and the check is
 a dot product.
 
-Read this signal carefully, because the project's credibility depends on not
-overstating it:
+Its properties:
 
-- It is a **weak, abstract-level consistency check** — the patent's own text is
-  *about* the predicted target — **not independent corroboration** of binding. It
-  reflects the inventor's stated purpose, and the available text is usually an
-  abstract, not a full specification.
+- It reports whether the patent's abstract is textually about the predicted target
+  — a consistency signal, not a measurement of binding. The available text is usually
+  an abstract, not a full specification.
 - It is available for only **~1 in 7** of the patents linked to atlas compounds
   (about 1.4% of all patents have machine-readable text).
 - Where available, it agrees with the support-ranked landscape for **~47%** of
