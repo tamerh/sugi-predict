@@ -104,7 +104,7 @@ qdrant_rebuild() {
     "$py" /data/bioyoda/modules/qdrant/scripts/rebuild_collection.py "$@"
 }
 
-# --- Qdrant container lifecycle (docker compose: deploy/docker-compose.bioyoda.yml) ---
+# --- Qdrant container lifecycle (docker compose: config/docker-compose.bioyoda.yml) ---
 QDRANT_COMPOSE="${COMMANDS_DIR}/../../config/docker-compose.bioyoda.yml"
 
 qdrant_start() {     # bring up the Qdrant container (data persists in the mounted volume qdrant/storage)
