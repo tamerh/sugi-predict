@@ -165,8 +165,9 @@ _dispatch(){
       case $stage in
         chunk)  local _full=""; [[ $mode == full ]] && _full="--full"   # default: incremental (delta vs tracking DB)
                 $PY "$M/chunk_trials_to_jsonl.py" --trials-json "$CT_SRC" --out-dir "$CT_IN" $_full ;;
-        embed)  if pod_configured; then pod_embed_text "$CT_IN" "$CT_OUT"
-                else log "GPU stage — set POD_HOST/POD_PORT/POD_KEY for the pod (auto push/run/pull), or run locally if a GPU is present"
+        embed)  mkdir -p "$CT_OUT"; rm -f "$CT_OUT"/shard_*.index "$CT_OUT"/shard_*.json   # clear stale output: the delta shards (shard_00000+) must not collide with a prior full embed's names (would be skipped, and re-inserted)
+                if pod_configured; then pod_embed_text "$CT_IN" "$CT_OUT"
+                else log "GPU stage — MedCPT on CPU is ~7 text/s (~9h for this delta); set POD_HOST/POD_PORT/POD_KEY for the pod (~2 min)"
                      $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$CT_IN" --output-dir "$CT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
         insert) qdrant_defer "$COLL"
                 $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$CT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
