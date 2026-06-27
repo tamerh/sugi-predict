@@ -1,34 +1,18 @@
-name: "PubMed update — PMID-delta embed (batched)"
+name: "pubmed_abstracts_medcpt — incremental update (PubMed XML source, MedCPT)"
 description: |
-  Refresh pubmed_abstracts to the latest release. Fans out over BOTH baseline/ and
-  updatefiles/ in one pass (mirrors the Snakemake pubmed_download checkpoint).
-  Batched per the scale test (~33 batch-tasks of ~45 files, NOT one-file-per-task).
-  Each batch runs index.py --existing-pmids so only NEW PMIDs are embedded; the
-  already-embedded set is skipped. Output -> work/data/processed/pubmed/embeddings.
-  Throttled (2 threads/task; run --parallel 8). Qdrant insert is a deliberate
-  follow-up step, not in this DAG.
-  NOTE: until the long-task run-desync bug (enju longtask-parallel-run-desync.bug.md)
-  is fixed, the embedding-heavy batches may desync Enju bookkeeping — outputs still
-  land on disk (index.py is idempotent); verify on disk and re-run/insert from there.
+  Refresh pubmed_abstracts_medcpt from the NCBI PubMed download (baseline/ + updatefiles/ under
+  work/raw_data/pubmed; the download itself is a deliberate prior step, mirroring the old Snakemake
+  pubmed_download checkpoint). DAG: chunk (incremental — PMID-delta: parse XML, drop deleted PMIDs and
+  skip already-embedded ones vs work/state/pubmed/existing_pmids.txt.gz) -> embed (MedCPT-Article; GPU on
+  a pod, set POD_HOST/POD_PORT/POD_KEY — CPU is infeasible at PubMed scale) -> insert (upsert by pmid into
+  pubmed_abstracts_medcpt, then refresh the existing-PMID set so the next delta skips them).
+  Replaces the old S-BioBERT Snakemake (modules/pubmed/Snakefile) and the per-batch index.py PoC.
+  Compute = bioyoda.sh build text <stage> --prod (single source of truth for the stage logic; bash steps, Enju DAG).
 version: 1
-publish:
-  mode: none
+publish: {mode: none}
 params:
-  - name: batches
-    type: list<string>
-    required: true
-    description: 'Batch ids "00".."NN" (set after download from file count / batch size 45).'
-defaults:
-  assign_to: tamerh
+  - {name: mode, type: string, required: false, description: "full | delta (default delta = only NEW PMIDs vs the existing-PMID set)"}
 tasks:
-  - id: process
-    action: compute
-    script: workflows/pubmed-update/scripts/process.sh
-    for_each:
-      batch: "{{batches}}"
-    prompt: "Embed pubmed baseline batch {{batch}} (PMID-delta)."
-  - id: report
-    action: compute
-    script: workflows/pubmed-update/scripts/report.sh
-    collects: process
-    prompt: "Count new vectors produced."
+  - {id: chunk,                   script: workflows/pubmed-update/scripts/chunk.sh,  prompt: "Parse PubMed XML (baseline+updatefiles) -> MedCPT-input JSONL shards. delta = only new PMIDs (drop deleted, skip already-embedded)."}
+  - {id: embed,  needs: [chunk],  script: workflows/pubmed-update/scripts/embed.sh,  prompt: "MedCPT-Article embed the delta shards. GPU on a pod (POD_HOST/POD_PORT/POD_KEY)."}
+  - {id: insert, needs: [embed],  script: workflows/pubmed-update/scripts/insert.sh, prompt: "Upsert by pmid into pubmed_abstracts_medcpt; refresh the existing-PMID set after success."}

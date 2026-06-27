@@ -181,11 +181,40 @@ _dispatch(){
         all)    build trials chunk ${prod:+--prod}; build trials embed ${prod:+--prod}; build trials insert ${prod:+--prod} ;;
         *) echo "trials stages: all | chunk | embed | insert  (source: biobtree trials.json; embed = MedCPT-Article, GPU)"; ;;
       esac ;;
-    text|proteins) log "$collection pipeline: TODO (Phase 2)";;
+    text)
+      # pubmed_abstracts MedCPT pipeline: parse PubMed XML -> MedCPT-Article embed (GPU) -> insert.
+      # Mirrors the trials case exactly. Source is the NCBI PubMed download (baseline/ + updatefiles/);
+      # the chunk step replaces the legacy index.py (which embedded with S-BioBERT in one CPU step).
+      local COLL="pubmed_abstracts_medcpt${suffix}"
+      local PM_RAW="${PUBMED_RAW_DIR:-${ROOT}/work/raw_data/pubmed}"
+      local PM_IN="${ROOT}/work/data/medcpt_input/pubmed" PM_OUT="${ROOT}/work/data/medcpt_output/pubmed"
+      local PM_DELETED="${PM_RAW}/deleted.pmids.sorted.gz"
+      local PM_EXIST="${ROOT}/work/state/pubmed/existing_pmids.txt.gz"
+      local M="${ROOT}/modules/pubmed/scripts"
+      case $stage in
+        chunk)  local _full=""; [[ $mode == full ]] && _full="--full"   # default: incremental (PMID-delta vs existing_pmids)
+                $PY "$M/chunk_pubmed_to_jsonl.py" --raw-dir "$PM_RAW" --out-dir "$PM_IN" \
+                    --deleted-pmids "$PM_DELETED" --existing-pmids "$PM_EXIST" $_full ;;
+        embed)  mkdir -p "$PM_OUT"; rm -f "$PM_OUT"/shard_*.index "$PM_OUT"/shard_*.json   # clear stale output: delta shard_00000+ must not collide with a prior full embed's names (would be skipped, never re-inserted)
+                if pod_configured; then pod_embed_text "$PM_IN" "$PM_OUT"
+                else log "GPU stage — MedCPT on CPU is ~1 text/s (infeasible at PubMed scale); set POD_HOST/POD_PORT/POD_KEY for the pod"
+                     $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$PM_IN" --output-dir "$PM_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
+        insert) qdrant_defer "$COLL"
+                # additive PMID-delta: insert_from_faiss keys points by pmid (int) -> re-running a PMID is idempotent (no --update-mode needed)
+                $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$PM_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
+                qdrant_build "$COLL"
+                # refresh the already-embedded PMID set from the new sidecars so the NEXT delta skips them
+                $PY "$M/build_existing_pmids.py" --metadata-dir "$PM_OUT" --output "$PM_EXIST" || log "warn: existing_pmids refresh failed (next --full not affected)" ;;
+        all)    build text chunk ${prod:+--prod}; build text embed ${prod:+--prod}; build text insert ${prod:+--prod} ;;
+        *) echo "text stages: all | chunk | embed | insert  (source: PubMed XML baseline+updatefiles; embed = MedCPT-Article, GPU)"; ;;
+      esac ;;
+    proteins) log "$collection pipeline: TODO (Phase 2)";;
     *) cat <<EOF
 bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
   collections: compounds | text | reference | proteins | trials
   compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build
+  text stages:      all | chunk | embed | insert   (pubmed_abstracts_medcpt; source: PubMed XML; MedCPT-Article)
+  trials stages:    all | chunk | embed | insert   (clinical_trials_medcpt; source: biobtree trials.json; MedCPT-Article)
 
   --delta (default, incremental):  process ONLY what changed since the last build.
       chunk/predict  -> compute the fused k-NN for compounds NOT already in work/atlas_nbrs/, then merge the
