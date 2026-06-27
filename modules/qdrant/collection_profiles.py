@@ -34,12 +34,13 @@ PROFILES = {
         "query_encoder": "ncbi/MedCPT-Query-Encoder",
         "notes": "multi-section trials; dedup results by nct_id at query time.",
     },
-    "patents_text": {
+    "patents_text_medcpt": {
         "dim": 768, "vectors_on_disk": True, "hnsw_m": 32, "hnsw_ef": 256,
         "quant": INT8,
-        "faiss_source": "snapshots/patents_latest/data/processed/patents/text",
-        "query_encoder": "pritamdeka/S-BioBERT-snli-multinli-stsb",   # NOT migrated to MedCPT
-        "notes": "38.7M, vectors on_disk (mmap) — too big for RAM; ~30ms queries. Title-mostly corpus.",
+        "faiss_source": "work/data/medcpt_output/patents",
+        "query_encoder": "ncbi/MedCPT-Query-Encoder",       # asymmetric; corpus = Article-Encoder (atlas text pipeline)
+        "notes": "~39.6M patents (title + USPTO full-text where available), MedCPT-Article embeddings; "
+                 "vectors on_disk (mmap) — too big for RAM; ~30ms queries. Served as `patents_text` (alias).",
     },
     "esm2": {
         "dim": 1280, "vectors_on_disk": False, "hnsw_m": 32, "hnsw_ef": 256,

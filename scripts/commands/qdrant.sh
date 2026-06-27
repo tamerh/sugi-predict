@@ -60,8 +60,8 @@ Examples:
     bioyoda.sh qdrant restart                                   # Auto-detect and restart
     bioyoda.sh qdrant insert pubmed                             # Insert (local)
     bioyoda.sh qdrant stop-insert pubmed
-    bioyoda.sh qdrant reindex patents_compounds                 # Trigger HNSW indexing
-    bioyoda.sh qdrant reindex patents_compounds --monitor       # Trigger and monitor progress
+    bioyoda.sh qdrant reindex patent_compounds                  # Trigger HNSW indexing
+    bioyoda.sh qdrant reindex patent_compounds --monitor        # Trigger and monitor progress
     bioyoda.sh qdrant reindex all                               # Reindex all collections
     bioyoda.sh qdrant status
     bioyoda.sh qdrant stop
@@ -235,12 +235,12 @@ qdrant_reindex() {
         log_error "No collection specified for reindexing"
         echo ""
         echo "Available collections:"
-        echo "  pubmed_abstracts    PubMed abstracts"
-        echo "  clinical_trials     Clinical trials data"
-        echo "  patents_text        Patents text"
-        echo "  patents_compounds   Patents compounds (30M+ vectors)"
-        echo "  esm2                Protein embeddings"
-        echo "  all                 All collections"
+        echo "  patent_compounds        Patent compounds (30M+ vectors)"
+        echo "  chembl                  ChEMBL reference ligands"
+        echo "  clinical_trials_medcpt  Clinical trials (MedCPT)"
+        echo "  patents_text            Patent text (MedCPT)"
+        echo "  esm2                    Protein embeddings (ESM-2)"
+        echo "  all                     All collections"
         exit 1
     fi
 
@@ -285,7 +285,7 @@ qdrant_reindex() {
     # Handle 'all' collection
     local collections=()
     if [[ "$collection" == "all" ]]; then
-        collections=("pubmed_abstracts" "clinical_trials" "patents_text" "patents_compounds" "esm2")
+        collections=("patent_compounds" "chembl" "clinical_trials_medcpt" "patents_text" "esm2")
     else
         collections=("$collection")
     fi
@@ -319,10 +319,10 @@ qdrant_reindex() {
         fi
 
         # Step 2: Create dummy vector based on collection
-        local vector_size=768  # Default
+        local vector_size=768  # Default (text collections)
         case $col in
             esm2) vector_size=1280 ;;
-            patents_compounds) vector_size=2048 ;;
+            patent_compounds|chembl) vector_size=2048 ;;
         esac
 
         log_info "  Inserting dummy point to trigger optimizer..."
