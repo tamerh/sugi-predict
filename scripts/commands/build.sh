@@ -163,7 +163,8 @@ _dispatch(){
       local CT_IN="${ROOT}/work/data/medcpt_input/clinical_trials" CT_OUT="${ROOT}/work/data/medcpt_output/clinical_trials"
       local M="${ROOT}/modules/clinical_trials/scripts"
       case $stage in
-        chunk)  $PY "$M/chunk_trials_to_jsonl.py" --trials-json "$CT_SRC" --out-dir "$CT_IN" ;;
+        chunk)  local _full=""; [[ $mode == full ]] && _full="--full"   # default: incremental (delta vs tracking DB)
+                $PY "$M/chunk_trials_to_jsonl.py" --trials-json "$CT_SRC" --out-dir "$CT_IN" $_full ;;
         embed)  if pod_configured; then pod_embed_text "$CT_IN" "$CT_OUT"
                 else log "GPU stage — set POD_HOST/POD_PORT/POD_KEY for the pod (auto push/run/pull), or run locally if a GPU is present"
                      $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$CT_IN" --output-dir "$CT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
