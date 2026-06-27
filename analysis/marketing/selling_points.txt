@@ -1,9 +1,0 @@
-Your system (BioYoda + Biobtree) is "deterministic."
-
-    You have the hard vector evidence (BioYoda).
-
-    You have the structured identifier links (Biobtree).
-
-You are building the "Truth Layer" that the LLMs need. 
-The more powerful AI becomes, the more it needs grounded, structured data sources like yours to stop it from lying. 
-You aren't competing with AI; you are building the rails it needs to run on safely in healthcare.
