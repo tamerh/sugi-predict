@@ -169,7 +169,10 @@ def main():
     c.update_collection(name, optimizers_config=models.OptimizersConfigDiff(indexing_threshold=BUILD_THRESHOLD))
     while True:
         info = c.get_collection(name)
-        if info.status == models.CollectionStatus.GREEN and (info.indexed_vectors_count or 0) >= info.points_count * 0.99:
+        idx, tot = (info.indexed_vectors_count or 0), info.points_count
+        # tiny collections (< BUILD_THRESHOLD) are never HNSW-indexed by Qdrant -> indexed stays 0 forever
+        # (a brute-force scan serves them). Green + below-threshold = done; don't wait on idx>=tot (would hang).
+        if info.status == models.CollectionStatus.GREEN and (idx >= tot * 0.99 or tot < BUILD_THRESHOLD):
             break
         time.sleep(30)
     print(f"GREEN: {c.count(name).count:,} points indexed", flush=True)

@@ -64,7 +64,9 @@ t = time.time()
 while True:
     info = c.get_collection(NAME)
     idx = info.indexed_vectors_count or 0; tot = info.points_count
-    if info.status == models.CollectionStatus.GREEN and idx >= tot * 0.99:
+    # tiny collections (< BUILD_THRESHOLD) are never HNSW-indexed by Qdrant, so indexed stays 0 forever
+    # (a brute-force scan serves them). Green + below-threshold = done; don't wait on idx>=tot (would hang).
+    if info.status == models.CollectionStatus.GREEN and (idx >= tot * 0.99 or tot < BUILD_THRESHOLD):
         print(f"DONE: {NAME} green, {idx:,}/{tot:,} indexed in {time.time()-t:.0f}s", flush=True); break
     if time.time() - t > 1800: print(f"timeout waiting (status {info.status}, {idx}/{tot})"); break
     time.sleep(10)

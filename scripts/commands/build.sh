@@ -29,9 +29,13 @@ log(){ printf '\033[36m[build]\033[0m %s\n' "$*"; }
 qdrant_defer(){   # $1 = collection
   $PY - "$1" "$QURL" <<'PY'
 import sys; from qdrant_client import QdrantClient, models
-QdrantClient(url=sys.argv[2],timeout=120,check_compatibility=False).update_collection(
-    sys.argv[1], optimizer_config=models.OptimizersConfigDiff(indexing_threshold=1_000_000_000))
-print("  [defer] indexing paused for", sys.argv[1])
+qc=QdrantClient(url=sys.argv[2],timeout=120,check_compatibility=False); n=sys.argv[1]
+# no-op if the collection doesn't exist yet (fresh build: insert_from_faiss creates it already-deferred).
+# Only the incremental case has a pre-existing collection to pause.
+if not qc.collection_exists(n):
+    print("  [defer] collection", n, "not present yet — insert will create it deferred"); sys.exit(0)
+qc.update_collection(n, optimizer_config=models.OptimizersConfigDiff(indexing_threshold=1_000_000_000))
+print("  [defer] indexing paused for", n)
 PY
 }
 qdrant_build(){   # $1 = collection ; trigger the single optimization + wait green
@@ -172,8 +176,10 @@ _dispatch(){
       # ChEMBL ligand->target answer-key as a served Qdrant collection (FPs recomputed from reference.tsv; no GPU).
       # The full 1.25M lives in work/chembl_reference/reference.tsv; rebuild whenever that reference is refreshed.
       local COLL="chembl${suffix}"
+      # source dir is overridable (CHEMBL_REF_DIR) so test mode can point at a small fixture; default = full prod reference
+      local CHEMBL_REF="${CHEMBL_REF_DIR:-${ROOT}/work/chembl_reference}"
       case $stage in
-        chembl) $PY "${ROOT}/modules/qdrant/scripts/build_chembl_collection.py" --collection "$COLL" --ref "${ROOT}/work/chembl_reference" ;;
+        chembl) $PY "${ROOT}/modules/qdrant/scripts/build_chembl_collection.py" --collection "$COLL" --ref "$CHEMBL_REF" ;;
         *) echo "reference stages: chembl  (make/fpsim2 TODO)"; ;;
       esac ;;
     trials)
@@ -181,8 +187,12 @@ _dispatch(){
       # Source is biobtree (it owns the AACT download/extract/process); we consume trials.json directly.
       local COLL="clinical_trials_medcpt${suffix}"
       local CT_SRC="${CT_TRIALS_JSON:-/data/biobtree/raw_data/clinical_trials/trials.json}"
-      local CT_IN="${ROOT}/work/data/medcpt_input/clinical_trials" CT_OUT="${ROOT}/work/data/medcpt_output/clinical_trials"
-      local CT_DB="${ROOT}/work/state/clinical_trials/trials_tracking.db" CT_PEND="${ROOT}/work/state/clinical_trials/pending_track.json"
+      # scratch/state: test mode (suffix=_test) is isolated under work/test/ so it NEVER touches the prod scratch/tracking DB
+      local CT_BASE="${ROOT}/work" CT_SBASE="${ROOT}/work/state"
+      [[ -n "$suffix" ]] && { CT_BASE="${ROOT}/work/test"; CT_SBASE="${ROOT}/work/test/state"; }
+      local CT_IN="${CT_BASE}/data/medcpt_input/clinical_trials" CT_OUT="${CT_BASE}/data/medcpt_output/clinical_trials"
+      local CT_DB="${CT_SBASE}/clinical_trials/trials_tracking.db" CT_PEND="${CT_SBASE}/clinical_trials/pending_track.json"
+      mkdir -p "$CT_IN" "$(dirname "$CT_DB")"
       local M="${ROOT}/modules/clinical_trials/scripts"
       case $stage in
         chunk)  local _full=""; [[ $mode == full ]] && _full="--full"   # default: incremental (delta vs tracking DB)
@@ -205,9 +215,13 @@ _dispatch(){
       # the chunk step replaces the legacy index.py (which embedded with S-BioBERT in one CPU step).
       local COLL="pubmed_abstracts_medcpt${suffix}"
       local PM_RAW="${PUBMED_RAW_DIR:-${ROOT}/work/raw_data/pubmed}"
-      local PM_IN="${ROOT}/work/data/medcpt_input/pubmed" PM_OUT="${ROOT}/work/data/medcpt_output/pubmed"
+      # scratch/state: test mode (suffix=_test) is isolated under work/test/ so it NEVER touches the prod scratch/existing-pmids
+      local PM_BASE="${ROOT}/work" PM_SBASE="${ROOT}/work/state"
+      [[ -n "$suffix" ]] && { PM_BASE="${ROOT}/work/test"; PM_SBASE="${ROOT}/work/test/state"; }
+      local PM_IN="${PM_BASE}/data/medcpt_input/pubmed" PM_OUT="${PM_BASE}/data/medcpt_output/pubmed"
       local PM_DELETED="${PM_RAW}/deleted.pmids.sorted.gz"
-      local PM_EXIST="${ROOT}/work/state/pubmed/existing_pmids.txt.gz"
+      local PM_EXIST="${PM_SBASE}/pubmed/existing_pmids.txt.gz"
+      mkdir -p "$PM_IN" "$(dirname "$PM_EXIST")"
       local M="${ROOT}/modules/pubmed/scripts"
       case $stage in
         chunk)  local _full=""; [[ $mode == full ]] && _full="--full"   # default: incremental (PMID-delta vs existing_pmids)
@@ -235,11 +249,14 @@ _dispatch(){
       # keys points by hashed protein_id -> additive & idempotent (cannot collide with the legacy sequential IDs).
       local COLL="esm2${suffix}"
       local PR_SRC="${ESM2_SOURCE_FASTA:-${ROOT}/raw_data/esm2/uniprot_swissprot.fasta}"
-      local PR_CHUNKS="${ROOT}/raw_data/esm2/chunks" PR_NEW="${ROOT}/raw_data/esm2/new_proteins.fasta"
-      local PR_OUT="${ROOT}/work/data/esm2_output/embeddings"   # batch_esm2_gpu.py writes its .index/.json under <output-dir>/embeddings
-      local PR_OUTPARENT="${ROOT}/work/data/esm2_output"
-      local PR_EXIST="${ROOT}/work/state/esm2/existing_proteins.txt.gz"
-      local PR_STATE="${ROOT}/work/state/esm2/gpu_progress.json"
+      # scratch/state: test mode (suffix=_test) is isolated under work/test/ so it NEVER touches the prod chunks/state/existing-proteins
+      local PR_CDIR="${ROOT}/raw_data/esm2" PR_OUTPARENT="${ROOT}/work/data/esm2_output" PR_SBASE="${ROOT}/work/state"
+      [[ -n "$suffix" ]] && { PR_CDIR="${ROOT}/work/test/esm2"; PR_OUTPARENT="${ROOT}/work/test/data/esm2_output"; PR_SBASE="${ROOT}/work/test/state"; }
+      local PR_CHUNKS="${PR_CDIR}/chunks" PR_NEW="${PR_CDIR}/new_proteins.fasta"
+      local PR_OUT="${PR_OUTPARENT}/embeddings"   # batch_esm2_gpu.py writes its .index/.json under <output-dir>/embeddings
+      local PR_EXIST="${PR_SBASE}/esm2/existing_proteins.txt.gz"
+      local PR_STATE="${PR_SBASE}/esm2/gpu_progress.json"
+      mkdir -p "$PR_CHUNKS" "$(dirname "$PR_EXIST")"
       local M="${ROOT}/modules/esm2/scripts"
       case $stage in
         prepare) local _full=""; [[ $mode == full ]] && _full="--full"   # default: delta (only NEW accessions vs the existing set)
