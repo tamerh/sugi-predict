@@ -83,6 +83,24 @@ pod_embed_text(){   # $1=input dir (jsonl shards)  $2=local output dir  — MedC
   log "[pod] pull embeddings -> ${out#${ROOT}/}"; mkdir -p "$out"; _pup "${POD_HOST}:/workspace/output/ct/" "$out/"
   log "[pod] embed complete"
 }
+pod_embed_esm2(){   # $1=input dir (chunk_*.fasta)  $2=local output dir  — ESM-2 650M protein embed on the pod
+  # Parallel to pod_embed_text, NOT a parameterization: ESM-2 is a different shape — FASTA shards (not jsonl),
+  # the `esm`+biopython stack (not transformers), batch_esm2_gpu.py (not embed_text_medcpt_gpu.py), and that
+  # script writes its .index/.json into an embeddings/ SUBDIR of --output-dir. So we monitor/pull that subdir.
+  local in="$1" out="$2" n; n=$(ls "$in"/chunk_*.fasta 2>/dev/null | wc -l)
+  log "[pod] push $n FASTA chunks + ESM-2 embed script -> ${POD_HOST}"
+  _pssh "mkdir -p /workspace/input/esm2 /workspace/output/esm2 /workspace/state/esm2"
+  _pup "$in/" "${POD_HOST}:/workspace/input/esm2/"
+  _pup "${ROOT}/modules/esm2/scripts/batch_esm2_gpu.py" "${POD_HOST}:/workspace/"
+  log "[pod] ensure embed deps (fair-esm, biopython, faiss-cpu; torch comes from the pod base image)"
+  _pssh "python -c 'import esm, Bio, faiss' 2>/dev/null || pip install -q --break-system-packages fair-esm biopython faiss-cpu"   # pod Python is Debian PEP-668 (externally-managed)
+  log "[pod] launch ESM-2 650M (esm2_t33_650M_UR50D, 1280-dim) embed under tmux"
+  _pssh "cd /workspace && tmux kill-session -t embed 2>/dev/null; tmux new-session -d -s embed 'PYTHONUNBUFFERED=1 python -u batch_esm2_gpu.py --input-dir input/esm2 --output-dir output/esm2 --state-file state/esm2/gpu_progress.json --model esm2_t33_650M_UR50D --skip-existing > embed.log 2>&1; echo EXIT=\$? >> embed.log'" </dev/null >/dev/null 2>&1   # fd redirect: tmux-over-SSH hangs the channel otherwise (June lesson)
+  log "[pod] monitoring ($n chunks expected)..."
+  until [ "$(_pssh 'ls /workspace/output/esm2/embeddings/*.index 2>/dev/null | wc -l')" -ge "$n" ] || _pssh 'grep -q EXIT= /workspace/embed.log 2>/dev/null'; do sleep 60; done
+  log "[pod] pull embeddings -> ${out#${ROOT}/}"; mkdir -p "$out"; _pup "${POD_HOST}:/workspace/output/esm2/embeddings/" "$out/"   # batch_esm2_gpu.py writes into an embeddings/ subdir
+  log "[pod] embed complete"
+}
 
 build(){   # logging wrapper — every stage tees to logs/build/<collection>/<stage>-<ts>.log (organized, not /tmp)
   local _c="${1:-misc}" _s="${2:-_}"; local _d="${ROOT}/logs/build/${_c}"; mkdir -p "$_d"
@@ -208,13 +226,45 @@ _dispatch(){
         all)    build text chunk ${prod:+--prod}; build text embed ${prod:+--prod}; build text insert ${prod:+--prod} ;;
         *) echo "text stages: all | chunk | embed | insert  (source: PubMed XML baseline+updatefiles; embed = MedCPT-Article, GPU)"; ;;
       esac ;;
-    proteins) log "$collection pipeline: TODO (Phase 2)";;
+    proteins)
+      # esm2 ESM-2 protein pipeline: split UniProt FASTA -> ESM-2 650M embed (GPU) -> insert.
+      # Mirrors the trials/text cases, but ESM-2 (protein LM, dim 1280) NOT MedCPT text:
+      #   embed = modules/esm2/scripts/batch_esm2_gpu.py (esm2_t33_650M_UR50D), GPU via pod_embed_esm2.
+      # The live `esm2` collection (574K points) is updated INCREMENTALLY: delta = only proteins whose
+      # UniProt accession is not already in the collection (the June new_proteins.fasta flow). insert_from_faiss
+      # keys points by hashed protein_id -> additive & idempotent (cannot collide with the legacy sequential IDs).
+      local COLL="esm2${suffix}"
+      local PR_SRC="${ESM2_SOURCE_FASTA:-${ROOT}/raw_data/esm2/uniprot_swissprot.fasta}"
+      local PR_CHUNKS="${ROOT}/raw_data/esm2/chunks" PR_NEW="${ROOT}/raw_data/esm2/new_proteins.fasta"
+      local PR_OUT="${ROOT}/work/data/esm2_output/embeddings"   # batch_esm2_gpu.py writes its .index/.json under <output-dir>/embeddings
+      local PR_OUTPARENT="${ROOT}/work/data/esm2_output"
+      local PR_EXIST="${ROOT}/work/state/esm2/existing_proteins.txt.gz"
+      local PR_STATE="${ROOT}/work/state/esm2/gpu_progress.json"
+      local M="${ROOT}/modules/esm2/scripts"
+      case $stage in
+        prepare) local _full=""; [[ $mode == full ]] && _full="--full"   # default: delta (only NEW accessions vs the existing set)
+                $PY "$M/prepare_delta.py" --source "$PR_SRC" --out-dir "$PR_CHUNKS" \
+                    --existing-proteins "$PR_EXIST" --new-fasta "$PR_NEW" --per-chunk 5000 --num-chunks 62 $_full ;;
+        embed)  mkdir -p "$PR_OUT"; rm -f "$PR_OUT"/chunk_*.index "$PR_OUT"/chunk_*.json "$PR_OUT"/chunk_*.h5   # clear stale output: delta chunk_001+ must not collide with a prior full embed's names (would be skipped, never re-inserted)
+                if pod_configured; then pod_embed_esm2 "$PR_CHUNKS" "$PR_OUT"
+                else log "GPU stage — ESM-2 650M on CPU is very slow; set POD_HOST/POD_PORT/POD_KEY for the pod, or run locally if a GPU is present"
+                     $PY "$M/batch_esm2_gpu.py" --input-dir "$PR_CHUNKS" --output-dir "$PR_OUTPARENT" --state-file "$PR_STATE" --model esm2_t33_650M_UR50D --skip-existing; fi ;;
+        insert) qdrant_defer "$COLL"
+                # additive protein-delta: insert_from_faiss keys points by hashed protein_id -> re-running a protein is idempotent (no --update-mode needed)
+                $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$PR_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 1280
+                qdrant_build "$COLL"
+                # refresh the already-embedded accession set from the new sidecars so the NEXT delta skips them
+                $PY "$M/build_existing_proteins.py" --metadata-dir "$PR_OUT" --output "$PR_EXIST" --merge || log "warn: existing_proteins refresh failed (next --full not affected)" ;;
+        all)    build proteins prepare ${prod:+--prod}; build proteins embed ${prod:+--prod}; build proteins insert ${prod:+--prod} ;;
+        *) echo "proteins stages: all | prepare | embed | insert  (collection: esm2; source: UniProt FASTA; embed = ESM-2 650M esm2_t33_650M_UR50D dim 1280, GPU)"; ;;
+      esac ;;
     *) cat <<EOF
 bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
   collections: compounds | text | reference | proteins | trials
   compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build
   text stages:      all | chunk | embed | insert   (pubmed_abstracts_medcpt; source: PubMed XML; MedCPT-Article)
   trials stages:    all | chunk | embed | insert   (clinical_trials_medcpt; source: biobtree trials.json; MedCPT-Article)
+  proteins stages:  all | prepare | embed | insert (esm2; source: UniProt FASTA; embed = ESM-2 650M, dim 1280)
 
   --delta (default, incremental):  process ONLY what changed since the last build.
       chunk/predict  -> compute the fused k-NN for compounds NOT already in work/atlas_nbrs/, then merge the

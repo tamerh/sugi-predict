@@ -5,6 +5,11 @@
 #   Processes UniProt protein sequences to generate ESM-2 embeddings
 #   Pipeline: download → split → generate_embeddings → merge
 #
+#   ⚠ READY TO RETIRE (2026-06): superseded by the bash atomic steps
+#     `bioyoda.sh build proteins {prepare|embed|insert}` + the Enju DAG at
+#     workflows/esm2-update/enju.yaml (incremental accession-delta by default).
+#     Kept only as a reference for the original full-rebuild semantics.
+#
 ##############################################################################
 
 import os

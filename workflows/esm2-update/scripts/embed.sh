@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Enju task: embed — delegates to bioyoda.sh build proteins embed (the stage logic; single source of truth).
+# mode via ENJU_PARAM_mode (full|delta). embed reads POD_HOST/POD_PORT/POD_KEY for the GPU pod if set.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+MODE_FLAG=""; [[ "${ENJU_PARAM_mode:-delta}" == "full" ]] && MODE_FLAG="--full"
+exec ./bioyoda.sh build proteins embed --prod $MODE_FLAG

@@ -1,0 +1,21 @@
+name: "esm2 — incremental update (UniProt FASTA source, ESM-2 650M)"
+description: |
+  Refresh the esm2 protein-embedding collection (574K points, dim 1280) from a UniProt FASTA
+  (raw_data/esm2/uniprot_swissprot.fasta; the download itself is a deliberate prior step, mirroring the
+  old Snakemake download_uniprot rule). DAG: prepare (incremental — accession-delta: keep only proteins
+  whose UniProt accession is NOT already embedded vs work/state/esm2/existing_proteins.txt.gz, write the
+  new_proteins.fasta delta + chunk_*.fasta shards) -> embed (ESM-2 650M esm2_t33_650M_UR50D, 1280-dim; GPU
+  on a pod, set POD_HOST/POD_PORT/POD_KEY — ESM-2 on CPU is very slow) -> insert (additive upsert by hashed
+  protein_id into esm2, then refresh the existing-accession set so the next delta skips them).
+  This is PROTEINS (ESM-2 protein LM), NOT MedCPT text — a different embed script (modules/esm2/scripts/
+  batch_esm2_gpu.py) and a parallel pod helper (pod_embed_esm2). Replaces the old Snakemake (modules/esm2/
+  Snakefile) and the esm2-poc.
+  Compute = bioyoda.sh build proteins <stage> --prod (single source of truth for the stage logic; bash steps, Enju DAG).
+version: 1
+publish: {mode: none}
+params:
+  - {name: mode, type: string, required: false, description: "full | delta (default delta = only NEW accessions vs the existing-protein set)"}
+tasks:
+  - {id: prepare,                  script: workflows/esm2-update/scripts/prepare.sh, prompt: "Split UniProt FASTA -> chunk_*.fasta. delta = only new accessions (write new_proteins.fasta), full = whole source."}
+  - {id: embed,  needs: [prepare], script: workflows/esm2-update/scripts/embed.sh,  prompt: "ESM-2 650M embed the chunk shards (1280-dim). GPU on a pod (POD_HOST/POD_PORT/POD_KEY)."}
+  - {id: insert, needs: [embed],   script: workflows/esm2-update/scripts/insert.sh, prompt: "Additive upsert by hashed protein_id into esm2; refresh the existing-accession set after success."}
