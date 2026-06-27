@@ -67,6 +67,19 @@ pod_predict(){   # $1=chunks dir  $2=ref dir  $3=local nbrs out  — run fused k
   log "[pod] pull nbrs -> ${out#${ROOT}/}"; mkdir -p "$out"; _pup "${POD_HOST}:/atlas/knn/nbrs/" "$out/"
   log "[pod] predict complete"
 }
+pod_embed_text(){   # $1=input dir (jsonl shards)  $2=local output dir  — MedCPT text embed on the pod
+  local in="$1" out="$2" n; n=$(ls "$in"/shard_*.jsonl 2>/dev/null | wc -l)
+  log "[pod] push $n input shards + MedCPT embed script -> ${POD_HOST}"
+  _pssh "mkdir -p /workspace/input/ct /workspace/output/ct"
+  _pup "$in/" "${POD_HOST}:/workspace/input/ct/"
+  _pup "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" "${POD_HOST}:/workspace/"
+  log "[pod] launch MedCPT-Article embed under tmux"
+  _pssh "cd /workspace && tmux kill-session -t embed 2>/dev/null; tmux new-session -d -s embed 'PYTHONUNBUFFERED=1 python -u embed_text_medcpt_gpu.py --input-dir input/ct --output-dir output/ct --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto > embed.log 2>&1; echo EXIT=\$? >> embed.log'"
+  log "[pod] monitoring ($n shards expected)..."
+  until [ "$(_pssh 'ls /workspace/output/ct/*.index 2>/dev/null | wc -l')" -ge "$n" ] || _pssh 'grep -q EXIT= /workspace/embed.log 2>/dev/null'; do sleep 60; done
+  log "[pod] pull embeddings -> ${out#${ROOT}/}"; mkdir -p "$out"; _pup "${POD_HOST}:/workspace/output/ct/" "$out/"
+  log "[pod] embed complete"
+}
 
 build(){   # logging wrapper — every stage tees to logs/build/<collection>/<stage>-<ts>.log (organized, not /tmp)
   local _c="${1:-misc}" _s="${2:-_}"; local _d="${ROOT}/logs/build/${_c}"; mkdir -p "$_d"
@@ -142,7 +155,25 @@ _dispatch(){
         chembl) $PY "${ROOT}/modules/qdrant/scripts/build_chembl_collection.py" --collection "$COLL" --ref "${ROOT}/work/chembl_reference" ;;
         *) echo "reference stages: chembl  (make/fpsim2 TODO)"; ;;
       esac ;;
-    text|proteins|trials) log "$collection pipeline: TODO (Phase 2)";;
+    trials)
+      # clinical_trials MedCPT pipeline: chunk biobtree's trials.json -> MedCPT-Article embed (GPU) -> insert.
+      # Source is biobtree (it owns the AACT download/extract/process); we consume trials.json directly.
+      local COLL="clinical_trials_medcpt${suffix}"
+      local CT_SRC="${CT_TRIALS_JSON:-/data/biobtree/raw_data/clinical_trials/trials.json}"
+      local CT_IN="${ROOT}/work/data/medcpt_input/clinical_trials" CT_OUT="${ROOT}/work/data/medcpt_output/clinical_trials"
+      local M="${ROOT}/modules/clinical_trials/scripts"
+      case $stage in
+        chunk)  $PY "$M/chunk_trials_to_jsonl.py" --trials-json "$CT_SRC" --out-dir "$CT_IN" ;;
+        embed)  if pod_configured; then pod_embed_text "$CT_IN" "$CT_OUT"
+                else log "GPU stage — set POD_HOST/POD_PORT/POD_KEY for the pod (auto push/run/pull), or run locally if a GPU is present"
+                     $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$CT_IN" --output-dir "$CT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
+        insert) qdrant_defer "$COLL"
+                $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$CT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
+                qdrant_build "$COLL" ;;
+        all)    build trials chunk ${prod:+--prod}; build trials embed ${prod:+--prod}; build trials insert ${prod:+--prod} ;;
+        *) echo "trials stages: all | chunk | embed | insert  (source: biobtree trials.json; embed = MedCPT-Article, GPU)"; ;;
+      esac ;;
+    text|proteins) log "$collection pipeline: TODO (Phase 2)";;
     *) cat <<EOF
 bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
   collections: compounds | text | reference | proteins | trials
