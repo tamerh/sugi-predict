@@ -45,7 +45,7 @@ def main():
     shard, n, gid, total, kept, updates = 0, 0, 0, 0, 0, []
     fh = open(os.path.join(a.out_dir, f"shard_{shard:05d}.jsonl"), "w")
     with open(a.trials_json, "rb") as f:
-        for trial in ijson.items(f, "trials.item"):
+        for trial in ijson.items(f, "trials.item", use_float=True):   # else numbers are Decimal -> not JSON-serializable
             total += 1
             nct = trial.get("nct_id")
             if tracker is not None:                       # incremental: skip unchanged trials
