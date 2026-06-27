@@ -427,34 +427,28 @@ def delete_trial_vectors(client: QdrantClient, collection_name: str, nct_ids: li
     Returns:
         Number of NCT IDs processed for deletion
     """
-    deleted_count = 0
-
-    for nct_id in nct_ids:
+    import time
+    if not nct_ids:
+        return 0
+    # ONE batch delete for all nct_ids (MatchAny) — not 6579 separate ops. wait=False so the server returns
+    # 'acknowledged' (the old client rejects the newer 'wait_timeout' status), then poll until the points are
+    # actually gone, so we never insert new chunks before the old ones for these trials are deleted.
+    flt = models.Filter(must=[models.FieldCondition(
+        key="nct_id", match=models.MatchAny(any=[str(n) for n in nct_ids]))])
+    try:
+        client.delete(collection_name=collection_name,
+                      points_selector=models.FilterSelector(filter=flt), wait=False)
+    except Exception as e:
+        log_with_timestamp(f"    delete dispatch note: {str(e)[:80]}")
+    for _ in range(180):                                   # up to ~6 min; the delete usually lands in seconds
         try:
-            client.delete(
-                collection_name=collection_name,
-                points_selector=models.FilterSelector(
-                    filter=models.Filter(
-                        must=[
-                            models.FieldCondition(
-                                key="nct_id",
-                                match=models.MatchValue(value=nct_id)
-                            )
-                        ]
-                    )
-                )
-            )
-            deleted_count += 1
-
-            # Log every 100 deletions
-            if deleted_count % 100 == 0:
-                log_with_timestamp(f"    Deleted vectors for {deleted_count}/{len(nct_ids)} trials...")
-
-        except Exception as e:
-            log_with_timestamp(f"    WARNING: Failed to delete vectors for {nct_id}: {e}")
-            continue
-
-    return deleted_count
+            if client.count(collection_name, count_filter=flt).count == 0:
+                break
+        except Exception:
+            pass
+        time.sleep(2)
+    log_with_timestamp(f"    Deleted old vectors for {len(nct_ids)} trials (batch)")
+    return len(nct_ids)
 
 def insert_from_faiss(faiss_dir: str, collection_name: str, qdrant_url: str,
                       batch_size: int = 1000, start_id: int = 0,
