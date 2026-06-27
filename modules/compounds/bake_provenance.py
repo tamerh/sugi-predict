@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline step: bake patent provenance into the Qdrant patent_atlas payload.
+"""Pipeline step: bake patent provenance into the Qdrant patent_compounds payload.
 
 Two stages, both reproducible and resumable:
 
@@ -15,7 +15,7 @@ Two stages, both reproducible and resumable:
      it to that compound's Qdrant payload as `prov` = {n, noise, patents:[...]}. Additive (set_payload
      only), resumable (checkpoint = last completed compound_id), idempotent (re-running overwrites `prov`).
 
-  python bake_provenance.py [--snapshot DIR] [--collection patent_atlas] [--top 20]
+  python bake_provenance.py [--snapshot DIR] [--collection patent_compounds] [--top 20]
                             [--batch 1000] [--limit N] [--dry-run] [--resume] [--resort]
 
 Reproducible: run as `bioyoda.sh atlas bake`. Small-data test: tests/test_atlas_bake.py -> throwaway collection.
@@ -92,7 +92,7 @@ def sort_map(map_path, sorted_path, tmp_dir, mem_limit, threads, force=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--snapshot", default="/data/bioyoda/raw_data/patents/surechembl/2025-12-15")
-    ap.add_argument("--collection", default="patent_atlas")
+    ap.add_argument("--collection", default="patent_compounds")
     ap.add_argument("--qdrant", default="http://localhost:6333")
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--batch", type=int, default=1000)      # compounds per set_payload batch (and checkpoint)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pipeline step: de-noise the reverse target landscape.
 
-Recompute each patent_atlas compound's `targets` membership from its `predicted` list: drop single-weak
+Recompute each patent_compounds compound's `targets` membership from its `predicted` list: drop single-weak
 predictions (support == 1 AND conf < FLOOR) and cap to the top-N by confidence. This shrinks a target's
 landscape to the compounds genuinely predicted against it -- a promiscuous compound no longer pads hundreds
 of landscapes as a single-neighbour afterthought. `predicted` is left untouched (it keeps the full per-target
@@ -11,7 +11,7 @@ idempotent, and re-runnable with different thresholds.
 Validated (usecases/val_floor.py, leave-one-out over the 1.25M ChEMBL reference): the dropped bucket is
 ~0.4% correct (vs ~16% kept) and only ~0.17% of correctly-recovered targets are lost.
 
-  python bake_targets.py [--floor 0.4] [--cap 50] [--collection patent_atlas] [--resume] [--dry-run]
+  python bake_targets.py [--floor 0.4] [--cap 50] [--collection patent_compounds] [--resume] [--dry-run]
 
 Reproducible: `bioyoda.sh atlas targets`. Small-data test: tests/test_atlas_targets.py. No GPU -- payload only.
 """
@@ -27,7 +27,7 @@ def strong_targets(predicted, floor, cap):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--collection", default="patent_atlas")
+    ap.add_argument("--collection", default="patent_compounds")
     ap.add_argument("--qdrant", default="http://localhost:6333")
     ap.add_argument("--floor", type=float, default=0.4)
     ap.add_argument("--cap", type=int, default=50)
