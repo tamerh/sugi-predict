@@ -21,7 +21,6 @@ dependencies:
   - psycopg2-binary
   - beautifulsoup4
   - postgresql
-  - snakemake>=9.0
   - graphviz  # For DAG visualization
 
   # Patents module dependencies
@@ -53,7 +52,6 @@ dependencies:
 
   - pip
   - pip:
-    - snakemake-executor-plugin-cluster-generic  # For SGE/cluster execution
     - python-multipart>=0.0.6  # FastAPI file uploads (API)
     - datasets>=3.0.0  # HuggingFace datasets (required by sentence-transformers, needs pyarrow compat)
     # RAG dependencies (modules/api/ - RAG Q&A)
