@@ -105,7 +105,7 @@ qdrant_rebuild() {
 }
 
 # --- Qdrant container lifecycle (docker compose: deploy/docker-compose.bioyoda.yml) ---
-QDRANT_COMPOSE="${COMMANDS_DIR}/../../deploy/docker-compose.bioyoda.yml"
+QDRANT_COMPOSE="${COMMANDS_DIR}/../../config/docker-compose.bioyoda.yml"
 
 qdrant_start() {     # bring up the Qdrant container (data persists in the mounted volume qdrant/storage)
     log_info "qdrant: docker compose up -d"
