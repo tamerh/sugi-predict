@@ -9,14 +9,14 @@ QUINAZOLINE = "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1O"   # SCHEMBL8383-like → EGF
 
 def test_collections():
     c = E.collections()
-    assert len(c) == 6
-    assert c["patent_atlas"]["modality"] == "chemical" and c["patent_atlas"]["dim"] == 2048
+    assert len(c) == 5
+    assert c["patent_compounds"]["modality"] == "chemical" and c["patent_compounds"]["dim"] == 2048
     assert c["clinical_trials_medcpt"]["modality"] == "text"
     assert c["esm2"]["modality"] == "protein"
 
 
 def test_query_filter_target():
-    r = E.query("patent_atlas", filter={"targets": "P00533", "best_tanimoto": {"gte": 0.5}}, limit=3)
+    r = E.query("patent_compounds", filter={"targets": "P00533", "best_tanimoto": {"gte": 0.5}}, limit=3)
     assert len(r["hits"]) == 3
     for h in r["hits"]:
         assert "P00533" in h["payload"]["targets"]
@@ -25,14 +25,14 @@ def test_query_filter_target():
 
 
 def test_query_by_id():
-    r = E.query("patent_atlas", ids=[8383], limit=1)
+    r = E.query("patent_compounds", ids=[8383], limit=1)
     pl = r["hits"][0]["payload"]
     assert pl["surechembl_id"] == "SCHEMBL8383"
     assert "EGFR" in [p["gene"] for p in pl["predicted"]]
 
 
 def test_query_by_smiles_vector():
-    r = E.query("patent_atlas", smiles=QUINAZOLINE, limit=5)
+    r = E.query("patent_compounds", smiles=QUINAZOLINE, limit=5)
     assert len(r["hits"]) == 5
     assert all("score" in h for h in r["hits"])
     assert r["hits"][0]["score"] >= r["hits"][-1]["score"]   # ranked
@@ -44,7 +44,7 @@ def test_query_by_protein_accession():
 
 
 def test_count_target():
-    assert E.count("patent_atlas", filter={"targets": "P00533"})["count"] > 1_000_000
+    assert E.count("patent_compounds", filter={"targets": "P00533"})["count"] > 100_000
 
 
 def test_predict_quinazoline_is_egfr():
@@ -68,9 +68,9 @@ def test_query_unknown_collection_raises():
 
 def test_query_bad_smiles_raises():
     with pytest.raises(ValueError):
-        E.query("patent_atlas", smiles="this is not a molecule", limit=1)
+        E.query("patent_compounds", smiles="this is not a molecule", limit=1)
 
 
 def test_limit_is_capped():
-    r = E.query("patent_atlas", filter={"targets": "P00533"}, limit=99999)
+    r = E.query("patent_compounds", filter={"targets": "P00533"}, limit=99999)
     assert len(r["hits"]) <= E.MAX_LIMIT

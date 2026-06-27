@@ -17,8 +17,7 @@ MAX_LIMIT = 100
 
 # collection -> (modality, dim). modality decides how a free-text/smiles/accession query is embedded.
 COLLECTIONS = {
-    "patent_atlas":            ("chemical", 2048),   # OLD Dec atlas (live until patent_compounds flip)
-    "patent_compounds":        ("chemical", 2048),   # unified: all compounds + structure + predictions + provenance
+    "patent_compounds":        ("chemical", 2048),   # unified: all compounds + structure + predictions + provenance (alias -> patent_compounds_v2)
     "chembl":                  ("chemical", 2048),   # ChEMBL reference ligands
     "clinical_trials_medcpt":  ("text", 768),        # clinical trials (MedCPT)
     "patents_text":            ("text", 768),        # patent text (MedCPT; Qdrant alias -> patents_text_medcpt)
@@ -48,20 +47,6 @@ def embed_text(text):
     with torch.no_grad():
         e = tok([text], truncation=True, padding=True, max_length=64, return_tensors="pt")
         return torch.nn.functional.normalize(m(**e).last_hidden_state[:, 0, :], dim=1)[0].numpy().tolist()
-
-
-_sbiobert = None
-def embed_text_sbiobert(text):
-    """S-BioBERT query encoder (768-d) for patents_text, which was embedded with this exact model
-    (modules/patents/scripts/process_patents.py). MedCPT is the wrong embedding space for it -- querying
-    patents_text with MedCPT returns near-random hits; with S-BioBERT it returns the right patents."""
-    global _sbiobert
-    if _sbiobert is None:
-        import os
-        os.environ.setdefault("HF_HUB_OFFLINE", "1"); os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-        from sentence_transformers import SentenceTransformer
-        _sbiobert = SentenceTransformer("pritamdeka/S-BioBERT-snli-multinli-stsb")
-    return _sbiobert.encode(text).tolist()
 
 
 def embed_smiles(smiles):
@@ -179,7 +164,7 @@ def predict(smiles, top=20, human_only=True, floor=0.3):
 # --------------------------------------------------------------------------- primitive 3: provenance
 def provenance(ids, max_per=8):
     """SureChEMBL compound id(s) -> patent number / assignee / publication date / claimed flag.
-    Fast path: the foundational + current-frontier span is baked into the patent_atlas payload
+    Fast path: the foundational + current-frontier span is baked into the patent_compounds payload
     (`prov` = {n, noise, patents}) by modules/compounds/bake_provenance.py, so read it straight from
     the payload (no 1.5B-row parquet scan). Falls back to the live parquet join for any id absent from
     the atlas or not yet baked. NB the baked span is currently top-20; max_per only caps it (raise via
@@ -187,7 +172,7 @@ def provenance(ids, max_per=8):
     cids = [int(str(i).replace("SCHEMBL", "")) for i in ids]
     out = {}
     try:
-        for p in qc().retrieve("patent_atlas", ids=cids, with_payload=["prov"]):
+        for p in qc().retrieve("patent_compounds", ids=cids, with_payload=["prov"]):
             pv = (p.payload or {}).get("prov")
             if pv:
                 out[int(p.id)] = {"n_patents": pv["n"], "noise": pv["noise"], "patents": pv["patents"][:max_per]}

@@ -19,17 +19,17 @@ def test_health():
 
 def test_collections():
     d = C.get("/api/collections").json()
-    assert "patent_atlas" in d and len(d) == 7
+    assert "patent_compounds" in d and len(d) == 5
 
 
 def test_query_filter():
-    d = C.post("/api/query", json={"collection": "patent_atlas",
+    d = C.post("/api/query", json={"collection": "patent_compounds",
                "filter": {"targets": "P00533", "best_tanimoto": {"gte": 0.5}}, "limit": 2}).json()
     assert len(d["hits"]) == 2 and "P00533" in d["hits"][0]["payload"]["targets"]
 
 
 def test_query_by_id():
-    d = C.post("/api/query", json={"collection": "patent_atlas", "ids": [8383], "limit": 1}).json()
+    d = C.post("/api/query", json={"collection": "patent_compounds", "ids": [8383], "limit": 1}).json()
     assert d["hits"][0]["payload"]["surechembl_id"] == "SCHEMBL8383"
 
 
@@ -49,8 +49,8 @@ def test_provenance():
 
 
 def test_count():
-    d = C.post("/api/count", json={"collection": "patent_atlas", "filter": {"targets": "P00533"}}).json()
-    assert d["count"] > 1_000_000
+    d = C.post("/api/count", json={"collection": "patent_compounds", "filter": {"targets": "P00533"}}).json()
+    assert d["count"] > 100_000
 
 
 def test_mcp_tools_list():

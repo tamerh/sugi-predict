@@ -2,12 +2,14 @@
 """Ligand→target prediction — the validated patent target-atlas engine.
 
 For a molecule (SMILES | SCHEMBL<id> | drug-name), predict its likely protein target(s) by chemical k-NN to
-the 683,544-molecule ChEMBL ligand→target reference (biobtree-assembled, FPSim2-indexed), ranked top-5 with a
+the 1,248,456-molecule ChEMBL ligand→target reference (biobtree-assembled, FPSim2-indexed), ranked top-5 with a
 Tanimoto CONFIDENCE per target, grounded to gene via biobtree. The honest output: ranked candidates + confidence,
 NOT a single hard label; <0.3 Tanimoto = novel chemotype / chemical whitespace.
 
-Validated full-scale: recall@1 84.7% / recall@5 91.7% predicting among 7,929 targets vs ~0% baselines
-(usecases/poc_atlas_fullscale_validate.py). Coverage: ~1/3 of patent compounds high-confidence (poc_atlas_coverage.py).
+Validation — lead with the deployment-relevant number: TEMPORAL recall@1 ~41% (train on past, predict future
+targets — the regime the atlas actually runs in). The leave-one-out (~83%) and scaffold-split (~77%) splits are
+INTERPOLATION upper bounds, not the deployment figure (usecases/poc_atlas_fullscale_validate.py). Coverage: ~1/3
+of patent compounds high-confidence (poc_atlas_coverage.py).
 
 CLI: python target.py "<query>" [--top 5]
 """
@@ -85,7 +87,8 @@ def predict(smiles, n_workers=4, human_only=False, with_support=False):
             vote[t] += co; supp[t] = max(supp[t], co); nbr[t] += 1
     # rank by CONFIDENCE (best Tanimoto to a known ligand of the target), then by NEIGHBOUR SUPPORT (how many of
     # the top-KNN back it — the discriminator for tied exact-match confidences), then vote-support.
-    # validated slightly better than vote-ranking (recall@1 85.9 vs 84.9) AND gives a monotonic confidence column.
+    # validated slightly better than vote-ranking under the interpolation (LOO) split AND gives a monotonic
+    # confidence column. (Deployment regime is temporal recall@1 ~41%; the LOO numbers are an upper bound.)
     targets = supp
     if human_only:
         targets = {t: c for t, c in supp.items() if is_human(t)}
@@ -110,7 +113,7 @@ if __name__ == "__main__":
     else:
         shown = preds[:a.top]
         print(f"  predicted (human) targets — showing top {len(shown)} of {len(preds)} (--top N for the full profile;")
-        print("  ranked by chemical k-NN over 683K ChEMBL ligands, grounded):")
+        print("  ranked by chemical k-NN over 1.25M ChEMBL ligands, grounded):")
         for i, (t, s) in enumerate(shown, 1):
             print(f"    {i:>2}. {gene_sym(t):10} conf {s:.2f} · {supp.get(t,0):>2}/{KNN} nbrs  {band(s):8} {t}  {full_name(t)[:38]}")
         print("  confidence = best Tanimoto to a known ligand of that target (<0.3 = novel/low).")

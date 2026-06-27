@@ -14,16 +14,16 @@ The engine also holds a small supporting multi-modal substrate (patent text, cli
 
 - **Target prediction** — for any molecule (a pasted SMILES, or any of the 30M patent compounds): ranked protein targets with a Tanimoto **confidence** + a supporting-neighbour **support** count, by exact-Tanimoto k-NN over a 1.25M-ligand ChEMBL reference (FPSim2). Validated held-out; chemistry is the only validated predictor.
 - **Patent provenance** — for any SureChEMBL compound: the patents that claim/disclose it (number, assignee, publication date, claimed flag), from a self-contained SureChEMBL parquet join.
-- **Supporting context** (retrieval, not prediction): clinical trials (MedCPT) and proteins (ESM-2, for selectivity) relevant to a target; patent text (S-BioBERT).
+- **Supporting context** (retrieval, not prediction): clinical trials (MedCPT) and proteins (ESM-2, for selectivity) relevant to a target; patent text (MedCPT).
 - **Access** — a thin REST API + MCP server (`mcp_srv`) over three primitives (`query` / `predict` / `provenance`); the web atlas is a separate HTTP consumer.
-- **Reproducible** — every collection rebuilds from source via `bioyoda.sh` (Snakemake data modules + the `atlas` build chain), with small-data fixture tests (`bioyoda.sh test [--atlas]`).
+- **Reproducible** — every collection rebuilds from source via `bioyoda.sh build <collection>` (orchestrated as bash build steps + Enju workflow DAGs; Snakemake is retired), with small-data fixture tests (`bioyoda.sh test [--atlas]`).
 
 ### Substrate (four modalities, ~74.5M vectors)
 
 | Modality | Embedding | Vectors |
 |---|---|---|
 | Patent compounds | Morgan ECFP4 (2048-bit) | ~30.9M |
-| Patent text | sentence-BioBERT | ~38.7M |
+| Patent text | MedCPT (768-d) | ~38.7M |
 | Clinical trials | MedCPT | ~4.3M |
 | Proteins (UniProt/SwissProt) | ESM-2 (1280-d) | ~0.57M |
 
@@ -36,18 +36,12 @@ Chemistry (+ the 1.25M-ligand ChEMBL reference) powers prediction; trials and pr
 ### Prerequisites
 
 ```bash
-# Create conda environment (CPU)
-conda env create -f tamer.yml
+# Create conda environment
+conda env create -f environment.yml
 conda activate bioyoda
-
-# OR: Create GPU environment (for accelerated processing)
-conda env create -f config/tamer_gpu.yml       # CUDA 12.4
-conda env create -f config/tamer_gpu_cuda11.yml # CUDA 11.8
-conda activate bioyoda_gpu
-
-# Verify Snakemake is installed
-snakemake --version
 ```
+
+Orchestration is `bioyoda.sh` (bash `build` steps + Enju workflow DAGs) — Snakemake is retired.
 
 ### Test with Small Dataset
 

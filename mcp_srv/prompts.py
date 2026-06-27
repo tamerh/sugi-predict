@@ -4,7 +4,7 @@ Three tools, documented by capability. Underlying execution (Qdrant, FPSim2, par
 """
 
 COLLECTIONS_DOC = """Collections (pass as `collection`):
-  patent_atlas            30M SureChEMBL patent compounds, each with predicted human protein targets. CHEMICAL
+  patent_compounds        SureChEMBL patent compounds, each with predicted human protein targets. CHEMICAL
                           (query by `smiles`). Filterable payload: targets (UniProt accession, keyword),
                           best_tanimoto (0-1 float), novel (bool), exact_match (bool), surechembl_id.
   chembl                  ChEMBL reference ligands. CHEMICAL (query by `smiles`).
