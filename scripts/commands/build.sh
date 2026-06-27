@@ -50,8 +50,9 @@ PY
 
 # --- pod-sync: automate the GPU hop (push -> tmux run -> monitor -> pull). Blueprint: work/medcpt_orchestrator.sh ---
 # Config from env: POD_HOST (root@ip), POD_PORT, POD_KEY. Without them, GPU stages run locally if a GPU is present.
-_pssh(){ ssh -i "${POD_KEY}" -p "${POD_PORT}" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 "${POD_HOST}" "$@"; }
-_pup(){  rsync -a -e "ssh -i ${POD_KEY} -p ${POD_PORT} -o StrictHostKeyChecking=accept-new" "$@"; }
+_SSHOPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"   # keepalive from medcpt_orchestrator.sh: long monitors/transfers don't drop
+_pssh(){ ssh -i "${POD_KEY}" -p "${POD_PORT}" ${_SSHOPTS} "${POD_HOST}" "$@"; }
+_pup(){  rsync -az --partial -e "ssh -i ${POD_KEY} -p ${POD_PORT} ${_SSHOPTS}" "$@"; }
 pod_configured(){ [[ -n "${POD_HOST:-}" && -n "${POD_PORT:-}" && -n "${POD_KEY:-}" ]]; }
 pod_predict(){   # $1=chunks dir  $2=ref dir  $3=local nbrs out  — run fused k-NN on the pod
   local chunks="$1" ref="$2" out="$3" n; n=$(ls "$chunks"/compounds_chunk_*.parquet 2>/dev/null | wc -l)
