@@ -377,10 +377,14 @@ head work/data/processed/protein_similarity_diamond/results/chunk_001.tsv
 
 ### Failed Chunks
 ```bash
-# Rerun specific chunk
-snakemake --snakefile modules/protein_similarity_diamond/Snakefile \
-  work/data/processed/protein_similarity_diamond/results/chunk_005.tsv \
-  --cores 4
+# Rerun a specific chunk by hand (same flags as the Enju `search` task).
+# The pipeline is now the Enju workflow workflows/diamond-update/ (Snakemake retired);
+# its thin task scripts in workflows/diamond-update/scripts/ wrap these same module scripts.
+diamond blastp \
+  --query work/raw_data/diamond/chunks/chunk_005.fasta \
+  --db    work/raw_data/diamond/diamond_db/uniprot_swissprot \
+  --out   work/data/processed/diamond/results/chunk_005.tsv \
+  --threads 4 --max-target-seqs 1000 --evalue 0.001 --sensitive --outfmt 6 --compress 0
 ```
 
 ## Key Design Points

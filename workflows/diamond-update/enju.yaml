@@ -1,0 +1,68 @@
+name: "diamond — protein all-vs-all similarity (UniProt SwissProt source, DIAMOND BLASTP)"
+description: |
+  Rebuild the DIAMOND protein-similarity TSV that biobtree's `diamond_similarity` source consumes.
+  This is a standalone DATA-PREP pipeline (NOT a Qdrant collection, so NOT a `bioyoda.sh build`
+  command): download UniProt FASTA -> split into chunks -> makedb -> all-vs-all BLASTP per chunk
+  (CPU, multi-core, chunked + fanned-out) -> merge -> filter top-K per protein -> the TSV.
+
+  DAG:
+    prepare (compute) — download UniProt SwissProt FASTA, makedb, split the query fasta into
+                        num_chunks chunks; emit the chunk-id list for the fan-out.
+    search  (compute, fan-out per chunk) — diamond blastp chunk_NNN.fasta vs the db (outfmt 6).
+    merge   (compute, collects search)   — concatenate the per-chunk hit TSVs into merged_results.tsv.
+    filter  (compute, needs merge)       — top-K per query protein -> filtered_top{K}.tsv (BioBTree-ready).
+
+  CPU-only (the diamond binary is a sequence aligner, not GPU). The search is the heavy step and is
+  chunked + parallel via the per-chunk fan-out. The thin task scripts reuse the existing
+  modules/diamond/scripts/{download_uniprot,split_fasta,filter_top_k}.py logic and the diamond binary
+  directly (diamond is compute, not a collection — there is no `bioyoda.sh build` stage for it).
+
+  Output (prod, K=100, swissprot) lands at:
+    work/data/processed/diamond/merged/filtered_top{K}.tsv
+  which is then promoted into snapshots/diamond_latest/.../filtered_top100.tsv (the path biobtree's
+  diamond_similarity source reads). Replaces the old Snakemake (modules/diamond/Snakefile) and the
+  diamond-poc.
+version: 1
+
+publish:
+  mode: none
+
+params:
+  - {name: dataset,         type: string,       required: false, description: "UniProt set: swissprot (prod default) | trembl | both | test"}
+  - {name: num_chunks,      type: string,       required: false, description: "How many query chunks to split into / fan out over (prod default 20)"}
+  - {name: top_k,           type: string,       required: false, description: "Keep top-K hits per query protein in the final TSV (prod default 100)"}
+  - {name: min_identity,    type: string,       required: false, description: "Minimum percent-identity threshold for the filter step (default 0)"}
+  - {name: max_target_seqs, type: string,       required: false, description: "diamond blastp --max-target-seqs (default 1000)"}
+  - {name: evalue,          type: string,       required: false, description: "diamond blastp --evalue (default 0.001)"}
+  - {name: sensitivity,     type: string,       required: false, description: "diamond blastp sensitivity flag, e.g. sensitive (default sensitive)"}
+  - {name: threads,         type: string,       required: false, description: "diamond threads per chunk search (default 4)"}
+  - {name: chunks,          type: list<string>, required: true,  description: "Query chunk ids to fan out over (e.g. 001,002,...). Driver-resolved from prepare's split output."}
+
+defaults:
+  assign_to: tamerh
+
+tasks:
+  - id: prepare
+    action: compute
+    script: workflows/diamond-update/scripts/prepare.sh
+    prompt: "Download UniProt FASTA, makedb, and split the query fasta into num_chunks chunks. Emit the chunk-id list for the fan-out."
+
+  - id: search
+    action: compute
+    script: workflows/diamond-update/scripts/search.sh
+    depends_on: [prepare]
+    for_each:
+      chunk: "{{chunks}}"
+    prompt: "Run diamond blastp (all-vs-all) for query chunk {{chunk}} against the db."
+
+  - id: merge
+    action: compute
+    script: workflows/diamond-update/scripts/merge.sh
+    collects: search
+    prompt: "Concatenate the per-chunk hit TSVs into merged_results.tsv."
+
+  - id: filter
+    action: compute
+    script: workflows/diamond-update/scripts/filter.sh
+    depends_on: [merge]
+    prompt: "Filter merged_results.tsv to top-K per query protein -> filtered_top{K}.tsv (BioBTree-ready)."
