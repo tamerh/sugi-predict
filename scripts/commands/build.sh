@@ -76,7 +76,7 @@ pod_embed_text(){   # $1=input dir (jsonl shards)  $2=local output dir  — MedC
   log "[pod] ensure embed deps (transformers, faiss-cpu; torch comes from the pod base image)"
   _pssh "python -c 'import transformers, faiss' 2>/dev/null || pip install -q transformers faiss-cpu"
   log "[pod] launch MedCPT-Article embed under tmux"
-  _pssh "cd /workspace && tmux kill-session -t embed 2>/dev/null; tmux new-session -d -s embed 'PYTHONUNBUFFERED=1 python -u embed_text_medcpt_gpu.py --input-dir input/ct --output-dir output/ct --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto > embed.log 2>&1; echo EXIT=\$? >> embed.log'"
+  _pssh "cd /workspace && tmux kill-session -t embed 2>/dev/null; tmux new-session -d -s embed 'PYTHONUNBUFFERED=1 python -u embed_text_medcpt_gpu.py --input-dir input/ct --output-dir output/ct --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto > embed.log 2>&1; echo EXIT=\$? >> embed.log'" </dev/null >/dev/null 2>&1   # fd redirect: tmux-over-SSH hangs the channel otherwise (June lesson)
   log "[pod] monitoring ($n shards expected)..."
   until [ "$(_pssh 'ls /workspace/output/ct/*.index 2>/dev/null | wc -l')" -ge "$n" ] || _pssh 'grep -q EXIT= /workspace/embed.log 2>/dev/null'; do sleep 60; done
   log "[pod] pull embeddings -> ${out#${ROOT}/}"; mkdir -p "$out"; _pup "${POD_HOST}:/workspace/output/ct/" "$out/"
