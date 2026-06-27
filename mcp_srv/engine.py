@@ -204,6 +204,150 @@ def provenance(ids, max_per=8):
     return {f"SCHEMBL{k}": v for k, v in out.items()}
 
 
+# --------------------------------------------------------------------------- patent-text support (the badge)
+# Serve-time corroboration: does a compound's full-text patent BODY independently rank its chemistry-predicted
+# target high? Validated in the pilot (recall@10 ~0.19 overall, ~0.40 at conf>=0.8; collapses to ~0.02 under a
+# patent<->target null shuffle). NO model at request time: we dot the precomputed MedCPT-Query target embeddings
+# (build_patent_text_support.py) against the patent's already-stored MedCPT-Article vector. Both are L2-norm so
+# dot == cosine. Ranking is restricted to HUMAN targets (matches the predictor's human_only default; the full
+# vocab's text top-hits are dominated by non-human orthologs).
+_TGT_EMB = None
+def _target_emb():
+    """Lazy-load the precomputed (emb, bg, acc, gene) human target-query matrix. Loaded once per process.
+    `bg` is each target's background affinity to the average patent — subtracted at rank time to kill the
+    generic-attractor bias (see build_patent_text_support.py). Restricted to human targets."""
+    global _TGT_EMB
+    if _TGT_EMB is None:
+        import numpy as np
+        p = os.environ.get("PATENT_TEXT_SUPPORT_NPZ",
+                           "/data/bioyoda/work/patent_text_support/target_query_emb.npz")
+        d = np.load(p, allow_pickle=True)
+        hmask = d["human"].astype(bool)
+        emb = d["emb"][hmask]
+        bg = d["bg"][hmask] if "bg" in d else np.zeros(emb.shape[0], dtype="float32")
+        acc = [str(a) for a in d["acc"][hmask]]
+        gene = [str(g) for g in d["gene"][hmask]]
+        _TGT_EMB = (emb, bg, acc, gene, {a: i for i, a in enumerate(acc)})
+    return _TGT_EMB
+
+
+# a predicted target counts as "patent-corroborated" when the body text ranks it within this many human targets.
+TEXT_RANK_HIT = 10
+
+
+def patent_text_support(compound_id):
+    """For a compound id: among its provenance patents that have full text, rank ALL human targets by how much
+    the patent BODY is 'about' each (cosine of the patent's MedCPT-Article vector to the precomputed target-query
+    embeddings), and report where each chemistry-predicted target lands.
+
+    Returns {compound_id, n_full_text_patents, patents:[{number, title, text_top:[{gene,acc,score}]x3,
+    predicted_ranks:{acc: rank}}], badges:{acc: {verdict, rank, n_targets, top_gene, top_acc, patent}}}.
+    `badges` is the per-prediction summary the compound page renders inline: verdict 'confirms' (predicted target
+    in the text's top-TEXT_RANK_HIT), 'suggests_other' (a DIFFERENT target tops the text), or 'weak'. NO model load."""
+    import numpy as np
+    emb, bg, accs, genes, acc2i = _target_emb()
+    N = len(accs)
+
+    pts = qc().retrieve("patent_compounds", ids=[int(compound_id)], with_payload=True)
+    if not pts:
+        return {"compound_id": compound_id, "n_full_text_patents": 0, "patents": [], "badges": {}}
+    pl = pts[0].payload or {}
+    if (pl.get("prov") or {}).get("noise"):   # ubiquitous tool compounds (e.g. imatinib: 124k patents) appear in
+        return {"compound_id": compound_id, "n_full_text_patents": 0,   # those patents only INCIDENTALLY — the body
+                "patents": [], "badges": {}}   # text is about other things, so it can't speak to this compound's target. Suppress entirely.
+    preds = pl.get("predicted") or []
+    pred_accs = [p["acc"] for p in preds if p.get("acc") in acc2i]
+    conf_of = {p["acc"]: float(p.get("conf", 0.0)) for p in preds}   # for the conf>=0.5 gate on the "suggests" flag
+    pat_nums = [p["number"] for p in ((pl.get("prov") or {}).get("patents") or []) if p.get("number")]
+    if not pat_nums or not pred_accs:
+        return {"compound_id": compound_id, "n_full_text_patents": 0, "patents": [], "badges": {}}
+
+    # full-text patents among this compound's provenance (uses the patent_id + has_full_text indexes)
+    ftpts, _ = qc().scroll(
+        "patents_text_medcpt",
+        scroll_filter=Filter(must=[FieldCondition(key="patent_id", match=MatchAny(any=pat_nums)),
+                                   FieldCondition(key="has_full_text", match=MatchValue(value=True))]),
+        limit=50, with_payload=["patent_id", "title"], with_vectors=True)
+
+    patents = []
+    # best (lowest) text-rank per predicted target across this compound's full-text patents -> drives the badge
+    best = {a: None for a in pred_accs}   # acc -> (rank, score, patent_number)
+    for fp in ftpts:
+        v = np.asarray(fp.vector, dtype="float32")
+        scores = (emb @ v) - bg                            # (N_human,) debiased cosine (attractors removed)
+        order = np.argsort(-scores)
+        rank_of = np.empty(N, dtype=int); rank_of[order] = np.arange(1, N + 1)
+        top = [{"gene": genes[order[r]], "acc": accs[order[r]], "score": round(float(scores[order[r]]), 3)}
+               for r in range(3)]
+        pranks = {}
+        for a in pred_accs:
+            i = acc2i[a]; rk = int(rank_of[i])
+            pranks[a] = rk
+            if best[a] is None or rk < best[a][0]:
+                best[a] = (rk, round(float(scores[i]), 3), fp.payload["patent_id"])
+        patents.append({"number": fp.payload["patent_id"], "title": fp.payload.get("title", ""),
+                        "text_top": top, "predicted_ranks": pranks, "n_targets": N})
+
+    # targets this compound ALREADY confirms (predicted target the text ranks high) — used to suppress a
+    # misleading "suggests {X}" when X is itself one of this compound's own confirmed predictions.
+    confirmed_accs = {a for a in pred_accs if best[a] and best[a][0] <= TEXT_RANK_HIT}
+
+    # per-prediction badge:
+    #  'confirms'       — the predicted target is in the patent text's top-TEXT_RANK_HIT (corroborated).
+    #  'suggests_other' — this prediction ranks poorly AND a DIFFERENT target clearly tops the text that is
+    #                     NOT itself a confirmed prediction of this same compound (a genuine false-positive flag).
+    #  'weak'           — neither: the text just isn't strongly about this target.
+    badges = {}
+    for a in pred_accs:
+        if best[a] is None:
+            continue
+        rk, sc, pnum = best[a]
+        top_for_patent = next((p["text_top"][0] for p in patents if p["number"] == pnum), None)
+        is_confirm = rk <= TEXT_RANK_HIT
+        is_other = bool(top_for_patent) and top_for_patent["acc"] != a and rk > 50 \
+            and top_for_patent["acc"] not in confirmed_accs and conf_of.get(a, 0.0) >= 0.5   # don't flag weak preds
+        verdict = "confirms" if is_confirm else "suggests_other" if is_other else "weak"
+        badges[a] = {"verdict": verdict, "rank": rk, "score": sc, "n_targets": N, "patent": pnum,
+                     "top_gene": top_for_patent["gene"] if top_for_patent else None,
+                     "top_acc": top_for_patent["acc"] if top_for_patent else None}
+
+    return {"compound_id": compound_id, "n_full_text_patents": len(patents),
+            "patents": patents, "badges": badges}
+
+
+def similar_compounds(compound_id, limit=10):
+    """Chemically nearest patent compounds to this one — vector search in patent_compounds on the compound's OWN
+    Morgan vector (cosine == Tanimoto-like). Each neighbour: id, name, smiles, cosine, its top predicted target,
+    and the predicted-target genes SHARED with the query. Surfaces the raw vector-similarity capability. No model."""
+    pts = qc().retrieve("patent_compounds", ids=[int(compound_id)], with_payload=True, with_vectors=True)
+    if not pts:
+        return {"compound_id": compound_id, "neighbours": []}
+    qpl = pts[0].payload or {}
+    qvec = pts[0].vector
+    # query's predicted genes, kept in confidence order so shared-target lists lead with the strong ones
+    q_pred = qpl.get("predicted") or []
+    q_genes_ranked = [p["gene"] for p in q_pred]
+    q_genes = set(q_genes_ranked)
+
+    res = qc().query_points("patent_compounds", query=qvec, limit=int(limit) + 1, with_payload=True).points
+    out = []
+    for h in res:
+        if int(h.id) == int(compound_id):                  # the query itself (cosine 1.0)
+            continue
+        pl = h.payload or {}
+        preds = pl.get("predicted") or []
+        top = preds[0] if preds else None
+        nb_genes = {p["gene"] for p in preds}
+        shared = [g for g in q_genes_ranked if g in nb_genes]   # query-confidence order, strongest first
+        out.append({"id": pl.get("surechembl_id"), "name": name(pl.get("smiles")), "smiles": pl.get("smiles"),
+                    "cosine": round(float(h.score), 3),
+                    "top_gene": top["gene"] if top else None, "top_acc": top["acc"] if top else None,
+                    "top_conf": top["conf"] if top else None, "shared_targets": shared})
+        if len(out) >= int(limit):
+            break
+    return {"compound_id": compound_id, "neighbours": out}
+
+
 _NAMES = None
 def name(smiles):
     """Common name (ChEMBL pref_name by InChIKey) if the molecule is a known named compound, else None.

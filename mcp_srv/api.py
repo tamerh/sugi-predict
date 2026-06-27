@@ -75,3 +75,23 @@ async def api_provenance(ids: str = Query(..., description="comma-separated Sure
         return E.provenance([i.strip() for i in ids.split(",") if i.strip()], max_per=max_per)
     except Exception as e:
         return _err(e)
+
+
+@router.get("/patent-text-support")
+async def api_patent_text_support(compound_id: int = Query(..., description="SureChEMBL int id")):
+    """Does a compound's full-text patent body corroborate its chemistry-predicted target(s)? Per-prediction
+    badges + the per-patent detail. Serve-time: no model load (precomputed target embeddings)."""
+    try:
+        return E.patent_text_support(compound_id)
+    except Exception as e:
+        return _err(e)
+
+
+@router.get("/similar-compounds")
+async def api_similar_compounds(compound_id: int = Query(..., description="SureChEMBL int id"),
+                                limit: int = Query(10)):
+    """Chemically nearest patent compounds (vector search on the compound's own Morgan fingerprint)."""
+    try:
+        return E.similar_compounds(compound_id, limit=limit)
+    except Exception as e:
+        return _err(e)
