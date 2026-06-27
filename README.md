@@ -224,25 +224,16 @@ tail -f logs/bioyoda_pubmed_main.log
 # Check status
 ./bioyoda.sh qdrant status
 
-# Insert data
-./bioyoda.sh qdrant insert pubmed
-./bioyoda.sh qdrant insert clinical_trials
-./bioyoda.sh qdrant insert patents_text        # Patent text search
-./bioyoda.sh qdrant insert patents_compounds   # Chemical structure search
-./bioyoda.sh qdrant insert all
+# Build/insert collections (inserts moved from `qdrant insert` into `build`/`atlas`)
+./bioyoda.sh build trials insert          # clinical_trials_medcpt
+./bioyoda.sh build compounds all          # patent_compounds (chunk/predict/ingest/...)
+./bioyoda.sh build reference chembl       # chembl
+./bioyoda.sh atlas text insert            # patents_text (-> patents_text_medcpt)
+./bioyoda.sh build proteins insert        # esm2
+# GPU stages auto push/run/pull on a pod when POD_HOST/POD_PORT/POD_KEY are set.
 
-# Insert with cluster resources and GPU acceleration
-./bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --config config/config_gpu.yaml
-
-# Insert with CUDA 11.4 nodes
-./bioyoda.sh qdrant insert pubmed --cluster --jobs 10 --config config/config_gpu.yaml --cuda11.4
-
-# Stop a running insertion
-./bioyoda.sh qdrant stop-insert pubmed
-./bioyoda.sh qdrant stop-insert clinical_trials
-./bioyoda.sh qdrant stop-insert patents_text
-./bioyoda.sh qdrant stop-insert patents_compounds
-./bioyoda.sh qdrant stop-insert all
+# Trigger the HNSW index build after a bulk build
+./bioyoda.sh qdrant reindex patent_compounds --monitor
 
 # Stop server
 ./bioyoda.sh qdrant stop

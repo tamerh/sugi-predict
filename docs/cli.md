@@ -90,7 +90,7 @@ Manages the Qdrant container via `docker compose` (config
 ```bash
 bioyoda.sh qdrant start
 bioyoda.sh qdrant status
-bioyoda.sh qdrant reindex patents_compounds --monitor
+bioyoda.sh qdrant reindex patent_compounds --monitor
 ```
 
 Qdrant listens on `:6333` (the engine reads `BIOYODA_QDRANT_URL`, default

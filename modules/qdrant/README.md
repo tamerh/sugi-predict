@@ -174,7 +174,6 @@ qdrant/
 ├── qdrant.pid              # Process ID
 ├── storage/                # Qdrant data directory
 │   ├── collections/
-│   │   ├── pubmed_abstracts/
 │   │   ├── clinical_trials_medcpt/
 │   │   ├── patents_text_medcpt/
 │   │   ├── patent_compounds_v2/
@@ -208,10 +207,10 @@ source qdrant/connection_info.txt
 curl $QDRANT_URL/collections
 
 # Get collection info
-curl $QDRANT_URL/collections/pubmed_abstracts
+curl $QDRANT_URL/collections/clinical_trials_medcpt
 
 # Search (example)
-curl -X POST "$QDRANT_URL/collections/pubmed_abstracts/points/search" \
+curl -X POST "$QDRANT_URL/collections/clinical_trials_medcpt/points/search" \
   -H 'Content-Type: application/json' \
   -d '{
     "vector": [...],

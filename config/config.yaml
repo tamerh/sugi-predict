@@ -26,7 +26,7 @@ base_dir: "work"
 
 # PubMed Module Configuration
 pubmed:
-  # NOTE: Directories are constructed from base_dir in Snakefile
+  # NOTE: Directories are derived from base_dir by the bash/config layer
 
   # Model settings
   # models: "pritamdeka/S-BioBERT-snli-multinli-stsb", "NeuML/pubmedbert-base-embeddings" "NCBI/MedCPT-PubMedBERT-base"
@@ -73,7 +73,7 @@ pubmed:
 
 # Clinical Trials Module Configuration
 clinical_trials:
-  # NOTE: Directories are constructed from base_dir in Snakefile
+  # NOTE: Directories are derived from base_dir by the bash/config layer
 
   # Model settings (same as PubMed for consistency)
   model_name: "pritamdeka/S-BioBERT-snli-multinli-stsb"
@@ -143,12 +143,12 @@ clinical_trials:
 
 # Patents Module Configuration
 patents:
-  # NOTE: Directories are constructed from base_dir in Snakefile
+  # NOTE: Directories are derived from base_dir by the bash/config layer
 
   # ============================================================================
   # TWO SEPARATE PROCESSING PIPELINES:
   # 1. Text embeddings (patents_text collection) - Neural network model
-  # 2. Chemical fingerprints (patents_compounds collection) - RDKit algorithm
+  # 2. Chemical fingerprints (patent_compounds collection) - RDKit algorithm
   # ============================================================================
 
   # TEXT EMBEDDINGS - For semantic patent search (process_patents.py)
@@ -209,9 +209,8 @@ patents:
     text_default_segment_number: 0       # Let Qdrant decide
 
     # ==========================================================================
-    # COMPOUNDS COLLECTION (patents_compounds) - 2048-dim Morgan fingerprints
+    # COMPOUNDS COLLECTION (patent_compounds) - 2048-dim Morgan fingerprints
     # ==========================================================================
-    compounds_collection_name: "patents_compounds"
 
     # HNSW parameters for compounds (2048-dim, needs on-disk to avoid OOM!)
     compounds_hnsw_m: 32                 # Graph connectivity (same quality as text)
@@ -230,7 +229,7 @@ patents:
     #
     # Current setting delays indexing during bulk insert for performance.
     # After insertion completes, trigger indexing with:
-    #   ./bioyoda.sh qdrant reindex patents_compounds
+    #   ./bioyoda.sh qdrant reindex patent_compounds
     #
     compounds_indexing_threshold: 30000000  # 30M - delays indexing during bulk insert
     compounds_max_segment_size: 20000000    # 20M points - max segment size
@@ -251,7 +250,7 @@ patents:
 
 # Protein Similarity ESM-2 Module Configuration
 esm2:
-  # NOTE: Directories are constructed from base_dir in Snakefile
+  # NOTE: Directories are derived from base_dir by the bash/config layer
 
   # Dataset selection
   # Options: swissprot (~573K reviewed proteins), trembl (~220M unreviewed), both (complete UniProt), test (500 proteins)
@@ -375,7 +374,7 @@ diamond:
 
 # Qdrant Module Configuration
 qdrant:
-  # NOTE: Directories are constructed from base_dir in Snakefile
+  # NOTE: Directories are derived from base_dir by the bash/config layer
   # NOTE: Collection-specific settings (HNSW, segments, batch_size) are in each collection's config above
 
   # Storage configuration
@@ -384,7 +383,7 @@ qdrant:
     # All snapshots insert to this shared Qdrant instance
     # Use --out-dir flag to override with a different location
 
-  # Server settings (for auto-start via Snakemake)
+  # Server settings (for auto-start)
   server:
     memory_mb: 131072      # 128GB for server
 
@@ -393,17 +392,7 @@ qdrant:
     url: "http://localhost:6333"
     timeout: 300           # 5 minutes for large batch operations
 
-# NOTE: final_dir is constructed from base_dir in Snakefile
-
-# HPC Cluster Configuration
-cluster:
-  type: "sge"
-  default_queue: "scc"
-  max_jobs: 100
-
-  # Resource defaults
-  default_memory_mb: 8192
-  default_threads: 1
+# NOTE: final_dir is derived from base_dir by the bash/config layer
 
 # API Configuration
 api:

@@ -18,7 +18,7 @@ Shell RSS Limit:    254 GB  (Max resident set)
 
 ### The Problem
 
-Qdrant on-disk HNSW indexing for our patents_compounds collection requires:
+Qdrant on-disk HNSW indexing for our patent_compounds collection requires:
 - 30.8M points × 2048 dimensions
 - mmap operations for on-disk storage
 - **Estimated VSZ needed: >512GB** (even though RSS stays low ~30-50GB)
@@ -132,7 +132,7 @@ ps -p <PID> -o pid,vsz,rss,cmd
 grep -i "cannot allocate memory\|out of memory" logs/qdrant/*.log
 
 # Check optimizer status via API
-curl -s http://localhost:6333/collections/patents_compounds | \
+curl -s http://localhost:6333/collections/patent_compounds | \
   python3 -c "import sys,json; d=json.load(sys.stdin)['result']; \
   print(f\"Optimizer: {d.get('optimizer_status', 'OK')}\")"
 ```

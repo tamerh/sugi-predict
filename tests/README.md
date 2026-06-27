@@ -181,7 +181,7 @@ Total Search:           20/20 passed
 RAG:                    5/5 passed
 
 NOTE: Patents collections are processed but NOT query-validated
-      (patents_text: 100 docs, patents_compounds: 1000 docs)
+      (patents_text: 100 docs, patent_compounds: 1000 docs)
 
 ================================================================================
 TOTAL: 25/25 passed
@@ -287,7 +287,7 @@ The test suite includes patents data processing but **does NOT** include query v
 - **Pipeline integration**: `./bioyoda.sh test` processes patents data
 - **Qdrant collections**: Both collections are created and populated:
   - `patents_text` - 100 patent text entries (S-BioBERT 768-dim embeddings)
-  - `patents_compounds` - 1000 compound entries (Morgan/ECFP4 2048-bit fingerprints)
+  - `patent_compounds` - 1000 compound entries (Morgan/ECFP4 2048-bit fingerprints)
 
 **Test Configuration (`config/test_config.yaml`):**
 ```yaml
@@ -318,7 +318,7 @@ patents:
 - Supports semantic search for patent concepts/keywords
 - Example query: `"CRISPR gene editing applications"`
 
-**patents_compounds Collection (Chemical Similarity):**
+**patent_compounds Collection (Chemical Similarity):**
 - ❌ **CANNOT be searched via current API** `/search` endpoint
 - Uses RDKit Morgan fingerprints, NOT a neural network model
 - API's `encode_query()` uses SentenceTransformer (incompatible with chemical fingerprints)
@@ -347,7 +347,7 @@ Chemical similarity requires direct Qdrant access with pre-computed Morgan finge
 
 ```python
 #!/usr/bin/env python3
-"""Test chemical similarity search in patents_compounds collection."""
+"""Test chemical similarity search in patent_compounds collection."""
 
 import requests
 from rdkit import Chem
@@ -357,14 +357,14 @@ QDRANT_URL = "http://localhost:6333"
 
 # 1. Get a sample compound vector from the collection
 scroll_response = requests.post(
-    f"{QDRANT_URL}/collections/patents_compounds/points/scroll",
+    f"{QDRANT_URL}/collections/patent_compounds/points/scroll",
     json={"limit": 1, "with_vector": True}
 )
 query_vector = scroll_response.json()['result']['points'][0]['vector']
 
 # 2. Search for similar compounds
 search_response = requests.post(
-    f"{QDRANT_URL}/collections/patents_compounds/points/search",
+    f"{QDRANT_URL}/collections/patent_compounds/points/search",
     json={"vector": query_vector, "limit": 5, "with_payload": True}
 )
 
@@ -391,7 +391,7 @@ When you run `./bioyoda.sh test`, the following collections are created:
 | `pubmed_abstracts` | Text | 50 | 768 | PubMed semantic search |
 | `clinical_trials` | Text | 50 | 768 | Clinical trials search |
 | `patents_text` | Text | 100 | 768 | Patent semantic search |
-| `patents_compounds` | Chemical | 1000 | 2048 | Chemical similarity |
+| `patent_compounds` | Chemical | 1000 | 2048 | Chemical similarity |
 | `esm2` | Protein | 1000 | 1280 | Protein similarity search |
 
 **Total: 5 collections, 2,200 documents**
@@ -422,7 +422,7 @@ To achieve full patents query validation:
 1. **Add Chemical Search API Endpoint:**
    - Implement `/search/chemical` endpoint with RDKit support
    - Accept SMILES strings and generate fingerprints on-the-fly
-   - Return similar compounds from patents_compounds collection
+   - Return similar compounds from patent_compounds collection
 
 2. **Create Query Files:**
    - `queries_patents.txt` - Semantic queries for patent text
@@ -566,7 +566,7 @@ python tests2/validate_queries.py --api-url http://localhost:8001
 # 1. Start servers manually
 ./bioyoda.sh run all --test --local --cores 2
 ./bioyoda.sh qdrant start --mode local --test
-./bioyoda.sh qdrant insert all --test --local --cores 2
+./bioyoda.sh test --pipeline    # builds the *_test collections end-to-end
 ./bioyoda.sh api start --test
 
 # 2. Run validation
