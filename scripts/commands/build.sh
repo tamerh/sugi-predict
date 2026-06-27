@@ -195,7 +195,7 @@ _dispatch(){
                 $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$CT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
                 qdrant_build "$COLL"
                 # commit the deferred tracking hashes ONLY now that the insert succeeded (so a failed embed/insert never marks trials done)
-                [[ -f "$CT_PEND" ]] && $PY -c "import sys,json; sys.path.insert(0,'${ROOT}'); from modules.clinical_trials.scripts.tracking_db import TrialsTracker; u=json.load(open('${CT_PEND}')); TrialsTracker('${CT_DB}').add_or_update_batch(u); print(f'  tracking: committed {len(u):,} delta hashes')" && rm -f "$CT_PEND" ;;
+                if [[ -f "$CT_PEND" ]]; then $PY -c "import sys,json; sys.path.insert(0,'${ROOT}'); from modules.clinical_trials.scripts.tracking_db import TrialsTracker; u=json.load(open('${CT_PEND}')); TrialsTracker('${CT_DB}').add_or_update_batch(u); print(f'  tracking: committed {len(u):,} delta hashes')" && rm -f "$CT_PEND"; fi ;;   # if-form: no spurious exit 1 when there's no pending file
         all)    build trials chunk ${prod:+--prod}; build trials embed ${prod:+--prod}; build trials insert ${prod:+--prod} ;;
         *) echo "trials stages: all | chunk | embed | insert  (source: biobtree trials.json; embed = MedCPT-Article, GPU)"; ;;
       esac ;;
