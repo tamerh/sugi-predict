@@ -69,8 +69,11 @@ def main():
             if total % 100000 == 0:
                 print(f"  scanned {total:,} trials, {kept:,} to (re)embed -> {n:,} chunks", flush=True)
     fh.close()
-    if tracker is not None and updates:                   # record the new hashes for next time
-        tracker.add_or_update_batch(updates)
+    if tracker is not None and updates:                   # DEFER the tracking commit until AFTER a successful insert
+        pend = os.path.join(os.path.dirname(a.tracking_db), "pending_track.json")
+        os.makedirs(os.path.dirname(pend), exist_ok=True)
+        json.dump(updates, open(pend, "w"))
+        print(f"  wrote {len(updates):,} pending tracking updates -> {pend} (committed by the insert step)", flush=True)
     mode = "FULL" if a.full else "delta"
     print(f"done [{mode}]: {kept:,}/{total:,} trials (re)chunked -> {n:,} chunks in {shard+1} shards -> {a.out_dir}",
           flush=True)

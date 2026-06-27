@@ -161,17 +161,20 @@ _dispatch(){
       local COLL="clinical_trials_medcpt${suffix}"
       local CT_SRC="${CT_TRIALS_JSON:-/data/biobtree/raw_data/clinical_trials/trials.json}"
       local CT_IN="${ROOT}/work/data/medcpt_input/clinical_trials" CT_OUT="${ROOT}/work/data/medcpt_output/clinical_trials"
+      local CT_DB="${ROOT}/work/state/clinical_trials/trials_tracking.db" CT_PEND="${ROOT}/work/state/clinical_trials/pending_track.json"
       local M="${ROOT}/modules/clinical_trials/scripts"
       case $stage in
         chunk)  local _full=""; [[ $mode == full ]] && _full="--full"   # default: incremental (delta vs tracking DB)
-                $PY "$M/chunk_trials_to_jsonl.py" --trials-json "$CT_SRC" --out-dir "$CT_IN" $_full ;;
+                $PY "$M/chunk_trials_to_jsonl.py" --trials-json "$CT_SRC" --out-dir "$CT_IN" --tracking-db "$CT_DB" $_full ;;
         embed)  mkdir -p "$CT_OUT"; rm -f "$CT_OUT"/shard_*.index "$CT_OUT"/shard_*.json   # clear stale output: the delta shards (shard_00000+) must not collide with a prior full embed's names (would be skipped, and re-inserted)
                 if pod_configured; then pod_embed_text "$CT_IN" "$CT_OUT"
                 else log "GPU stage — MedCPT on CPU is ~7 text/s (~9h for this delta); set POD_HOST/POD_PORT/POD_KEY for the pod (~2 min)"
                      $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$CT_IN" --output-dir "$CT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
         insert) qdrant_defer "$COLL"
                 $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$CT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
-                qdrant_build "$COLL" ;;
+                qdrant_build "$COLL"
+                # commit the deferred tracking hashes ONLY now that the insert succeeded (so a failed embed/insert never marks trials done)
+                [[ -f "$CT_PEND" ]] && $PY -c "import sys,json; sys.path.insert(0,'${ROOT}'); from modules.clinical_trials.scripts.tracking_db import TrialsTracker; u=json.load(open('${CT_PEND}')); TrialsTracker('${CT_DB}').add_or_update_batch(u); print(f'  tracking: committed {len(u):,} delta hashes')" && rm -f "$CT_PEND" ;;
         all)    build trials chunk ${prod:+--prod}; build trials embed ${prod:+--prod}; build trials insert ${prod:+--prod} ;;
         *) echo "trials stages: all | chunk | embed | insert  (source: biobtree trials.json; embed = MedCPT-Article, GPU)"; ;;
       esac ;;
