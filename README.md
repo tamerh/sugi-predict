@@ -82,4 +82,5 @@ Preprint — *forthcoming*.
 
 ## License
 
-Apache 2.0.
+- **Code** — AGPL-3.0 ([LICENSE](LICENSE)). Commercial licensing available on request.
+- **Data** — the published atlas is derived from ChEMBL (CC-BY-SA 3.0) and follows its share-alike and attribution terms.
