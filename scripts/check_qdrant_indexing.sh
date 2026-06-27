@@ -1,9 +1,9 @@
 #!/bin/bash
-# Monitor Qdrant patents_compounds indexing progress
-# Usage: ./check_qdrant_indexing.sh [interval_seconds]
+# Monitor Qdrant patent_compounds indexing progress
+# Usage: ./check_qdrant_indexing.sh [interval_seconds] [collection]
 
 INTERVAL=${1:-5}
-COLLECTION="patents_compounds"
+COLLECTION="${2:-patent_compounds}"
 HOST="localhost:6333"
 
 echo "Monitoring $COLLECTION indexing (Ctrl+C to stop)..."

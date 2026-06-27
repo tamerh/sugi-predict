@@ -37,14 +37,14 @@ The Qdrant container (`modules/qdrant/setup/singularity/qdrant.sif`) is included
 # 1. Start Qdrant server
 ./bioyoda.sh qdrant start
 
-# 2. Insert data (after processing)
-./bioyoda.sh qdrant insert pubmed
-./bioyoda.sh qdrant insert clinical_trials
-./bioyoda.sh qdrant insert patents_compounds
-./bioyoda.sh qdrant insert esm2
+# 2. Build/insert a collection (inserts moved out of `qdrant` into `build`)
+./bioyoda.sh build trials insert         # clinical_trials_medcpt
+./bioyoda.sh build compounds all         # patent_compounds (chunk/predict/ingest/...)
+./bioyoda.sh build reference chembl      # chembl
+# patents_text: ./bioyoda.sh atlas text insert ;  esm2: ./bioyoda.sh build proteins insert
 
 # 3. Trigger HNSW indexing for large collections
-./bioyoda.sh qdrant reindex patents_compounds --monitor
+./bioyoda.sh qdrant reindex patent_compounds --monitor
 
 # 4. Check status
 ./bioyoda.sh qdrant status
@@ -102,24 +102,19 @@ Shows:
 
 ### Insert Data
 
+Inserts moved out of the `qdrant` command into `build` (the old Snakemake `qdrant insert` path was retired). Each served collection is built/inserted via its `build` (or `atlas`) stage:
+
 ```bash
-# Insert specific dataset
-./bioyoda.sh qdrant insert pubmed
-./bioyoda.sh qdrant insert clinical_trials
-./bioyoda.sh qdrant insert patents
-./bioyoda.sh qdrant insert esm2
-
-# Insert all datasets
-./bioyoda.sh qdrant insert all
-
-# Insert locally with specific cores
-./bioyoda.sh qdrant insert pubmed --local --cores 4
+./bioyoda.sh build trials insert          # clinical_trials_medcpt
+./bioyoda.sh build compounds all          # patent_compounds (chunk/predict/ingest/provenance/denoise)
+./bioyoda.sh build reference chembl       # chembl
+./bioyoda.sh atlas text insert            # patents_text (-> patents_text_medcpt)
+./bioyoda.sh build proteins insert        # esm2
 ```
 
 **Incremental Updates:**
-- Insertion automatically tracks processed files
-- Skips already-inserted data
-- Uses document-based point IDs for upsert (no duplicates)
+- Build stages track processed files / point IDs and skip already-inserted data
+- Document-based point IDs make re-runs idempotent (upsert, no duplicates)
 
 ### Trigger HNSW Indexing (Reindex)
 
@@ -127,21 +122,21 @@ After bulk insertion, HNSW indexing may need to be triggered manually for large 
 
 ```bash
 # Trigger indexing for specific collection
-./bioyoda.sh qdrant reindex patents_compounds
+./bioyoda.sh qdrant reindex patent_compounds
 
 # Trigger and monitor progress
-./bioyoda.sh qdrant reindex patents_compounds --monitor
+./bioyoda.sh qdrant reindex patent_compounds --monitor
 
 # Reindex all collections
 ./bioyoda.sh qdrant reindex all
 
 # Custom indexing threshold (default: 20000)
-./bioyoda.sh qdrant reindex patents_compounds --threshold 10000
+./bioyoda.sh qdrant reindex patent_compounds --threshold 10000
 ```
 
 **Why is this needed?**
 
-For performance during bulk inserts, some collections (e.g., `patents_compounds`) have a high `indexing_threshold` in config. This delays HNSW index building until after insertion completes.
+For performance during bulk inserts, some collections (e.g., `patent_compounds`) have a high `indexing_threshold` in config. This delays HNSW index building until after insertion completes.
 
 The reindex command:
 1. Lowers `indexing_threshold` to enable indexing
@@ -154,7 +149,7 @@ The reindex command:
 ./scripts/check_qdrant_indexing.sh
 
 # Or with the reindex command
-./bioyoda.sh qdrant reindex patents_compounds --monitor
+./bioyoda.sh qdrant reindex patent_compounds --monitor
 ```
 
 **Note:** HNSW index building for 30M+ vectors takes several hours. Without the index, searches do full scans (100+ seconds per query).
@@ -180,9 +175,10 @@ qdrant/
 ├── storage/                # Qdrant data directory
 │   ├── collections/
 │   │   ├── pubmed_abstracts/
-│   │   ├── clinical_trials/
-│   │   ├── patents_text/
-│   │   ├── patents_compounds/
+│   │   ├── clinical_trials_medcpt/
+│   │   ├── patents_text_medcpt/
+│   │   ├── patent_compounds_v2/
+│   │   ├── chembl/
 │   │   └── esm2/
 │   └── meta.json
 └── snapshots/              # Qdrant snapshots
@@ -190,30 +186,17 @@ qdrant/
 
 ## Collections
 
-| Collection | Source | Vectors | Description |
-|------------|--------|---------|-------------|
-| `pubmed_abstracts` | PubMed | ~30M | Literature abstracts |
-| `clinical_trials` | ClinicalTrials.gov | ~3M | Trial documents (chunked) |
-| `patents_text` | SureChEMBL | ~43M | Patent text embeddings |
-| `patents_compounds` | SureChEMBL | ~30M | Chemical fingerprints |
-| `esm2` | UniProt | ~570K | Protein embeddings |
+Five served collections (`patent_compounds` and `patents_text` are Qdrant aliases):
 
-## Insert from Snapshots
+| Collection | Source | Vectors | Modality | Notes |
+|------------|--------|---------|----------|-------|
+| `patent_compounds` | SureChEMBL | ~30M | Chemical (Morgan 2048-d) | alias -> `patent_compounds_v2`; FPs + predictions + provenance |
+| `chembl` | ChEMBL | ~683K | Chemical (Morgan 2048-d) | reference ligands (answer key) |
+| `clinical_trials_medcpt` | ClinicalTrials.gov | ~3M | Text (MedCPT 768-d) | trial documents (chunked) |
+| `patents_text` | SureChEMBL + USPTO | ~39.6M | Text (MedCPT 768-d) | alias -> `patents_text_medcpt` |
+| `esm2` | UniProt (SwissProt) | ~574K | Protein (ESM-2 1280-d) | protein embeddings |
 
-Each processing snapshot can insert to the shared Qdrant:
-
-```bash
-# From ESM2 snapshot
-cd snapshots/esm2_latest/code
-./bioyoda.sh qdrant insert esm2
-
-# From Patents snapshot
-cd snapshots/patents_latest/code
-./bioyoda.sh qdrant insert patents
-
-# From main project directory
-./bioyoda.sh qdrant insert all
-```
+(PubMed is not currently served.)
 
 ## Query Collections
 
@@ -261,11 +244,11 @@ tail -f work/logs/qdrant/server_*.log
 # Check if data exists
 ls -lh work/data/processed/pubmed/baseline/*.index
 
-# Check insertion logs
-tail -f work/logs/qdrant/insert_pubmed.log
+# Check build logs
+tail -f logs/build/<collection>/insert-*.log
 
-# Re-run insertion
-./bioyoda.sh qdrant insert pubmed
+# Re-run the build/insert stage (inserts live under `build`)
+./bioyoda.sh build trials insert
 ```
 
 ### Connection Issues

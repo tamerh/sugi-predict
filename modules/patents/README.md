@@ -485,11 +485,11 @@ After processing, insert to Qdrant for vector search:
 # Start Qdrant server
 ./bioyoda.sh qdrant start
 
-# Insert patent text
-./bioyoda.sh qdrant insert patents_text
+# Insert patent text (-> patents_text_medcpt, served as patents_text)
+./bioyoda.sh atlas text insert
 
-# Insert compounds
-./bioyoda.sh qdrant insert patents_compounds
+# Build/insert compounds (-> patent_compounds)
+./bioyoda.sh build compounds all
 ```
 
 ## Search Examples
@@ -508,7 +508,7 @@ results = qdrant.search(
 ```python
 # Find similar structures to aspirin
 results = qdrant.search(
-    collection_name="patents_compounds",
+    collection_name="patent_compounds",
     query_vector=morgan_fingerprint("CC(=O)Oc1ccccc1C(=O)O"),
     limit=50
 )
