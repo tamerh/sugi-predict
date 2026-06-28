@@ -12,10 +12,12 @@ Usage: python build_fpsim2.py [LIMIT]   # LIMIT rows for a validation build; omi
 """
 import glob, time, os, sys
 import pyarrow.parquet as pq
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from FPSim2.io import create_db_file
+from modules.paths import CHUNKED_COMPOUNDS, FPSIM2
 
-SRC = sorted(glob.glob('/data/bioyoda/raw_data/patents/chunked_compounds/compounds_chunk_*.parquet'))
-OUTDIR = '/data/bioyoda/work/fpsim2'
+SRC = sorted(glob.glob(str(CHUNKED_COMPOUNDS / 'compounds_chunk_*.parquet')))
+OUTDIR = str(FPSIM2)
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else None
 tag = f"_test{LIMIT}" if LIMIT else ""
 SMI = f"{OUTDIR}/compounds{tag}.smi"

@@ -44,6 +44,7 @@ def scorings(nbrs, ct, tsize, N):
 if __name__ == "__main__":
     import sys, os, json
     sys.path.insert(0, "/data/bioyoda/modules/compounds"); sys.path.insert(0, "/data/bioyoda")
+    from modules.paths import TARGET_GENES_JSON
     from rdkit import RDLogger; RDLogger.DisableLog("rdApp.*")
     import target, fto
     eng, ct = target.engine()
@@ -51,7 +52,7 @@ if __name__ == "__main__":
     tsize = collections.Counter()
     for ts in ct.values():
         for t in ts: tsize[t] += 1
-    G = json.load(open("/data/bioyoda/work/chembl_reference/target_genes.json"))
+    G = json.load(open(TARGET_GENES_JSON))
     gene = lambda a: G.get(a, {}).get("gene", a)
 
     # (drug, set of acceptable "right" targets by UniProt)

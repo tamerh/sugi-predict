@@ -17,9 +17,10 @@ from qdrant_client import QdrantClient, models
 sys.path.insert(0, "/data/bioyoda")
 from modules.qdrant.collection_profiles import (MAX_SEGMENT_SIZE, MEMMAP_THRESHOLD,
                                                 DEFER_THRESHOLD, BUILD_THRESHOLD, MAX_INDEXING_THREADS)
+from modules.paths import CHEMBL_REF
 ap = argparse.ArgumentParser()
 ap.add_argument("--collection", default="chembl")
-ap.add_argument("--ref", default="/data/bioyoda/work/chembl_reference")
+ap.add_argument("--ref", default=str(CHEMBL_REF))
 args = ap.parse_args()
 REF = args.ref; NAME = args.collection
 c = QdrantClient(url="http://localhost:6333", timeout=600, check_compatibility=False)

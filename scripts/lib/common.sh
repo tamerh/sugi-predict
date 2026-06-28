@@ -16,6 +16,20 @@ source "${LIB_DIR}/logging.sh"
 source "${LIB_DIR}/config.sh"
 source "${LIB_DIR}/process.sh"
 
+# --- single source of truth for Python: export ROOT + WORK from config.yaml base_dir ---
+# The Python side (modules/paths.py) reads BIOYODA_ROOT / BIOYODA_WORK and falls back to a
+# __file__-derived default when unset (standalone runs). config.yaml `base_dir` stays the one knob.
+export BIOYODA_ROOT="${PIPELINE_DIR:-$(pwd)}"
+if [[ -z "${BIOYODA_WORK:-}" ]]; then
+    _bioyoda_base="$(get_base_dir "config/config.yaml" 2>/dev/null)"
+    _bioyoda_base="${_bioyoda_base:-work}"
+    case "$_bioyoda_base" in
+        /*) export BIOYODA_WORK="$_bioyoda_base" ;;
+        *)  export BIOYODA_WORK="${BIOYODA_ROOT}/${_bioyoda_base}" ;;
+    esac
+    unset _bioyoda_base
+fi
+
 # Delete-guard: refuse to rm a path that is empty, a filesystem/repo root, or that
 # resolves inside a PROTECTED root (raw_data/, out_prod/qdrant/). Catches the
 # classic misfire where an unset base_dir turns `rm -rf "$base_dir/data/.."` into

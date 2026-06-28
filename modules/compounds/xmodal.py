@@ -17,6 +17,7 @@ import sys, json, time, subprocess, urllib.request, urllib.parse
 import os
 ROOT = os.environ.get("BIOYODA_ROOT", "/data/bioyoda")
 sys.path.insert(0, os.environ.get("SUGI_ATLAS_SRC", "/data/sugi-atlas/src")); sys.path.insert(0, ROOT)
+from modules.paths import DIAMOND_TSV
 import torch
 from transformers import AutoTokenizer, AutoModel
 from qdrant_client import QdrantClient
@@ -24,7 +25,7 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 import atlas.biobtree as B
 
 def _warn(msg): print(f"  [xmodal] {msg}", file=sys.stderr)   # so a 0-result is distinguishable from a failure
-DIAMOND_TSV = f"{ROOT}/work/data/processed/diamond/merged/filtered_top100.tsv"
+DIAMOND_TSV = str(DIAMOND_TSV)
 ESM_TOPK, MAX_TWILIGHT, NDRUG_CAP = 30, 4, 300
 GROUND_THR = 0.50   # MedCPT relevance floor: below this the "nearest abstract" is not real grounding
 c = QdrantClient(url="http://localhost:6333", timeout=120)

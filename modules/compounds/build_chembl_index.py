@@ -4,9 +4,11 @@ reference.tsv (cid \\t smiles)  ->  reference_fpsim2.smi (smiles \\t cid)  ->  F
 Run after build_chembl_reference.py. The .h5 is what target.py uses locally AND what we push to the GPU box.
 Usage: python build_chembl_index.py
 """
-import time, os
+import time, os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from FPSim2.io import create_db_file
-REF = "/data/bioyoda/work/chembl_reference"
+from modules.paths import CHEMBL_REF
+REF = str(CHEMBL_REF)
 SMI, H5 = f"{REF}/reference_fpsim2.smi", f"{REF}/chembl_reference_morgan_r2_2048.h5"
 t = time.time(); n = 0
 with open(SMI, "w") as out:

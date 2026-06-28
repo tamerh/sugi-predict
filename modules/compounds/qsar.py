@@ -15,6 +15,8 @@ from collections import defaultdict
 warnings.filterwarnings("ignore")
 ROOT = os.environ.get("BIOYODA_ROOT", "/data/bioyoda")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # so `import fto` works regardless of cwd
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from modules.paths import QSAR_MODELS
 import numpy as np, joblib
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem
@@ -26,7 +28,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 RDLogger.DisableLog("rdApp.*")
 
 RADIUS, NBITS, SEED, MIN_LABELS = 2, 2048, 42, 200
-MODELDIR = f"{ROOT}/work/qsar_models"
+MODELDIR = str(QSAR_MODELS)
 
 def featurize(smiles):
     m = Chem.MolFromSmiles(smiles)

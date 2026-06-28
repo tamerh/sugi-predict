@@ -43,9 +43,11 @@ QDRANT_URL = os.environ.get("BIOYODA_QDRANT_URL", "http://localhost:6333")
 BG_SAMPLE = 20000   # full-text patents sampled for the background mean
 
 ROOT = os.environ.get("BIOYODA_ROOT", "/data/bioyoda")
-REF = f"{ROOT}/work/chembl_reference/target_genes.json"
-OUT_DIR = pathlib.Path(f"{ROOT}/work/patent_text_support")
-OUT = OUT_DIR / "target_query_emb.npz"
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from modules.paths import TARGET_GENES_JSON, PATENT_TEXT_SUPPORT, TEXT_SUPPORT_QUERY_EMB
+REF = str(TARGET_GENES_JSON)
+OUT_DIR = PATENT_TEXT_SUPPORT
+OUT = TEXT_SUPPORT_QUERY_EMB
 
 
 def query_string(acc, meta):

@@ -2,12 +2,13 @@
 # Current layout (2026-06-13 reorg):
 #   raw_data/  = ALL inputs, consolidated at root
 #   work/      = pipeline working outputs (was "out"): data/ state/ logs/
-#   qdrant/    = LIVE serving DB (was snapshots/qdrant_latest)
-#   snapshots/ = published/archival bundles only
+#   out_prod/  = prod outputs container — the LIVE qdrant DB lives at out_prod/qdrant/
+#   (qdrant/ + snapshots/ at root retired 2026-06-28; kept ignored as a safety net)
 # Anchored to repo ROOT (leading /) so they only match the top-level data dirs and
 # NEVER a code dir like modules/qdrant/.
 /raw_data/
 /work/
+/out_prod/
 /qdrant/
 /snapshots/
 

@@ -15,8 +15,10 @@ from rdkit import Chem
 from rdkit import RDLogger; RDLogger.DisableLog("rdApp.*")
 
 ROOT = os.environ.get("BIOYODA_ROOT", "/data/bioyoda")
-H5 = f"{ROOT}/work/fpsim2/patents_compounds_morgan_r2_2048.h5"
-PARQ = sorted(glob.glob(f"{ROOT}/raw_data/patents/chunked_compounds/compounds_chunk_*.parquet"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from modules.paths import FPSIM2_PATENTS_H5, CHUNKED_COMPOUNDS
+H5 = str(FPSIM2_PATENTS_H5)
+PARQ = sorted(glob.glob(str(CHUNKED_COMPOUNDS / "compounds_chunk_*.parquet")))
 
 _eng = None
 def engine(in_memory=True):

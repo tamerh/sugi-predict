@@ -9,6 +9,8 @@ import sys
 sys.path.insert(0, "/data/bioyoda/modules/compounds")
 sys.path.insert(0, "/data/bioyoda")
 
+from modules.paths import (TEXT_SUPPORT_QUERY_EMB, CHEMBL_NAMES_JSON,
+                           CHEMBL_MECHANISMS_JSON)
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny, Range
 
@@ -204,8 +206,7 @@ def _target_emb():
     global _TGT_EMB
     if _TGT_EMB is None:
         import numpy as np
-        p = os.environ.get("PATENT_TEXT_SUPPORT_NPZ",
-                           "/data/bioyoda/work/patent_text_support/target_query_emb.npz")
+        p = os.environ.get("PATENT_TEXT_SUPPORT_NPZ", str(TEXT_SUPPORT_QUERY_EMB))
         d = np.load(p, allow_pickle=True)
         hmask = d["human"].astype(bool)
         emb = d["emb"][hmask]
@@ -341,7 +342,7 @@ def name(smiles):
     if _NAMES is None:
         import json
         try:
-            _NAMES = json.load(open("/data/bioyoda/work/chembl_names.json"))
+            _NAMES = json.load(open(CHEMBL_NAMES_JSON))
         except Exception:
             _NAMES = {}
     from rdkit import Chem
@@ -368,7 +369,7 @@ def known_targets(smiles):
     if _MECH is None:
         import json
         try:
-            _MECH = json.load(open("/data/bioyoda/work/chembl_mechanisms.json"))
+            _MECH = json.load(open(CHEMBL_MECHANISMS_JSON))
         except Exception:
             _MECH = {}
     from rdkit import Chem

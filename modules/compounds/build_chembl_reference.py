@@ -16,9 +16,11 @@ Usage: python build_chembl_reference.py [LIMIT_TARGETS]   # LIMIT for a test sli
 """
 import sys, os, json, time
 sys.path.insert(0, "/data/sugi-atlas/src")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 import atlas.biobtree as B
+from modules.paths import CHEMBL_REF
 
-OUT = "/data/bioyoda/work/chembl_reference"
+OUT = str(CHEMBL_REF)
 CHAIN = ">>uniprot>>chembl_target>>chembl_molecule>>pubchem"
 CAP = 2000          # effectively UNCAPPED: pagination terminates naturally (new==0/no next_token);
                     # this is just a runaway ceiling. (Was 12 ≈ 1,300 ligands/target — truncated popular

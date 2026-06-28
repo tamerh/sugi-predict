@@ -13,10 +13,13 @@ noise   = n_patents above NOISE_CAP (generic fragment / excipient claimed everyw
 Honest gaps (see docs/internal/PATENT_PROVENANCE.md): only publication_date (no priority/filing date); assignee
 is the raw, un-normalized SureChEMBL list; no inventors.
 """
+import os, sys
 import pyarrow.parquet as pq
 from collections import defaultdict
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from modules.paths import surechembl_snapshot
 
-DIR = "/data/bioyoda/raw_data/patents/surechembl/2025-12-15"
+DIR = str(surechembl_snapshot("2025-12-15"))
 MAP = f"{DIR}/patent_compound_map.parquet"
 PATENTS = f"{DIR}/patents.parquet"
 NOISE_CAP = 2000        # n_patents above this = generic/excipient noise, not IP-informative

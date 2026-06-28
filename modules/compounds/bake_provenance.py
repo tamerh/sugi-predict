@@ -25,7 +25,10 @@ import argparse, os, sys, time
 import pyarrow.parquet as pq
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from patent_provenance import _span, NOISE_CAP
+from modules.paths import (surechembl_snapshot, BAKE_PROVENANCE_CKPT,
+                           PATENT_COMPOUND_MAP_SORTED, DUCKDB_TMP)
 
 
 def load_patent_meta(patents_parquet):
@@ -91,7 +94,7 @@ def sort_map(map_path, sorted_path, tmp_dir, mem_limit, threads, force=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--snapshot", default="/data/bioyoda/raw_data/patents/surechembl/2025-12-15")
+    ap.add_argument("--snapshot", default=str(surechembl_snapshot("2025-12-15")))
     ap.add_argument("--collection", default="patent_compounds")
     ap.add_argument("--qdrant", default="http://localhost:6333")
     ap.add_argument("--top", type=int, default=20)
@@ -100,9 +103,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--resort", action="store_true")        # force rebuild of the sorted map
-    ap.add_argument("--ckpt", default="/data/bioyoda/work/bake_provenance.ckpt")
-    ap.add_argument("--sorted", dest="sorted_path", default="/data/bioyoda/work/patent_compound_map.sorted.parquet")
-    ap.add_argument("--duck-tmp", default="/data/bioyoda/work/duckdb_tmp")
+    ap.add_argument("--ckpt", default=str(BAKE_PROVENANCE_CKPT))
+    ap.add_argument("--sorted", dest="sorted_path", default=str(PATENT_COMPOUND_MAP_SORTED))
+    ap.add_argument("--duck-tmp", default=str(DUCKDB_TMP))
     ap.add_argument("--mem-limit", default="20GB")
     ap.add_argument("--threads", type=int, default=8)
     a = ap.parse_args()

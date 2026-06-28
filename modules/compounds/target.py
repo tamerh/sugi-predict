@@ -22,8 +22,9 @@ from FPSim2 import FPSim2Engine
 from rdkit import RDLogger; RDLogger.DisableLog("rdApp.*")
 import atlas.biobtree as B
 import fto                                                                          # query resolver
+from modules.paths import CHEMBL_REF
 
-REF = f"{ROOT}/work/chembl_reference"
+REF = str(CHEMBL_REF)
 H5 = f"{REF}/chembl_reference_morgan_r2_2048.h5"
 KNN, MIN_TAN = 20, 0.30
 _eng = _ct = None

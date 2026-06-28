@@ -24,8 +24,9 @@ from rdkit import RDLogger; RDLogger.DisableLog("rdApp.*")
 from qdrant_client import QdrantClient, models
 from modules.qdrant.collection_profiles import (MAX_SEGMENT_SIZE, MEMMAP_THRESHOLD,
                                                  DEFER_THRESHOLD, BUILD_THRESHOLD, MAX_INDEXING_THREADS)
-PARQ = sorted(glob.glob("/data/bioyoda/raw_data/patents/chunked_compounds/compounds_chunk_*.parquet"))
-GENE_CACHE = "/data/bioyoda/work/chembl_reference/target_genes.json"
+from modules.paths import CHUNKED_COMPOUNDS, TARGET_GENES_JSON
+PARQ = sorted(glob.glob(str(CHUNKED_COMPOUNDS / "compounds_chunk_*.parquet")))
+GENE_CACHE = str(TARGET_GENES_JSON)
 MIN_HEAVY = 10                                  # skip solvents/fragments (toluene-class noise)
 
 # ---------------- worker (per process) ----------------

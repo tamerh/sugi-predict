@@ -18,7 +18,8 @@ from rdkit import RDLogger; RDLogger.DisableLog("rdApp.*")
 from qdrant_client import QdrantClient, models
 from modules.qdrant.collection_profiles import (MAX_SEGMENT_SIZE, MEMMAP_THRESHOLD,
                                                  DEFER_THRESHOLD, BUILD_THRESHOLD, MAX_INDEXING_THREADS)
-GENE_CACHE = "/data/bioyoda/work/chembl_reference/target_genes.json"
+from modules.paths import TARGET_GENES_JSON
+GENE_CACHE = str(TARGET_GENES_JSON)
 
 _W = {}
 def _init(name, preds_dir):

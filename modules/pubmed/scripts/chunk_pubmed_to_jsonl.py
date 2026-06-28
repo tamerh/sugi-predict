@@ -27,6 +27,8 @@ sidecar; insert_from_faiss derives the Qdrant point id directly from `pmid` (int
 """
 import os, sys, gzip, json, glob, argparse
 import xml.etree.ElementTree as ET
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+from modules.paths import PUBMED_RAW, MEDCPT_IN_PUBMED
 
 
 def load_pmid_set(path, label):
@@ -78,9 +80,9 @@ def iter_abstracts(xml_gz, deleted, existing):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--raw-dir", default="/data/bioyoda/work/raw_data/pubmed",
+    ap.add_argument("--raw-dir", default=str(PUBMED_RAW),
                     help="dir with baseline/ and updatefiles/ of *.xml.gz (the download checkpoint output)")
-    ap.add_argument("--out-dir", default="/data/bioyoda/work/data/medcpt_input/pubmed")
+    ap.add_argument("--out-dir", default=str(MEDCPT_IN_PUBMED))
     ap.add_argument("--deleted-pmids", default=None,
                     help="NCBI deleted.pmids.sorted.gz (default: <raw-dir>/deleted.pmids.sorted.gz if present)")
     ap.add_argument("--existing-pmids", default=None,

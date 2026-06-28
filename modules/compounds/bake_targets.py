@@ -15,7 +15,9 @@ Validated (usecases/val_floor.py, leave-one-out over the 1.25M ChEMBL reference)
 
 Reproducible: `bioyoda.sh build compounds denoise`. Small-data test: tests/test_atlas_targets.py. No GPU -- payload only.
 """
-import argparse, os, time
+import argparse, os, sys, time
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from modules.paths import BAKE_TARGETS_CKPT
 
 
 def strong_targets(predicted, floor, cap):
@@ -35,7 +37,7 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--resume", action="store_true")
-    ap.add_argument("--ckpt", default="/data/bioyoda/work/bake_targets.ckpt")
+    ap.add_argument("--ckpt", default=str(BAKE_TARGETS_CKPT))
     a = ap.parse_args()
     from qdrant_client import QdrantClient, models
     qc = QdrantClient(url=a.qdrant, timeout=600)

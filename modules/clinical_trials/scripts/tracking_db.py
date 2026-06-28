@@ -258,7 +258,9 @@ def compute_trial_hash(trial_data: Dict[str, Any]) -> str:
 
 def main():
     """CLI interface for tracking database operations."""
-    import argparse
+    import argparse, os, sys
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+    from modules.paths import TRIALS_TRACKING_DB
 
     parser = argparse.ArgumentParser(
         description="Clinical Trials Tracking Database Management"
@@ -266,7 +268,7 @@ def main():
     parser.add_argument(
         '--tracking-db',
         type=str,
-        default='work/state/clinical_trials/trials_tracking.db',
+        default=str(TRIALS_TRACKING_DB),
         help='Path to tracking database'
     )
     parser.add_argument(

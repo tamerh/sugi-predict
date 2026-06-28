@@ -21,6 +21,7 @@ sys.path.insert(0, "/data/bioyoda")
 import ijson
 from modules.clinical_trials.scripts.process_trials import TrialTextProcessor
 from modules.clinical_trials.scripts.tracking_db import TrialsTracker, compute_trial_hash
+from modules.paths import MEDCPT_IN_TRIALS, TRIALS_TRACKING_DB
 
 # trial-level fields carried onto every chunk's payload (matches the live collection's payload schema)
 TRIAL_FIELDS = ["brief_title", "overall_status", "phase", "study_type", "conditions", "interventions",
@@ -30,8 +31,8 @@ TRIAL_FIELDS = ["brief_title", "overall_status", "phase", "study_type", "conditi
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--trials-json", default="/data/biobtree/raw_data/clinical_trials/trials.json")
-    ap.add_argument("--out-dir", default="/data/bioyoda/work/data/medcpt_input/clinical_trials")
-    ap.add_argument("--tracking-db", default="/data/bioyoda/work/state/clinical_trials/trials_tracking.db")
+    ap.add_argument("--out-dir", default=str(MEDCPT_IN_TRIALS))
+    ap.add_argument("--tracking-db", default=str(TRIALS_TRACKING_DB))
     ap.add_argument("--full", action="store_true",
                     help="chunk ALL trials (default: incremental — only new/changed vs the tracking DB)")
     ap.add_argument("--shard-size", type=int, default=50000)

@@ -25,10 +25,11 @@ from rdkit import RDLogger; RDLogger.DisableLog("rdApp.*")
 from qdrant_client import QdrantClient, models
 from modules.qdrant.collection_profiles import (MAX_SEGMENT_SIZE, MEMMAP_THRESHOLD,
                                                  DEFER_THRESHOLD, BUILD_THRESHOLD, MAX_INDEXING_THREADS)
-REF = "/data/bioyoda/work/chembl_reference"
-NBRS = "/data/bioyoda/work/atlas_nbrs"
-COMPOUNDS = "/data/bioyoda/raw_data/patents/chunked_compounds"
-PREDDIR = "/data/bioyoda/work/atlas_preds_aligned"
+from modules.paths import CHEMBL_REF, ATLAS_NBRS, ATLAS_PREDS_ALIGNED, CHUNKED_COMPOUNDS
+REF = str(CHEMBL_REF)
+NBRS = str(ATLAS_NBRS)
+COMPOUNDS = str(CHUNKED_COMPOUNDS)
+PREDDIR = str(ATLAS_PREDS_ALIGNED)
 KNN, MIN_TAN = 20, 0.30
 
 

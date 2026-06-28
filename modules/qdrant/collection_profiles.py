@@ -15,6 +15,11 @@ in production (2026-06). Consumed by scripts/rebuild_collection.py. The guiding 
   * Distance is Cosine everywhere; payload always on_disk.
 """
 
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from modules.paths import (MEDCPT_OUT_PUBMED, MEDCPT_OUT_TRIALS,
+                           MEDCPT_OUT_PATENTS, ESM2_EMBEDDINGS)
+
 # Quant shorthands resolved in rebuild_collection.py
 INT8 = {"type": "scalar_int8", "always_ram": False}   # dense embeddings (mmap quant)
 BINARY = {"type": "binary", "always_ram": True}        # 0/1 fingerprints (in-RAM, ~8GB)
@@ -23,7 +28,7 @@ PROFILES = {
     "pubmed_abstracts_medcpt": {
         "dim": 768, "vectors_on_disk": False, "hnsw_m": 16, "hnsw_ef": 100,
         "quant": INT8,
-        "faiss_source": "work/data/medcpt_output/pubmed",
+        "faiss_source": str(MEDCPT_OUT_PUBMED),
         "query_encoder": "ncbi/MedCPT-Query-Encoder",       # asymmetric; corpus = Article-Encoder
         "notes": "hot literature; vectors in-RAM for lowest latency (~16ms). NOT currently served (no prod "
                  "PubMed collection at present); recipe kept live for `bioyoda.sh build text` + pubmed-update.",
@@ -31,14 +36,14 @@ PROFILES = {
     "clinical_trials_medcpt": {
         "dim": 768, "vectors_on_disk": False, "hnsw_m": 16, "hnsw_ef": 100,
         "quant": INT8,
-        "faiss_source": "work/data/medcpt_output/clinical_trials",
+        "faiss_source": str(MEDCPT_OUT_TRIALS),
         "query_encoder": "ncbi/MedCPT-Query-Encoder",
         "notes": "multi-section trials; dedup results by nct_id at query time.",
     },
     "patents_text_medcpt": {
         "dim": 768, "vectors_on_disk": True, "hnsw_m": 32, "hnsw_ef": 256,
         "quant": INT8,
-        "faiss_source": "work/data/medcpt_output/patents",
+        "faiss_source": str(MEDCPT_OUT_PATENTS),
         "query_encoder": "ncbi/MedCPT-Query-Encoder",       # asymmetric; corpus = Article-Encoder (atlas text pipeline)
         "notes": "~39.6M patents (title + USPTO full-text where available), MedCPT-Article embeddings; "
                  "vectors on_disk (mmap) — too big for RAM; ~30ms queries. Served as `patents_text` (alias).",
@@ -46,7 +51,7 @@ PROFILES = {
     "esm2": {
         "dim": 1280, "vectors_on_disk": False, "hnsw_m": 32, "hnsw_ef": 256,
         "quant": INT8,
-        "faiss_source": "work/data/processed/esm2/embeddings",
+        "faiss_source": str(ESM2_EMBEDDINGS),
         "query_encoder": None,  # protein: query is an ESM-2 vector (by protein_id) or raw embedding
         "notes": "574K proteins; small, vectors in-RAM. Mixed point-ids (legacy seq + delta hash).",
     },
