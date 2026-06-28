@@ -21,7 +21,7 @@ ROOT="$(cd "${COMMANDS_DIR}/../.." && pwd)"
 if [[ -x /data/miniconda3/envs/bioyoda/bin/python ]]; then PY=/data/miniconda3/envs/bioyoda/bin/python
 elif command -v conda >/dev/null 2>&1 && conda env list 2>/dev/null | grep -q '^bioyoda '; then PY="conda run -n bioyoda python"
 else PY=python3; fi
-QURL="${QDRANT_URL:-http://localhost:6333}"
+QURL="${BIOYODA_QDRANT_URL:-${QDRANT_URL:-http://localhost:6333}}"   # BIOYODA_QDRANT_URL = the one knob (tests use it too) -> point build+test at staging :6433
 
 log(){ printf '\033[36m[build]\033[0m %s\n' "$*"; }
 
