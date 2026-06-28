@@ -10,13 +10,13 @@ DIR=work/data/processed/patents/text_gap
 python3 - "$DIR" <<'PY'
 import sys, glob, faiss
 d = sys.argv[1]
-idxs = sorted(glob.glob(f"{d}/uspto_gap_*.index"))
+idxs = sorted(glob.glob(f"{d}/batch_*.index"))
 total = sum(faiss.read_index(ix).ntotal for ix in idxs)
 print(f"batches embedded : {len(idxs)}")
 print(f"full-text vectors: {total:,}")
-print("NEXT (follow-up, not in DAG): additive UPSERT into patents_text ->")
+print("NEXT (follow-up, not in DAG): additive UPSERT into patents_text_medcpt ->")
 print(f"  python modules/qdrant/scripts/insert_from_faiss.py \\")
-print(f"    --faiss-dir {d} --collection patents_text \\")
+print(f"    --faiss-dir {d} --collection patents_text_medcpt \\")
 print(f"    --qdrant-url http://localhost:6333 --vector-size 768")
 PY
 echo "report done" >&2

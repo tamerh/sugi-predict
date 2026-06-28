@@ -13,17 +13,19 @@ description: |
 
   STAGE 1 (prepare): extract US patent-ID filter from SureChEMBL -> organize the manual
     ZIPs (fixing download_uspto.py's broken relative symlinks -> absolute) -> parse_uspto
-    (XML -> abstract+claims+description, filtered) -> tag has_full_text=True /
-    text_source=surechembl+uspto -> split into 32 fixed batches.
-  STAGE 2 (embed, fan-out x32): process_patents.py S-BioBERT 768-d, 1 combined vector per
-    patent (CPU).
+    (XML -> abstract+claims+description, filtered) -> build combined text (title doubled +
+    abstract+claims+description), tag has_full_text=True / text_source=surechembl+uspto ->
+    write 32 fixed JSONL shards (same record shape as prepare_medcpt_shards.py).
+  STAGE 2 (embed, fan-out x32): scripts/gpu/embed_text_medcpt_gpu.py, MedCPT-Article 768-d
+    (CLS pooling — the SAME embed path as the base build, so vectors share the served space),
+    1 combined vector per patent.
   STAGE 3 (report): aggregate vector count + chunk-type breakdown.
 
   Qdrant insert is a deliberate FOLLOW-UP (not in this DAG): additive UPSERT by
-  hash(patent_id) — existing title-only patents upgraded to full-text in place, new ones
-  added. Run:
+  hash(patent_id) into patents_text_medcpt — existing title-only patents upgraded to
+  full-text in place, new ones added. Run:
     python modules/qdrant/scripts/insert_from_faiss.py \
-      --faiss-dir work/data/processed/patents/text_gap --collection patents_text \
+      --faiss-dir work/data/processed/patents/text_gap --collection patents_text_medcpt \
       --qdrant-url http://localhost:6333 --vector-size 768
 version: 1
 publish:
@@ -50,7 +52,7 @@ tasks:
     collects: prepare
     for_each:
       batch: ["01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","31","32"]
-    prompt: "Embed patents_text batch {{batch}} (S-BioBERT full-text)."
+    prompt: "Embed patents_text batch {{batch}} (MedCPT-Article full-text)."
   - id: report
     action: compute
     script: workflows/patents-text-update/scripts/report.sh

@@ -34,20 +34,59 @@ python modules/patents/scripts/parse_uspto.py \
     --filter-ids "$STATE/us_patent_ids.txt" \
     --output "$WORK/uspto_gap_parsed.parquet"
 
-# 4. Tag has_full_text=True / text_source=surechembl+uspto, then split into 32 batches.
-#    process_patents.py defaults has_full_text=False (-> title-only) without these flags.
+# 4. Build the combined searchable text (title doubled + abstract + claims + description),
+#    tag has_full_text=True / text_source=surechembl+uspto, and write 32 JSONL shards in the
+#    EXACT record shape modules/patents/scripts/prepare_medcpt_shards.py emits, so the embed
+#    step can use the shared MedCPT-Article path (embed_text_medcpt_gpu.py) and the vectors
+#    land in the same CLS-pooled MedCPT space as the served patents_text_medcpt base build.
 python3 - "$WORK/uspto_gap_parsed.parquet" "$WORK/text_gap_batches" <<'PY'
-import sys, pandas as pd, os, math
+import sys, os, re, json, math, pandas as pd
+
 src, outdir = sys.argv[1], sys.argv[2]
 os.makedirs(outdir, exist_ok=True)
+
+_URL = re.compile(r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+")
+def clean_text(t):                                    # same normalization as prepare_medcpt_shards.py
+    if t is None or (isinstance(t, float) and pd.isna(t)):
+        return ""
+    t = str(t)
+    t = re.sub(r"\s+", " ", t.strip())
+    t = re.sub(r"\r\n|\r|\n", " ", t)
+    t = re.sub(r"\t+", " ", t)
+    t = re.sub(r"<[^>]+>", "", t)
+    t = _URL.sub("", t)
+    return t.strip()
+
 df = pd.read_parquet(src)
-df['has_full_text'] = True
-df['text_source'] = 'surechembl+uspto'
+recs = []
+for _, r in df.iterrows():
+    pid = r.get("patent_number")
+    if not pid:
+        continue
+    title = clean_text(r.get("title"))
+    parts = [title, title] if title else []           # title doubled (weighting), as in the base build
+    for x in (r.get("abstract"), r.get("claims"), r.get("description")):
+        x = clean_text(x)
+        if x:
+            parts.append(x)
+    text = " ".join(parts)
+    if not text or len(text) < 50:                    # min_text_length=50, matching the base build
+        continue
+    recs.append({
+        "patent_id": pid,
+        "text": text,
+        "title": title,
+        "has_full_text": True,
+        "text_source": "surechembl+uspto",
+    })
+
 N = 32
-size = math.ceil(len(df) / N)
+size = math.ceil(len(recs) / N) if recs else 0
 for i in range(N):
-    part = df.iloc[i*size:(i+1)*size]
-    part.to_parquet(f"{outdir}/batch_{i+1:02d}.parquet")
-print(f"prepared {len(df):,} full-text patents -> {N} batches in {outdir}")
+    part = recs[i*size:(i+1)*size] if size else []
+    with open(f"{outdir}/batch_{i+1:02d}.jsonl", "w") as fh:
+        for rec in part:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+print(f"prepared {len(recs):,} full-text patents -> {N} JSONL shards in {outdir}")
 PY
 echo "prepare done" >&2
