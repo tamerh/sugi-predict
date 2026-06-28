@@ -20,7 +20,7 @@ gdrive:
 # Base Paths - CHANGE THIS FOR DIFFERENT ENVIRONMENTS
 # Pipeline working outputs (data/, logs/, state/) are created under: base_dir/
 # raw_data is consolidated at the repo root; base_dir/raw_data is a symlink to it.
-# Live Qdrant DB lives at repo-root qdrant/ (see qdrant.storage.path); snapshots/ = archives only.
+# Live Qdrant DB lives at out_prod/qdrant/ (see qdrant.storage.path).
 # Supports both relative paths (relative to project root) and absolute paths
 base_dir: "work"
 
@@ -379,7 +379,7 @@ qdrant:
 
   # Storage configuration
   storage:
-    path: "/data/bioyoda/qdrant"  # Live Qdrant storage (promoted to repo root; was snapshots/qdrant_latest)
+    path: "/data/bioyoda/out_prod/qdrant"  # Live Qdrant storage (under out_prod/)
     # All snapshots insert to this shared Qdrant instance
     # Use --out-dir flag to override with a different location
 
