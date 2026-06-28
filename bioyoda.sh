@@ -33,10 +33,6 @@
 #   ./bioyoda.sh test                                   # Fast fixture mode
 #   ./bioyoda.sh test --pipeline                        # Full E2E test
 #
-#   # Snapshots (isolated production copies)
-#   ./bioyoda.sh snapshot --name prod_v1.0
-#   cd snapshots/prod_v1.0/code && ./bioyoda.sh enju all
-#
 #   # Google Drive sync (for Colab GPU processing)
 #   ./bioyoda.sh push patents                           # Push data + code to Drive
 #   ./bioyoda.sh push patents --code-only              # Push only scripts (fast)
@@ -175,12 +171,6 @@ main() {
         test)
             source "${SCRIPT_DIR}/commands/test.sh"
             cmd_test "$@"
-            ;;
-
-        # Snapshot creation
-        snapshot)
-            source "${SCRIPT_DIR}/commands/snapshot.sh"
-            cmd_snapshot "$@"
             ;;
 
         # Maintenance commands

@@ -13,7 +13,6 @@ COMMANDS:
     validate [module]         Validate module outputs (default: qdrant)
     clean [module]            Clean intermediate files
     test [--pipeline]         Run test suite
-    snapshot --name <name>    Create isolated code snapshot
     push <module>             Sync data/code to Google Drive (for Colab GPU)
     pull <module>             Pull processed results from Google Drive
     help                      Show this help message
@@ -76,11 +75,6 @@ EXAMPLES:
     # Testing
     bioyoda.sh test                    # Fast fixture mode
     bioyoda.sh test --pipeline         # Full E2E test
-
-    # Production snapshot
-    bioyoda.sh snapshot --name prod_v1.0
-    cd snapshots/prod_v1.0/code
-    ./bioyoda.sh enju all
 
     # Google Drive sync (for Colab GPU processing)
     bioyoda.sh push patents                     # Push data + code to Drive

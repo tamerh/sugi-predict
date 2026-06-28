@@ -224,10 +224,6 @@ stop_process() {
         is_cluster=false
     else
         log_warning "No running process found for: ${process_name}"
-        if [[ "$clean_locks" == "true" ]]; then
-            log_info "Cleaning up Snakemake locks anyway..."
-            rm -rf .snakemake/locks/ 2>/dev/null || true
-        fi
         return 0
     fi
 
@@ -243,8 +239,4 @@ stop_process() {
 
     rm -f "$pid_file"
 
-    if [[ "$clean_locks" == "true" ]]; then
-        log_info "Cleaning up Snakemake locks..."
-        rm -rf .snakemake/locks/ 2>/dev/null || true
-    fi
 }
