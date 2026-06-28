@@ -21,8 +21,5 @@ refresh runs as the `clinical-trials-update` Enju workflow (`workflows/clinical-
 - `tracking_db.py`, `chunk_tracking.py` — per-trial content-hash delta tracking.
 - `process_trials*.py`, `merge_trials.py` — record processing / merge helpers.
 
-Deep-dive notes (not part of this overview): `LIFECYCLE_DATA.md`, `ADVERSE_EVENTS_*.md`,
-`CONDITIONS_FEATURE.md`, `TIER2_PLAN.md`.
-
 See [docs/how-it-works.md](../../docs/how-it-works.md) for how the substrate is used and
 [docs/cli.md](../../docs/cli.md) for the full build reference.

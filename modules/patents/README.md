@@ -35,7 +35,6 @@ The incremental USPTO full-text gap-fill runs as the `patents-text-update` Enju 
 - `extract_us_patent_ids.py`, `tracking.py` — SureChEMBL→US-ID filter and delta tracking.
 
 The compound prediction/provenance/denoise logic lives in `modules/compounds/`.
-Incremental-update details: [INCREMENTAL_UPDATES.md](INCREMENTAL_UPDATES.md).
 
 See [docs/how-it-works.md](../../docs/how-it-works.md) for the method and
 [docs/cli.md](../../docs/cli.md) for the full build reference.

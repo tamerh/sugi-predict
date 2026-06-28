@@ -34,7 +34,6 @@ Inserts are **not** a qdrant command — each collection is loaded via its build
 - `build_chembl_collection.py` — build the `chembl` reference collection.
 - `start_server.sh`, `stop_server.sh`, `check_status.sh` — container helpers.
 
-Deep-dive notes (not part of this overview): `VIRTUAL_MEMORY_LIMIT_INVESTIGATION.md`,
-`UPSERT_STRATEGY.md`.
+Deep-dive note (not part of this overview): `VIRTUAL_MEMORY_LIMIT_INVESTIGATION.md`.
 
 See [docs/cli.md](../../docs/cli.md) for the full build/serve reference.
