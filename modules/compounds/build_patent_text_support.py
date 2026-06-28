@@ -10,7 +10,7 @@ At serve time the engine only: retrieves the compound's full-text patent vector(
 and dot-products them against this precomputed matrix (both L2-normalised -> cosine) to rank targets. No model.
 
 Query string per target: "{GENE} {protein full name}" — matched to how patents_text_medcpt was embedded
-(MedCPT-Article-Encoder, CLS pool + L2 norm; see scripts/gpu/embed_text_medcpt_gpu.py). The article vectors
+(MedCPT-Article-Encoder, CLS pool + L2 norm; see modules/text/embed_text_medcpt_gpu.py). The article vectors
 are L2-normalised (verified norm==1.0), so we L2-normalise the query embeddings the same way.
 
 Vocabulary = every target in the prediction reference (work/chembl_reference/target_genes.json, 7,929 targets) —

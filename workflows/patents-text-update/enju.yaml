@@ -16,7 +16,7 @@ description: |
     (XML -> abstract+claims+description, filtered) -> build combined text (title doubled +
     abstract+claims+description), tag has_full_text=True / text_source=surechembl+uspto ->
     write 32 fixed JSONL shards (same record shape as prepare_medcpt_shards.py).
-  STAGE 2 (embed, fan-out x32): scripts/gpu/embed_text_medcpt_gpu.py, MedCPT-Article 768-d
+  STAGE 2 (embed, fan-out x32): modules/text/embed_text_medcpt_gpu.py, MedCPT-Article 768-d
     (CLS pooling — the SAME embed path as the base build, so vectors share the served space),
     1 combined vector per patent.
   STAGE 3 (report): aggregate vector count + chunk-type breakdown.

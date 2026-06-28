@@ -3,7 +3,7 @@
 
 Streams the June-2026 SureChEMBL patents, overlays existing USPTO full-text (historical + the 2026 gap),
 applies the SAME text construction + min_text_length filter as process_patents.py, and writes JSONL shards
-(patent_id + combined searchable text + payload) ready for scripts/gpu/embed_text_medcpt_gpu.py on GPU.
+(patent_id + combined searchable text + payload) ready for modules/text/embed_text_medcpt_gpu.py on GPU.
 
 Title-only text is the title DOUBLED (process_patents weighting); full-text adds abstract/claims/description.
 Kept iff the combined text is >= min-text-length (50). point ids are computed at insert time from patent_id

@@ -2,7 +2,7 @@
 # patents_text update — STAGE 2 (fan-out): embed one batch JSONL shard with MedCPT-Article -> FAISS.
 # 1 combined vector per patent (prepare built text = title doubled + abstract + claims + description),
 # keyed for upsert by hash(patent_id) at insert time. Uses the SAME embed path as the base build
-# (scripts/gpu/embed_text_medcpt_gpu.py, CLS pooling) so vectors share the served patents_text_medcpt
+# (modules/text/embed_text_medcpt_gpu.py, CLS pooling) so vectors share the served patents_text_medcpt
 # space. embed_text_medcpt_gpu.py runs on the whole --input-dir, so we point it at a single-shard dir.
 set -euo pipefail
 source /data/miniconda3/etc/profile.d/conda.sh
@@ -27,7 +27,7 @@ SHARD_DIR="work/data/processed/patents/text_gap_shard_${BATCH}"
 mkdir -p "$SHARD_DIR"
 ln -sf "$(cd "${BIOYODA_ROOT:-/data/bioyoda}" && pwd)/$IN" "$SHARD_DIR/batch_${BATCH}.jsonl"
 
-python scripts/gpu/embed_text_medcpt_gpu.py \
+python modules/text/embed_text_medcpt_gpu.py \
     --input-dir "$SHARD_DIR" --output-dir "$OUT" \
     --model ncbi/MedCPT-Article-Encoder --text-field text \
     --max-length 512 --batch-size 64 --device auto

@@ -89,13 +89,6 @@ push_pubmed() {
         log_info "Code-only mode: skipping data files"
     fi
 
-    # GPU scripts (always synced)
-    local script_dir="${COMMANDS_DIR}/../../modules/pubmed/scripts"
-    rclone_sync "${script_dir}/index_gpu.py" "${remote}/scripts/pubmed/" \
-        "PubMed GPU scripts" "$log_file" "$dry_run"
-    rclone_sync "${script_dir}/batch_gpu.py" "${remote}/scripts/pubmed/" \
-        "PubMed batch GPU scripts" "$log_file" "$dry_run"
-
     log_info "PubMed push complete!"
 }
 
@@ -148,13 +141,6 @@ push_patents() {
         log_info "Code-only mode: skipping data files"
     fi
 
-    # GPU scripts (always synced)
-    local script_dir="${COMMANDS_DIR}/../../modules/patents/scripts"
-    rclone_sync "${script_dir}/process_patents_gpu.py" "${remote}/scripts/patents/" \
-        "Patents GPU scripts" "$log_file" "$dry_run"
-    rclone_sync "${script_dir}/batch_patents_gpu.py" "${remote}/scripts/patents/" \
-        "Patents batch GPU scripts" "$log_file" "$dry_run"
-
     log_info "Patents push complete!"
 }
 
@@ -199,13 +185,6 @@ push_clinical_trials() {
     else
         log_info "Code-only mode: skipping data files"
     fi
-
-    # GPU scripts (always synced)
-    local script_dir="${COMMANDS_DIR}/../../modules/clinical_trials/scripts"
-    rclone_sync "${script_dir}/process_trials_gpu.py" "${remote}/scripts/clinical_trials/" \
-        "Clinical Trials GPU scripts" "$log_file" "$dry_run"
-    rclone_sync "${script_dir}/batch_trials_gpu.py" "${remote}/scripts/clinical_trials/" \
-        "Clinical Trials batch GPU scripts" "$log_file" "$dry_run"
 
     log_info "Clinical Trials push complete!"
 }

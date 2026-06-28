@@ -77,7 +77,7 @@ pod_embed_text(){   # $1=input dir (jsonl shards)  $2=local output dir  — MedC
   log "[pod] push $n input shards + MedCPT embed script -> ${POD_HOST}"
   _pssh "mkdir -p /workspace/input/ct /workspace/output/ct"
   _pup "$in/" "${POD_HOST}:/workspace/input/ct/"
-  _pup "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" "${POD_HOST}:/workspace/"
+  _pup "${ROOT}/modules/text/embed_text_medcpt_gpu.py" "${POD_HOST}:/workspace/"
   log "[pod] ensure embed deps (transformers, faiss-cpu; torch comes from the pod base image)"
   _pssh "python -c 'import transformers, faiss' 2>/dev/null || pip install -q --break-system-packages transformers faiss-cpu"   # pod Python is Debian PEP-668 (externally-managed)
   log "[pod] launch MedCPT-Article embed under tmux"
@@ -200,7 +200,7 @@ _dispatch(){
         embed)  mkdir -p "$CT_OUT"; rm -f "$CT_OUT"/shard_*.index "$CT_OUT"/shard_*.json   # clear stale output: the delta shards (shard_00000+) must not collide with a prior full embed's names (would be skipped, and re-inserted)
                 if pod_configured; then pod_embed_text "$CT_IN" "$CT_OUT"
                 else log "GPU stage — MedCPT on CPU is ~7 text/s (~9h for this delta); set POD_HOST/POD_PORT/POD_KEY for the pod (~2 min)"
-                     $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$CT_IN" --output-dir "$CT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
+                     $PY "${ROOT}/modules/text/embed_text_medcpt_gpu.py" --input-dir "$CT_IN" --output-dir "$CT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
         insert) qdrant_defer "$COLL"
                 $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$CT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
                 qdrant_build "$COLL"
@@ -230,7 +230,7 @@ _dispatch(){
         embed)  mkdir -p "$PM_OUT"; rm -f "$PM_OUT"/shard_*.index "$PM_OUT"/shard_*.json   # clear stale output: delta shard_00000+ must not collide with a prior full embed's names (would be skipped, never re-inserted)
                 if pod_configured; then pod_embed_text "$PM_IN" "$PM_OUT"
                 else log "GPU stage — MedCPT on CPU is ~1 text/s (infeasible at PubMed scale); set POD_HOST/POD_PORT/POD_KEY for the pod"
-                     $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$PM_IN" --output-dir "$PM_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
+                     $PY "${ROOT}/modules/text/embed_text_medcpt_gpu.py" --input-dir "$PM_IN" --output-dir "$PM_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
         insert) qdrant_defer "$COLL"
                 # additive PMID-delta: insert_from_faiss keys points by pmid (int) -> re-running a PMID is idempotent (no --update-mode needed)
                 $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$PM_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
@@ -296,7 +296,7 @@ _dispatch(){
         embed)  mkdir -p "$PT_OUT"; rm -f "$PT_OUT"/shard_*.index "$PT_OUT"/shard_*.json   # clear stale output: delta shards must not collide with a prior full embed's names (would be skipped, never re-inserted)
                 if pod_configured; then pod_embed_text "$PT_IN" "$PT_OUT"
                 else log "GPU stage — MedCPT on CPU is infeasible at patent scale (~39M); set POD_HOST/POD_PORT/POD_KEY for the pod"
-                     $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$PT_IN" --output-dir "$PT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
+                     $PY "${ROOT}/modules/text/embed_text_medcpt_gpu.py" --input-dir "$PT_IN" --output-dir "$PT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
         insert) qdrant_defer "$COLL"
                 # additive: insert_from_faiss keys points by hash(patent_id) -> re-running a patent is idempotent (upgrades title-only -> full-text in place)
                 $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$PT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
