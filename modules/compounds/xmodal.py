@@ -24,7 +24,7 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 import atlas.biobtree as B
 
 def _warn(msg): print(f"  [xmodal] {msg}", file=sys.stderr)   # so a 0-result is distinguishable from a failure
-DIAMOND_TSV = f"{ROOT}/snapshots/diamond_latest/data/processed/diamond/merged/filtered_top100.tsv"
+DIAMOND_TSV = f"{ROOT}/work/data/processed/diamond/merged/filtered_top100.tsv"
 ESM_TOPK, MAX_TWILIGHT, NDRUG_CAP = 30, 4, 300
 GROUND_THR = 0.50   # MedCPT relevance floor: below this the "nearest abstract" is not real grounding
 c = QdrantClient(url="http://localhost:6333", timeout=120)

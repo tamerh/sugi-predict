@@ -46,7 +46,7 @@ PROFILES = {
     "esm2": {
         "dim": 1280, "vectors_on_disk": False, "hnsw_m": 32, "hnsw_ef": 256,
         "quant": INT8,
-        "faiss_source": "snapshots/esm2_latest/data/processed/esm2/embeddings",
+        "faiss_source": "work/data/processed/esm2/embeddings",
         "query_encoder": None,  # protein: query is an ESM-2 vector (by protein_id) or raw embedding
         "notes": "574K proteins; small, vectors in-RAM. Mixed point-ids (legacy seq + delta hash).",
     },
@@ -64,13 +64,12 @@ PROFILES = {
     # (Qdrant alias -> patent_compounds_v2): raw FPs PLUS predictions/provenance/denoised targets, assembled
     # from work/atlas_nbrs by build_patent_compounds.py — there is no single FAISS dir for it, so it is built
     # via `bioyoda.sh build compounds ...` (ingest/provenance/denoise/build) and rebuilt via clean_copy.py ->
-    # swap_alias.py, NOT via `qdrant rebuild`. Kept here only as the raw-substrate recipe; key left as-is so a
-    # legacy raw rebuild still resolves. Do NOT point this at the served collection.
+    # swap_alias.py, NOT via `qdrant rebuild`. The raw Dec FAISS source has been removed (reclaimed); a from-
+    # FAISS rebuild is no longer possible — rebuild via the inline build_patent_compounds path. Do NOT point this at the served collection.
     "patents_compounds": {
         "dim": 2048, "vectors_on_disk": True, "hnsw_m": 32, "hnsw_ef": 256,
         "quant": BINARY,
-        "faiss_source": "snapshots/patents_latest/data/processed/patents/compounds",
-        "faiss_source_extra": ["work/data/processed/patents/compounds_new"],  # +86,889 parity batch
+        "faiss_source": None,  # raw Dec FAISS removed (reclaimed 2026-06); served collection is built inline by build_patent_compounds (Morgan FPs from raw_data) / clean_copy.py
         "query_encoder": None,  # compound: query is a Morgan/ECFP4 fingerprint (RDKit)
         "notes": "LEGACY raw substrate (structure-only, no predictions): 30.94M fingerprints, BINARY quant "
                  "(always_ram, ~8GB) — built in 78min, ~17ms queries, 90% recall@100 vs exact Tanimoto. "
