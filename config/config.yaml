@@ -22,7 +22,7 @@ gdrive:
 # raw_data is consolidated at the repo root; base_dir/raw_data is a symlink to it.
 # Live Qdrant DB lives at out_prod/qdrant/ (see qdrant.storage.path).
 # Supports both relative paths (relative to project root) and absolute paths
-base_dir: "work"
+base_dir: "out_prod/work"
 
 # PubMed Module Configuration
 pubmed:
@@ -406,7 +406,7 @@ api:
 qdrant_api:
   url: "http://localhost:6333"
   timeout: 180  # Increased for 27M document collection
-  connection_info_path: "work/data/qdrant/connection_info.txt"
+  connection_info_path: "out_prod/work/data/qdrant/connection_info.txt"
 
 # Search Settings (for API)
 search:
@@ -467,7 +467,7 @@ collections:
 logging:
   level: "INFO"
   format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-  file: "work/logs/api/api.log"
+  file: "out_prod/work/logs/api/api.log"
 
 # RAG (Retrieval-Augmented Generation) Configuration
 rag:

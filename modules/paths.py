@@ -24,14 +24,22 @@ from pathlib import Path
 # --- ROOT: env override, else infer from this file (modules/paths.py -> repo root) ---
 ROOT = Path(os.environ.get("BIOYODA_ROOT") or Path(__file__).resolve().parent.parent)
 
-# --- WORK: env override, else ROOT/<base_dir>. base_dir is the one knob in config.yaml; ---
-# the bash layer exports BIOYODA_WORK from it. A relative BIOYODA_WORK is taken under ROOT.
-_work_env = os.environ.get("BIOYODA_WORK")
-if _work_env:
-    _w = Path(_work_env)
-    WORK = _w if _w.is_absolute() else (ROOT / _w)
-else:
-    WORK = ROOT / "work"
+# --- WORK: env override, else config.yaml base_dir (the one knob), else "work". ---
+# The bash layer exports BIOYODA_WORK from config.yaml; for direct/standalone Python runs we
+# read base_dir straight from config.yaml so the renamed layout is honored without the env too.
+def _base_dir_from_config() -> str:
+    try:
+        for _line in (ROOT / "config" / "config.yaml").read_text().splitlines():
+            _s = _line.strip()
+            if _s.startswith("base_dir:"):
+                return _s.split(":", 1)[1].split("#", 1)[0].strip().strip('"').strip("'") or "work"
+    except Exception:
+        pass
+    return "work"
+
+_base = os.environ.get("BIOYODA_WORK") or _base_dir_from_config()
+_w = Path(_base)
+WORK = _w if _w.is_absolute() else (ROOT / _w)
 
 RAW_DATA = ROOT / "raw_data"
 

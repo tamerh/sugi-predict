@@ -118,16 +118,16 @@ _dispatch(){
   for a in "$@"; do case $a in --full) mode=full;; --delta) mode=delta;; --prod) prod=1; suffix="";; esac; done
   case $collection in
     compounds)
-      local COLL="patent_compounds${suffix}" M="${ROOT}/modules/compounds" REF="${ROOT}/work/chembl_reference"
+      local COLL="patent_compounds${suffix}" M="${ROOT}/modules/compounds" REF="${BIOYODA_WORK}/chembl_reference"
       local SNAP CHUNKS NBRS PREDDIR WORKERS
       # --delta workspace (incremental): kept separate so it NEVER clobbers the full atlas_nbrs; new neighbours merge in
-      local DCHUNKS="${ROOT}/work/atlas_delta/chunks" DNBRS="${ROOT}/work/atlas_delta/nbrs"
+      local DCHUNKS="${BIOYODA_WORK}/atlas_delta/chunks" DNBRS="${BIOYODA_WORK}/atlas_delta/nbrs"
       if [[ -n "$prod" ]]; then   # --prod: real snapshot + full data
         SNAP="${ROOT}/raw_data/patents/surechembl/2026-06-01"; CHUNKS="${ROOT}/raw_data/patents/chunked_compounds"
-        NBRS="${ROOT}/work/atlas_nbrs"; PREDDIR="${ROOT}/work/atlas_preds_aligned"; WORKERS=16
+        NBRS="${BIOYODA_WORK}/atlas_nbrs"; PREDDIR="${BIOYODA_WORK}/atlas_preds_aligned"; WORKERS=16
       else                        # default: TEST fixtures (work/test/*) -> *_test collection, no GPU/prod
-        SNAP="${ROOT}/work/test"; CHUNKS="${ROOT}/work/test/chunks"
-        NBRS="${ROOT}/work/test/atlas_nbrs"; PREDDIR="${ROOT}/work/test/preds"; WORKERS=2
+        SNAP="${BIOYODA_WORK}/test"; CHUNKS="${BIOYODA_WORK}/test/chunks"
+        NBRS="${BIOYODA_WORK}/test/atlas_nbrs"; PREDDIR="${BIOYODA_WORK}/test/preds"; WORKERS=2
       fi
       case $stage in
         # INCREMENTAL (--delta, default): chunk + predict ONLY the compounds not already in atlas_nbrs, then
@@ -177,7 +177,7 @@ _dispatch(){
       # The full 1.25M lives in work/chembl_reference/reference.tsv; rebuild whenever that reference is refreshed.
       local COLL="chembl${suffix}"
       # source dir is overridable (CHEMBL_REF_DIR) so test mode can point at a small fixture; default = full prod reference
-      local CHEMBL_REF="${CHEMBL_REF_DIR:-${ROOT}/work/chembl_reference}"
+      local CHEMBL_REF="${CHEMBL_REF_DIR:-${BIOYODA_WORK}/chembl_reference}"
       case $stage in
         chembl) $PY "${ROOT}/modules/qdrant/scripts/build_chembl_collection.py" --collection "$COLL" --ref "$CHEMBL_REF" ;;
         *) echo "reference stages: chembl  (make/fpsim2 TODO)"; ;;
@@ -188,8 +188,8 @@ _dispatch(){
       local COLL="clinical_trials_medcpt${suffix}"
       local CT_SRC="${CT_TRIALS_JSON:-/data/biobtree/raw_data/clinical_trials/trials.json}"
       # scratch/state: test mode (suffix=_test) is isolated under work/test/ so it NEVER touches the prod scratch/tracking DB
-      local CT_BASE="${ROOT}/work" CT_SBASE="${ROOT}/work/state"
-      [[ -n "$suffix" ]] && { CT_BASE="${ROOT}/work/test"; CT_SBASE="${ROOT}/work/test/state"; }
+      local CT_BASE="${BIOYODA_WORK}" CT_SBASE="${BIOYODA_WORK}/state"
+      [[ -n "$suffix" ]] && { CT_BASE="${BIOYODA_WORK}/test"; CT_SBASE="${BIOYODA_WORK}/test/state"; }
       local CT_IN="${CT_BASE}/data/medcpt_input/clinical_trials" CT_OUT="${CT_BASE}/data/medcpt_output/clinical_trials"
       local CT_DB="${CT_SBASE}/clinical_trials/trials_tracking.db" CT_PEND="${CT_SBASE}/clinical_trials/pending_track.json"
       mkdir -p "$CT_IN" "$(dirname "$CT_DB")"
@@ -214,10 +214,10 @@ _dispatch(){
       # Mirrors the trials case exactly. Source is the NCBI PubMed download (baseline/ + updatefiles/);
       # the chunk step replaces the legacy index.py (which embedded with S-BioBERT in one CPU step).
       local COLL="pubmed_abstracts_medcpt${suffix}"
-      local PM_RAW="${PUBMED_RAW_DIR:-${ROOT}/work/raw_data/pubmed}"
+      local PM_RAW="${PUBMED_RAW_DIR:-${BIOYODA_WORK}/raw_data/pubmed}"
       # scratch/state: test mode (suffix=_test) is isolated under work/test/ so it NEVER touches the prod scratch/existing-pmids
-      local PM_BASE="${ROOT}/work" PM_SBASE="${ROOT}/work/state"
-      [[ -n "$suffix" ]] && { PM_BASE="${ROOT}/work/test"; PM_SBASE="${ROOT}/work/test/state"; }
+      local PM_BASE="${BIOYODA_WORK}" PM_SBASE="${BIOYODA_WORK}/state"
+      [[ -n "$suffix" ]] && { PM_BASE="${BIOYODA_WORK}/test"; PM_SBASE="${BIOYODA_WORK}/test/state"; }
       local PM_IN="${PM_BASE}/data/medcpt_input/pubmed" PM_OUT="${PM_BASE}/data/medcpt_output/pubmed"
       local PM_DELETED="${PM_RAW}/deleted.pmids.sorted.gz"
       local PM_EXIST="${PM_SBASE}/pubmed/existing_pmids.txt.gz"
@@ -250,8 +250,8 @@ _dispatch(){
       local COLL="esm2${suffix}"
       local PR_SRC="${ESM2_SOURCE_FASTA:-${ROOT}/raw_data/esm2/uniprot_swissprot.fasta}"
       # scratch/state: test mode (suffix=_test) is isolated under work/test/ so it NEVER touches the prod chunks/state/existing-proteins
-      local PR_CDIR="${ROOT}/raw_data/esm2" PR_OUTPARENT="${ROOT}/work/data/esm2_output" PR_SBASE="${ROOT}/work/state"
-      [[ -n "$suffix" ]] && { PR_CDIR="${ROOT}/work/test/esm2"; PR_OUTPARENT="${ROOT}/work/test/data/esm2_output"; PR_SBASE="${ROOT}/work/test/state"; }
+      local PR_CDIR="${ROOT}/raw_data/esm2" PR_OUTPARENT="${BIOYODA_WORK}/data/esm2_output" PR_SBASE="${BIOYODA_WORK}/state"
+      [[ -n "$suffix" ]] && { PR_CDIR="${BIOYODA_WORK}/test/esm2"; PR_OUTPARENT="${BIOYODA_WORK}/test/data/esm2_output"; PR_SBASE="${BIOYODA_WORK}/test/state"; }
       local PR_CHUNKS="${PR_CDIR}/chunks" PR_NEW="${PR_CDIR}/new_proteins.fasta"
       local PR_OUT="${PR_OUTPARENT}/embeddings"   # batch_esm2_gpu.py writes its .index/.json under <output-dir>/embeddings
       local PR_EXIST="${PR_SBASE}/esm2/existing_proteins.txt.gz"
@@ -284,10 +284,10 @@ _dispatch(){
       local COLL="patents_text_medcpt${suffix}"
       local PT_SC="${SURECHEMBL_PATENTS:-${ROOT}/raw_data/patents/surechembl/2026-06-01/patents.parquet}"
       local PT_UH="${ROOT}/raw_data/patents/historical_uspto/uspto_historical.parquet"
-      local PT_UG="${ROOT}/work/data/processed/patents/uspto_gap_enriched.parquet"
+      local PT_UG="${BIOYODA_WORK}/data/processed/patents/uspto_gap_enriched.parquet"
       # scratch: test mode (suffix=_test) isolated under work/test/ so it NEVER touches the prod shards/output
-      local PT_BASE="${ROOT}/work"
-      [[ -n "$suffix" ]] && PT_BASE="${ROOT}/work/test"
+      local PT_BASE="${BIOYODA_WORK}"
+      [[ -n "$suffix" ]] && PT_BASE="${BIOYODA_WORK}/test"
       local PT_IN="${PT_BASE}/data/medcpt_input/patents" PT_OUT="${PT_BASE}/data/medcpt_output/patents"
       mkdir -p "$PT_IN"
       case $stage in
