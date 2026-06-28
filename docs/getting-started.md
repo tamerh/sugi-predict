@@ -87,8 +87,8 @@ call the substrate directly: **`bioyoda_predict`**, **`bioyoda_provenance`**, an
 
 ## Rebuild it
 
-Everything is reproducible from source. Each collection is built (or incrementally refreshed) by
-a single command, orchestrated as Enju workflow DAGs:
+Everything is reproducible from source. Each collection is built (or incrementally refreshed
+with `--delta`) by a single plain-bash command, `bioyoda.sh build`:
 
 ```sh
 ./bioyoda.sh build compounds all --prod     # the patent-compound collection (predict → provenance → denoise)
@@ -99,4 +99,4 @@ a single command, orchestrated as Enju workflow DAGs:
 ```
 
 Defaults target small `*_test` fixtures; `--prod` targets the real collections. See
-[cli.md](cli.md) for stages, the deferred-index window, alias swaps, and the Enju orchestration.
+[cli.md](cli.md) for stages, the deferred-index window, and alias swaps.

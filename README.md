@@ -28,8 +28,8 @@ Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas · Enju 
 
 ## Build it — `bioyoda.sh`
 
-Every collection rebuilds from source as a bash build step, orchestrated by the Enju
-`workflows/*-update/` DAGs (Snakemake is retired):
+Every collection rebuilds from source via plain bash `bioyoda.sh build` (incremental with
+`--delta`; both Snakemake and the old `*-update` Enju DAGs are retired):
 
 ```bash
 conda env create -f environment.yml && conda activate bioyoda
@@ -41,7 +41,7 @@ GPU embed/predict stages auto push/run/pull on a pod when `POD_HOST`/`POD_PORT`/
 set. Full command reference and the build sequence: [docs/cli.md](docs/cli.md) ·
 [docs/getting-started.md](docs/getting-started.md).
 
-`bioyoda.sh` subcommands: `start` · `stop` · `build` · `compounds` · `enju` · `qdrant` ·
+`bioyoda.sh` subcommands: `start` · `stop` · `build` · `compounds` · `qdrant` ·
 `status` · `validate` · `clean` · `test` · `push` · `pull`.
 
 ## Substrate
@@ -63,7 +63,7 @@ Five served Qdrant collections (chemistry powers prediction; the rest is retriev
 | `mcp_srv/` | the engine — REST API + MCP server over `query`/`predict`/`provenance` |
 | `modules/` | per-collection build code (compounds, patents, clinical_trials, esm2, qdrant) |
 | `scripts/` | `bioyoda.sh` command implementations + shared libs |
-| `workflows/` | Enju `*-update` DAGs that conduct the build steps |
+| `workflows/` | one remaining Enju workflow: `diamond-update` (standalone DIAMOND protein-similarity data-prep) |
 | `config/` | engine + collection configuration |
 | `web/` | static assets served by the engine |
 | `tests/` | fixture pipeline + integration (collection-health) tests |

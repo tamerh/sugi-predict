@@ -20,8 +20,8 @@ server. Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas 
 - **[getting-started.md](getting-started.md)** — how to use it: browse, query the API, drive it
   from an agent (MCP), or rebuild a collection.
 - **[api.md](api.md)** — the full REST + MCP reference (endpoints, params, response shapes).
-- **[cli.md](cli.md)** — building and serving the engine (`bioyoda.sh build <collection>`,
-  orchestrated by Enju workflows).
+- **[cli.md](cli.md)** — building and serving the engine via plain bash
+  `bioyoda.sh build <collection>` (incremental with `--delta`).
 
 **Quick links:**
 

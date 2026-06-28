@@ -7,7 +7,6 @@ COMMANDS:
     stop                      Stop Qdrant server (or a running pipeline)
     build <collection> <stg>  Build/refresh a Qdrant collection (chunk/embed/ingest/insert/...)
     compounds <subcommand>    Compound tooling (FPSim2 / FTO / prediction)
-    enju <module>             Run data processing as an Enju DAG (preferred orchestration)
     qdrant <subcommand>       Manage Qdrant vector database
     status                    Show pipeline status
     validate [module]         Validate module outputs (default: qdrant)
@@ -19,9 +18,11 @@ COMMANDS:
     version                   Show version information
 
 ORCHESTRATION:
-    Snakemake is retired. Collections are built via `bioyoda.sh build <collection> ...`
-    (collections: compounds | text | reference | proteins | trials) and conducted by the
-    Enju *-update workflows. GPU stages run on a pod (POD_HOST/POD_PORT/POD_KEY).
+    Snakemake and the *-update Enju DAGs are retired. Collections are built with plain
+    bash via `bioyoda.sh build <collection> <stage> [--delta]` (collections: compounds |
+    text | reference | proteins | trials). GPU stages run on a pod (POD_HOST/POD_PORT/POD_KEY).
+    The one remaining Enju workflow is diamond-update (standalone DIAMOND protein-similarity
+    data-prep with no build stage), run via the `enju` binary directly.
 
 SERVED COLLECTIONS:
     patent_compounds          Patent compounds (alias -> patent_compounds_v2)
@@ -60,9 +61,8 @@ EXAMPLES:
     bioyoda.sh build patents-text insert    # patents_text (-> patents_text_medcpt)
     bioyoda.sh build proteins insert        # esm2
 
-    # Data processing as an Enju DAG (preferred)
-    bioyoda.sh enju pubmed
-    bioyoda.sh enju all
+    # Incremental refresh
+    bioyoda.sh build compounds all --delta   # Only process new/changed inputs
 
     # Qdrant operations
     bioyoda.sh qdrant start                                  # Start locally

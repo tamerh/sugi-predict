@@ -17,9 +17,8 @@
 #
 #   # Data processing pipelines
 #   ./bioyoda.sh build compounds all                    # Build a collection (chunk/predict/ingest/...)
-#   ./bioyoda.sh enju pubmed                            # Run as an Enju DAG (preferred)
-#   ./bioyoda.sh enju clinical_trials                   # Enju DAG: prepare -> fan-out -> merge
-#   (SGE/cluster + Snakemake retired — orchestration = `build` steps + Enju *-update workflows)
+#   ./bioyoda.sh build compounds all --delta            # Incremental refresh
+#   (SGE/cluster + Snakemake + the *-update Enju DAGs retired — orchestration = `build` steps)
 #
 #   # Qdrant vector database
 #   ./bioyoda.sh qdrant start                                      # Start locally
@@ -131,12 +130,6 @@ main() {
                 source "${SCRIPT_DIR}/commands/maintenance.sh"
                 cmd_stop_all "$@"
             fi
-            ;;
-
-        # Data processing (Enju DAG — distribution via citizens, not SGE)
-        enju)
-            source "${SCRIPT_DIR}/commands/enju.sh"
-            cmd_enju "$@"
             ;;
 
         # Google Drive sync (for GPU processing)

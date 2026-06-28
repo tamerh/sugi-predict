@@ -1,19 +1,21 @@
 # CLI Reference
 
 `bioyoda.sh` is the single entry point for the engine: build and refresh collections, run
-the Qdrant container, run the test suite, and drive build pipelines as Enju workflow DAGs.
+the Qdrant container, and run the test suite.
 
-**Orchestration model.** One consistent system, no Snakemake: atomic bash `build` steps
-compose into **Enju workflow DAGs** for distribution. `biobtree` owns the raw sources
-(downloads/extracts); `bioyoda` owns the compute (embed → insert → bake → serve). GPU
-stages auto push/run/pull on a remote pod when `POD_HOST`/`POD_PORT`/`POD_KEY` are set,
-else run locally if a GPU is present.
+**Orchestration model.** Build orchestration is **plain bash `bioyoda.sh build`**
+(incremental with `--delta`) — one consistent system. Both Snakemake and the old `*-update`
+Enju DAGs are retired; the build chain is now a sequence of atomic bash `build` steps.
+`biobtree` owns the raw sources (downloads/extracts); `bioyoda` owns the compute (embed →
+insert → bake → serve). GPU stages auto push/run/pull on a remote pod when
+`POD_HOST`/`POD_PORT`/`POD_KEY` are set, else run locally if a GPU is present. (The one
+remaining Enju workflow is `diamond-update` — standalone DIAMOND protein-similarity data-prep
+with no `bioyoda.sh build` stage, run via the `enju` binary directly.)
 
 ```
 bioyoda.sh build <collection> <stage>   Build / refresh a collection
 bioyoda.sh qdrant <subcommand>          Qdrant container lifecycle (docker compose)
 bioyoda.sh test [--integration|--atlas] Test suite (fixtures by default; live-DB regression)
-bioyoda.sh enju <module>                Run a module's build pipeline as an Enju DAG
 bioyoda.sh status | validate | clean    Maintenance helpers
 bioyoda.sh push | pull <module>         Google Drive sync (for off-box GPU)
 bioyoda.sh help | version
@@ -113,30 +115,6 @@ bioyoda.sh test [--integration|--atlas]
 bioyoda.sh test                 # fast, fixtures, safe — run before committing
 bioyoda.sh test --integration   # validate the live DB after a refresh
 ```
-
----
-
-## `enju` — run a build pipeline as an Enju DAG
-
-```
-bioyoda.sh enju <module>
-  modules: clinical_trials | pubmed | diamond | patents | esm2 | qdrant-insert
-```
-
-Runs the module's workflow (`workflows/<module>-poc/enju.yaml`) end-to-end via `enju go`.
-Enju compute tasks can't emit dynamic lists, so the driver first runs the module's
-`prepare` step to resolve the fan-out list, writes it to a params file, then launches with
-`--run-branch auto` (each run gets its own branch). Distribution is handled by Enju across
-citizens — assign GPU tasks to a GPU citizen. The `enju` binary is resolved from `ENJU_BIN`,
-`PATH`, or known install locations.
-
-```bash
-bioyoda.sh enju clinical_trials    # prepare -> fan-out -> embed -> merge, as a DAG
-bioyoda.sh enju esm2
-```
-
-See the [Enju CLI](/data/enju/docs/reference/cli.md) for the underlying `enju go` /
-`resume` / `drive` verbs.
 
 ---
 

@@ -1,0 +1,11 @@
+# Keep the Docker build context minimal: only the engine code we COPY.
+# Exclude everything, then re-include the three dirs the Dockerfile copies.
+*
+!mcp_srv
+!modules
+!config
+
+# Even within the included dirs, drop caches and bulky stragglers.
+**/__pycache__
+**/*.pyc
+**/.pytest_cache

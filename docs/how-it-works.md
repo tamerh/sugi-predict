@@ -194,8 +194,9 @@ Every collection rebuilds from source via `./bioyoda.sh build <collection>`. The
 neighbour search is the one expensive step; everything downstream is a deterministic
 function of the reference set and the patent corpus, so the annotation is regenerated
 whenever either is refreshed, and updates apply by deterministic-identifier upsert
-rather than full rebuild. Orchestration is **bash `build` steps + Enju workflow DAGs**
-— there is no Snakemake (the old Snakefiles are retired). Small-data fixture tests run
+rather than full rebuild. Orchestration is **plain bash `bioyoda.sh build` steps**
+(incremental with `--delta`) — there is no Snakemake, and the old `*-update` Enju DAGs are
+retired too. Small-data fixture tests run
 with `./bioyoda.sh test [--atlas]`. BioBTree handles raw-source grounding (resolving a
 target to its gene/protein, a compound to its registry ids) — a light convenience
 layer over the vector pipeline, not a pillar of the method.
