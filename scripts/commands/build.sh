@@ -206,7 +206,7 @@ _dispatch(){
                 qdrant_build "$COLL"
                 # commit the deferred tracking hashes ONLY now that the insert succeeded (so a failed embed/insert never marks trials done)
                 if [[ -f "$CT_PEND" ]]; then $PY -c "import sys,json; sys.path.insert(0,'${ROOT}'); from modules.clinical_trials.scripts.tracking_db import TrialsTracker; u=json.load(open('${CT_PEND}')); TrialsTracker('${CT_DB}').add_or_update_batch(u); print(f'  tracking: committed {len(u):,} delta hashes')" && rm -f "$CT_PEND"; fi ;;   # if-form: no spurious exit 1 when there's no pending file
-        all)    build trials chunk ${prod:+--prod}; build trials embed ${prod:+--prod}; build trials insert ${prod:+--prod} ;;
+        all)    build trials chunk --$mode ${prod:+--prod}; build trials embed --$mode ${prod:+--prod}; build trials insert --$mode ${prod:+--prod} ;;
         *) echo "trials stages: all | chunk | embed | insert  (source: biobtree trials.json; embed = MedCPT-Article, GPU)"; ;;
       esac ;;
     text)
@@ -237,7 +237,7 @@ _dispatch(){
                 qdrant_build "$COLL"
                 # refresh the already-embedded PMID set from the new sidecars so the NEXT delta skips them
                 $PY "$M/build_existing_pmids.py" --metadata-dir "$PM_OUT" --output "$PM_EXIST" || log "warn: existing_pmids refresh failed (next --full not affected)" ;;
-        all)    build text chunk ${prod:+--prod}; build text embed ${prod:+--prod}; build text insert ${prod:+--prod} ;;
+        all)    build text chunk --$mode ${prod:+--prod}; build text embed --$mode ${prod:+--prod}; build text insert --$mode ${prod:+--prod} ;;
         *) echo "text stages: all | chunk | embed | insert  (source: PubMed XML baseline+updatefiles; embed = MedCPT-Article, GPU)"; ;;
       esac ;;
     proteins)
@@ -272,7 +272,7 @@ _dispatch(){
                 qdrant_build "$COLL"
                 # refresh the already-embedded accession set from the new sidecars so the NEXT delta skips them
                 $PY "$M/build_existing_proteins.py" --metadata-dir "$PR_OUT" --output "$PR_EXIST" --merge || log "warn: existing_proteins refresh failed (next --full not affected)" ;;
-        all)    build proteins prepare ${prod:+--prod}; build proteins embed ${prod:+--prod}; build proteins insert ${prod:+--prod} ;;
+        all)    build proteins prepare --$mode ${prod:+--prod}; build proteins embed --$mode ${prod:+--prod}; build proteins insert --$mode ${prod:+--prod} ;;
         *) echo "proteins stages: all | prepare | embed | insert  (collection: esm2; source: UniProt FASTA; embed = ESM-2 650M esm2_t33_650M_UR50D dim 1280, GPU)"; ;;
       esac ;;
     patents-text)
@@ -301,7 +301,7 @@ _dispatch(){
                 # additive: insert_from_faiss keys points by hash(patent_id) -> re-running a patent is idempotent (upgrades title-only -> full-text in place)
                 $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$PT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
                 qdrant_build "$COLL" ;;
-        all)    build patents-text prepare ${prod:+--prod}; build patents-text embed ${prod:+--prod}; build patents-text insert ${prod:+--prod} ;;
+        all)    build patents-text prepare --$mode ${prod:+--prod}; build patents-text embed --$mode ${prod:+--prod}; build patents-text insert --$mode ${prod:+--prod} ;;
         *) echo "patents-text stages: all | prepare | embed | insert  (collection: patents_text_medcpt; source: SureChEMBL patents.parquet + USPTO full-text; embed = MedCPT-Article, dim 768, GPU)"; ;;
       esac ;;
     *) cat <<EOF
