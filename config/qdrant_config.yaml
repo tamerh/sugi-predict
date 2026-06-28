@@ -1,5 +1,5 @@
 # Qdrant Server Configuration
-# Used by Singularity container when starting Qdrant server
+# Used by the Qdrant Docker container (config/docker-compose.bioyoda.yml) when starting the server
 # Optimized for HPC cluster environment with NFS storage
 
 service:
