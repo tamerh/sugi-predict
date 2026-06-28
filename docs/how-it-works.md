@@ -1,7 +1,7 @@
 # How Sugi Predict works
 
-Sugi Predict is an open, reproducible **predicted-target atlas of patent chemical
-space**. Every drug-like patent compound extracted from SureChEMBL (~30.9M) is
+Sugi Predict is an open, reproducible **prediction of human protein targets across patent
+chemical space**. Every drug-like patent compound extracted from SureChEMBL (~30.9M) is
 annotated with its likely human protein targets, joined to the patent provenance
 that says who claimed which chemistry against which target. This page explains the
 method and the engine beneath it. To run it, see
@@ -127,7 +127,7 @@ Its properties:
 - It reports whether the patent's abstract is textually about the predicted target
   — a consistency signal, not a measurement of binding. The available text is usually
   an abstract, not a full specification.
-- It is available for only **~1 in 7** of the patents linked to atlas compounds
+- It is available for only **~1 in 7** of the patents linked to the patent compounds
   (about 1.4% of all patents have machine-readable text).
 - Where available, it agrees with the support-ranked landscape for **~47%** of
   full-text compounds (vs. 0.2% for a random target), and the agreement climbs with
@@ -143,7 +143,7 @@ Its properties:
 The predictor is tested on held-out data, not asserted to work. The
 **deployment-realistic figure is a temporal split: recall@1 ≈ 41% (40.8%)**, recall@5
 55.8% — trained on ligands disclosed up to 2018, tested on later compounds with all
-post-cutoff chemistry excluded from the neighbour pool. That is the regime the atlas
+post-cutoff chemistry excluded from the neighbour pool. That is the regime Sugi Predict
 actually runs in (predicting targets for newly disclosed patent chemistry).
 
 The easier splits are **interpolation upper bounds**, not the deployment number:
@@ -186,7 +186,7 @@ call the same three primitives — **`query`** (retrieve by filter or by similar
 embedding free-text / SMILES / protein server-side), **`predict`** (rank a molecule's
 targets), and **`provenance`** (resolve a compound to its patents) — so a researcher,
 a programmatic client, and an autonomous agent all get **identical answers**. The web
-atlas is a separate HTTP consumer of this same engine.
+app is a separate HTTP consumer of this same engine.
 
 ## The build pipeline
 

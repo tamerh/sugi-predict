@@ -1,7 +1,7 @@
 # Sugi Predict
 
-An open, reproducible **predicted-target atlas of patent chemical space**, published at
-[sugi.bio/predict](https://sugi.bio/predict).
+An open, reproducible **prediction of human protein targets across patent chemical space**,
+published at [sugi.bio/predict](https://sugi.bio/predict).
 
 ~30M SureChEMBL patent compounds are annotated with their likely human protein targets by
 chemical k-nearest-neighbour transfer from a ~1.25M-pair ChEMBL ligand→target reference,
@@ -13,7 +13,7 @@ Each prediction carries a `confidence` (best Tanimoto to a backing ChEMBL ligand
 `support` count (n of 20 nearest neighbours agreeing); below ~0.3 Tanimoto is novel/whitespace
 chemistry. Targets are predicted by chemical similarity, not measured; the supporting substrate
 (patent text, clinical trials, proteins) is used as retrieval context. One engine (internal
-codename `bioyoda`) serves the atlas as a web app, a REST API, and an MCP server over Qdrant.
+codename `bioyoda`) serves it as a web app, a REST API, and an MCP server over Qdrant.
 Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas · Enju · Sugi Predict.
 
 > **How the prediction works, the provenance join, the substrate, and the build all live in
@@ -21,7 +21,7 @@ Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas · Enju 
 
 ## Use it
 
-- **Browse** — the web atlas at [sugi.bio/predict](https://sugi.bio/predict) (no setup).
+- **Browse** — the web app at [sugi.bio/predict](https://sugi.bio/predict) (no setup).
 - **API + agents** — the engine runs on `:8011`: a REST API under `/api` and an MCP server at
   `/mcp`, both over the same three primitives (`query` / `predict` / `provenance`). See
   [docs/api.md](docs/api.md).

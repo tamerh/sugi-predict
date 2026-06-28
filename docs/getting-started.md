@@ -8,7 +8,7 @@ Deployment-realistic recall@1 is ~41% (the 83%/77% figures are upper bounds). Se
 
 ## Browse
 
-The web atlas at **[sugi.bio/predict](https://sugi.bio/predict)** is the no-setup way in.
+The web app at **[sugi.bio/predict](https://sugi.bio/predict)** is the no-setup way in.
 
 - **One page per target** — `/target/<gene>` (e.g. `/target/EGFR`, or a UniProt accession): the
   patented chemistry predicted against that target, how much is high-confidence, the top
@@ -36,7 +36,7 @@ curl 'http://localhost:8011/api/predict?smiles=CC(=O)Oc1ccccc1C(=O)O&top=20&huma
 # Patent provenance for a SureChEMBL compound — which patents claim/disclose it
 curl 'http://localhost:8011/api/provenance?ids=12345&max_per=8'
 
-# A target's landscape — count + filter the atlas by predicted target accession
+# A target's landscape — count + filter the dataset by predicted target accession
 curl -s http://localhost:8011/api/count \
   -H 'Content-Type: application/json' \
   -d '{"collection":"patent_compounds","filter":{"targets":"P00533","best_tanimoto":{"gte":0.6}}}'
@@ -91,7 +91,7 @@ Everything is reproducible from source. Each collection is built (or incremental
 a single command, orchestrated as Enju workflow DAGs:
 
 ```sh
-./bioyoda.sh build compounds all --prod     # the patent-compound atlas (predict → provenance → denoise)
+./bioyoda.sh build compounds all --prod     # the patent-compound collection (predict → provenance → denoise)
 ./bioyoda.sh build reference chembl --prod  # the ~1.25M ChEMBL ligand→target answer key
 ./bioyoda.sh build trials all --prod        # clinical-trials context (MedCPT)
 ./bioyoda.sh build proteins ...             # proteins context (ESM-2)
