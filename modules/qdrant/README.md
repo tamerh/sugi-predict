@@ -41,7 +41,7 @@ The Qdrant container (`modules/qdrant/setup/singularity/qdrant.sif`) is included
 ./bioyoda.sh build trials insert         # clinical_trials_medcpt
 ./bioyoda.sh build compounds all         # patent_compounds (chunk/predict/ingest/...)
 ./bioyoda.sh build reference chembl      # chembl
-# patents_text: ./bioyoda.sh atlas text insert ;  esm2: ./bioyoda.sh build proteins insert
+# patents_text: ./bioyoda.sh build patents-text insert ;  esm2: ./bioyoda.sh build proteins insert
 
 # 3. Trigger HNSW indexing for large collections
 ./bioyoda.sh qdrant reindex patent_compounds --monitor
@@ -108,7 +108,7 @@ Inserts moved out of the `qdrant` command into `build` (the old Snakemake `qdran
 ./bioyoda.sh build trials insert          # clinical_trials_medcpt
 ./bioyoda.sh build compounds all          # patent_compounds (chunk/predict/ingest/provenance/denoise)
 ./bioyoda.sh build reference chembl       # chembl
-./bioyoda.sh atlas text insert            # patents_text (-> patents_text_medcpt)
+./bioyoda.sh build patents-text insert    # patents_text (-> patents_text_medcpt)
 ./bioyoda.sh build proteins insert        # esm2
 ```
 

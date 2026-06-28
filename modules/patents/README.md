@@ -486,7 +486,7 @@ After processing, insert to Qdrant for vector search:
 ./bioyoda.sh qdrant start
 
 # Insert patent text (-> patents_text_medcpt, served as patents_text)
-./bioyoda.sh atlas text insert
+./bioyoda.sh build patents-text insert
 
 # Build/insert compounds (-> patent_compounds)
 ./bioyoda.sh build compounds all

@@ -13,7 +13,7 @@ Validated (usecases/val_floor.py, leave-one-out over the 1.25M ChEMBL reference)
 
   python bake_targets.py [--floor 0.4] [--cap 50] [--collection patent_compounds] [--resume] [--dry-run]
 
-Reproducible: `bioyoda.sh atlas targets`. Small-data test: tests/test_atlas_targets.py. No GPU -- payload only.
+Reproducible: `bioyoda.sh build compounds denoise`. Small-data test: tests/test_atlas_targets.py. No GPU -- payload only.
 """
 import argparse, os, time
 

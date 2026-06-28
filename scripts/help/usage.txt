@@ -6,7 +6,6 @@ COMMANDS:
     start                     Start Qdrant server
     stop                      Stop Qdrant server (or a running pipeline)
     build <collection> <stg>  Build/refresh a Qdrant collection (chunk/embed/ingest/insert/...)
-    atlas <subcommand>        Patent-atlas build steps (bake/targets/text/compounds)
     compounds <subcommand>    Compound tooling (FPSim2 / FTO / prediction)
     enju <module>             Run data processing as an Enju DAG (preferred orchestration)
     qdrant <subcommand>       Manage Qdrant vector database
@@ -59,7 +58,7 @@ EXAMPLES:
     bioyoda.sh build compounds all          # patent_compounds (chunk/predict/ingest/...)
     bioyoda.sh build trials insert          # clinical_trials_medcpt
     bioyoda.sh build reference chembl       # chembl
-    bioyoda.sh atlas text insert            # patents_text (-> patents_text_medcpt)
+    bioyoda.sh build patents-text insert    # patents_text (-> patents_text_medcpt)
     bioyoda.sh build proteins insert        # esm2
 
     # Data processing as an Enju DAG (preferred)

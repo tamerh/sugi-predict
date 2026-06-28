@@ -18,7 +18,7 @@ Two stages, both reproducible and resumable:
   python bake_provenance.py [--snapshot DIR] [--collection patent_compounds] [--top 20]
                             [--batch 1000] [--limit N] [--dry-run] [--resume] [--resort]
 
-Reproducible: run as `bioyoda.sh atlas bake`. Small-data test: tests/test_atlas_bake.py -> throwaway collection.
+Reproducible: run as `bioyoda.sh build compounds provenance`. Small-data test: tests/test_atlas_bake.py -> throwaway collection.
 No GPU -- CPU + I/O. Needs ~16 GB RAM (patent metadata) + sort scratch on disk + payload disk (top-20 ~87 GB).
 """
 import argparse, os, sys, time

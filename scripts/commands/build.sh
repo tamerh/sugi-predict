@@ -275,13 +275,43 @@ _dispatch(){
         all)    build proteins prepare ${prod:+--prod}; build proteins embed ${prod:+--prod}; build proteins insert ${prod:+--prod} ;;
         *) echo "proteins stages: all | prepare | embed | insert  (collection: esm2; source: UniProt FASTA; embed = ESM-2 650M esm2_t33_650M_UR50D dim 1280, GPU)"; ;;
       esac ;;
+    patents-text)
+      # patents_text MedCPT pipeline: SureChEMBL patents.parquet (title) + USPTO full-text overlay -> JSONL shards
+      #   -> MedCPT-Article embed (GPU) -> insert into patents_text_medcpt (served as the patents_text alias).
+      # Mirrors the trials/text cases (MedCPT-Article, dim 768), but the source is patents not pubmed/trials:
+      #   prepare = modules/patents/scripts/prepare_medcpt_shards.py (title doubled + USPTO abstract/claims/desc
+      #   where has_full_text). The same chain the retired `atlas text` ran; this is now its single home.
+      local COLL="patents_text_medcpt${suffix}"
+      local PT_SC="${SURECHEMBL_PATENTS:-${ROOT}/raw_data/patents/surechembl/2026-06-01/patents.parquet}"
+      local PT_UH="${ROOT}/raw_data/patents/historical_uspto/uspto_historical.parquet"
+      local PT_UG="${ROOT}/work/data/processed/patents/uspto_gap_enriched.parquet"
+      # scratch: test mode (suffix=_test) isolated under work/test/ so it NEVER touches the prod shards/output
+      local PT_BASE="${ROOT}/work"
+      [[ -n "$suffix" ]] && PT_BASE="${ROOT}/work/test"
+      local PT_IN="${PT_BASE}/data/medcpt_input/patents" PT_OUT="${PT_BASE}/data/medcpt_output/patents"
+      mkdir -p "$PT_IN"
+      case $stage in
+        prepare) $PY "${ROOT}/modules/patents/scripts/prepare_medcpt_shards.py" \
+                    --patents "$PT_SC" --uspto "$PT_UH" "$PT_UG" --out-dir "$PT_IN" ;;
+        embed)  mkdir -p "$PT_OUT"; rm -f "$PT_OUT"/shard_*.index "$PT_OUT"/shard_*.json   # clear stale output: delta shards must not collide with a prior full embed's names (would be skipped, never re-inserted)
+                if pod_configured; then pod_embed_text "$PT_IN" "$PT_OUT"
+                else log "GPU stage — MedCPT on CPU is infeasible at patent scale (~39M); set POD_HOST/POD_PORT/POD_KEY for the pod"
+                     $PY "${ROOT}/scripts/gpu/embed_text_medcpt_gpu.py" --input-dir "$PT_IN" --output-dir "$PT_OUT" --model ncbi/MedCPT-Article-Encoder --text-field text --batch-size 512 --max-length 512 --device auto; fi ;;
+        insert) qdrant_defer "$COLL"
+                # additive: insert_from_faiss keys points by hash(patent_id) -> re-running a patent is idempotent (upgrades title-only -> full-text in place)
+                $PY "${ROOT}/modules/qdrant/scripts/insert_from_faiss.py" --faiss-dir "$PT_OUT" --collection "$COLL" --qdrant-url "$QURL" --vector-size 768
+                qdrant_build "$COLL" ;;
+        all)    build patents-text prepare ${prod:+--prod}; build patents-text embed ${prod:+--prod}; build patents-text insert ${prod:+--prod} ;;
+        *) echo "patents-text stages: all | prepare | embed | insert  (collection: patents_text_medcpt; source: SureChEMBL patents.parquet + USPTO full-text; embed = MedCPT-Article, dim 768, GPU)"; ;;
+      esac ;;
     *) cat <<EOF
 bioyoda.sh build <collection> <stage> [--full|--delta] [--prod]
-  collections: compounds | text | reference | proteins | trials
-  compounds stages: all | chunk | predict | ingest | provenance | denoise | defer | build
-  text stages:      all | chunk | embed | insert   (pubmed_abstracts_medcpt; source: PubMed XML; MedCPT-Article)
-  trials stages:    all | chunk | embed | insert   (clinical_trials_medcpt; source: biobtree trials.json; MedCPT-Article)
-  proteins stages:  all | prepare | embed | insert (esm2; source: UniProt FASTA; embed = ESM-2 650M, dim 1280)
+  collections: compounds | patents-text | text | reference | proteins | trials
+  compounds stages:    all | chunk | predict | ingest | provenance | denoise | defer | build
+  patents-text stages: all | prepare | embed | insert (patents_text_medcpt; source: SureChEMBL + USPTO full-text; MedCPT-Article)
+  text stages:         all | chunk | embed | insert   (pubmed_abstracts_medcpt; source: PubMed XML; MedCPT-Article)
+  trials stages:       all | chunk | embed | insert   (clinical_trials_medcpt; source: biobtree trials.json; MedCPT-Article)
+  proteins stages:     all | prepare | embed | insert (esm2; source: UniProt FASTA; embed = ESM-2 650M, dim 1280)
 
   --delta (default, incremental):  process ONLY what changed since the last build.
       chunk/predict  -> compute the fused k-NN for compounds NOT already in work/atlas_nbrs/, then merge the

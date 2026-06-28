@@ -166,11 +166,6 @@ main() {
             cmd_compounds "$@"
             ;;
 
-        # Atlas build chain — reproducible steps (grounding / indexes / provenance bake)
-        atlas)
-            source "${SCRIPT_DIR}/commands/atlas.sh"
-            cmd_atlas "$@"
-            ;;
         build)
             source "${SCRIPT_DIR}/commands/build.sh"
             cmd_build "$@"

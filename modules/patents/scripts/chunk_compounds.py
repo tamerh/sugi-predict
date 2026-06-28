@@ -2,7 +2,7 @@
 """Split a SureChEMBL compounds.parquet into N fixed chunks (id + smiles + ...) for the atlas k-NN + ingest.
 
 Reproducible chunking step so the patent_atlas can be rebuilt on any snapshot from the orchestrator:
-`bioyoda.sh atlas compounds chunk`. Streams the parquet (bounded memory), writes compounds_chunk_NNNN.parquet.
+`bioyoda.sh build compounds chunk`. Streams the parquet (bounded memory), writes compounds_chunk_NNNN.parquet.
 
   python chunk_compounds.py --input <compounds.parquet> --out-dir <dir> --chunks 62
 """
