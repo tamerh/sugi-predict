@@ -52,9 +52,9 @@ print("  [build] GREEN:", qc.count(n).count, "points")
 PY
 }
 
-# --- pod-sync: automate the GPU hop (push -> tmux run -> monitor -> pull). Blueprint: work/medcpt_orchestrator.sh ---
+# --- pod-sync: automate the GPU hop (push -> tmux run -> monitor -> pull). ---
 # Config from env: POD_HOST (root@ip), POD_PORT, POD_KEY. Without them, GPU stages run locally if a GPU is present.
-_SSHOPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"   # keepalive from medcpt_orchestrator.sh: long monitors/transfers don't drop
+_SSHOPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"   # keepalive: long monitors/transfers don't drop
 _pssh(){ ssh -i "${POD_KEY}" -p "${POD_PORT}" ${_SSHOPTS} "${POD_HOST}" "$@"; }
 _pup(){  rsync -rltz --partial -e "ssh -i ${POD_KEY} -p ${POD_PORT} ${_SSHOPTS}" "$@"; }   # NOT -a: pod volumes forbid chown (owner/group) -> rsync exits 23
 pod_configured(){ [[ -n "${POD_HOST:-}" && -n "${POD_PORT:-}" && -n "${POD_KEY:-}" ]]; }
