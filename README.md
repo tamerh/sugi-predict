@@ -41,8 +41,8 @@ GPU embed/predict stages auto push/run/pull on a pod when `POD_HOST`/`POD_PORT`/
 set. Full command reference and the build sequence: [docs/cli.md](docs/cli.md) ·
 [docs/getting-started.md](docs/getting-started.md).
 
-`bioyoda.sh` subcommands: `start` · `stop` · `build` · `atlas` · `compounds` · `enju` ·
-`qdrant` · `status` · `validate` · `clean` · `test` · `snapshot` · `push` · `pull`.
+`bioyoda.sh` subcommands: `start` · `stop` · `build` · `compounds` · `enju` · `qdrant` ·
+`status` · `validate` · `clean` · `test` · `push` · `pull`.
 
 ## Substrate
 

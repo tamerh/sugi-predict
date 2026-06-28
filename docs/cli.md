@@ -14,7 +14,6 @@ bioyoda.sh build <collection> <stage>   Build / refresh a collection
 bioyoda.sh qdrant <subcommand>          Qdrant container lifecycle (docker compose)
 bioyoda.sh test [--integration|--atlas] Test suite (fixtures by default; live-DB regression)
 bioyoda.sh enju <module>                Run a module's build pipeline as an Enju DAG
-bioyoda.sh snapshot --name <n>          Create an isolated production copy
 bioyoda.sh status | validate | clean    Maintenance helpers
 bioyoda.sh push | pull <module>         Google Drive sync (for off-box GPU)
 bioyoda.sh help | version
@@ -146,15 +145,12 @@ See the [Enju CLI](/data/enju/docs/reference/cli.md) for the underlying `enju go
 | Command | Purpose |
 |---|---|
 | `start` / `stop` | Shorthand for the Qdrant server (no module arg) |
-| `snapshot --name <n>` | Create an isolated production copy under `snapshots/<n>/` |
 | `status` | Pipeline status |
 | `validate <module>` | Validate a module's outputs |
 | `clean <module>` | Remove intermediate files |
 | `push` / `pull <module>` | Google Drive sync, for off-box (Colab) GPU processing |
-| `run <module>` | Legacy local Snakemake path (retired for cluster use) |
 
 ```bash
-bioyoda.sh snapshot --name prod_v1.0
 bioyoda.sh push patents --code-only      # push scripts only (fast)
 ```
 
