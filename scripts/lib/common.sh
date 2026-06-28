@@ -17,10 +17,10 @@ source "${LIB_DIR}/config.sh"
 source "${LIB_DIR}/process.sh"
 
 # Delete-guard: refuse to rm a path that is empty, a filesystem/repo root, or that
-# resolves inside a PROTECTED root (raw_data/, qdrant/, snapshots/). Catches the
+# resolves inside a PROTECTED root (raw_data/, out_prod/qdrant/). Catches the
 # classic misfire where an unset base_dir turns `rm -rf "$base_dir/data/.."` into
 # `rm -rf "/data/.."`, and stops any clean target from ever reaching the
-# irreplaceable raw_data, the live qdrant DB, or the published snapshots.
+# irreplaceable raw_data or the live qdrant DB (out_prod/qdrant).
 # Usage: assert_deletable "<path-to-be-deleted>"   (call BEFORE the rm)
 assert_deletable() {
     local target="$1"
@@ -32,7 +32,7 @@ assert_deletable() {
     fi
     local abs; abs="$(readlink -f "$target" 2>/dev/null || echo "$target")"
     local prot
-    for prot in raw_data qdrant snapshots; do
+    for prot in raw_data out_prod/qdrant; do
         local pabs; pabs="$(readlink -f "${repo_root}/${prot}" 2>/dev/null || echo "${repo_root}/${prot}")"
         if [[ "$abs" == "$pabs" || "$abs" == "$pabs/"* ]]; then
             log_error "DELETE-GUARD: refusing to delete PROTECTED path '${target}' (resolves under ${prot}/)"
