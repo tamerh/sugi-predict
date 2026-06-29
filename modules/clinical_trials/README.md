@@ -12,8 +12,7 @@ MedCPT-Article (768-d), served as retrieval context for a target's trial landsca
 `chunk` turns biobtree's `trials.json` into MedCPT input shards (incremental by default vs the
 tracking DB; `--full` rebuilds); `embed` runs MedCPT-Article (GPU via the pod, CPU otherwise);
 `insert` upserts into Qdrant and commits the delta tracking hashes. The source (AACT download +
-extract) is owned by biobtree; this module consumes `trials.json` directly. The scheduled
-refresh runs as the `clinical-trials-update` Enju workflow (`workflows/clinical-trials-update/`).
+extract) is owned by biobtree; this module consumes `trials.json` directly. Incremental refresh: `./bioyoda.sh build trials all --delta` (bash; the Enju DAG was retired).
 
 ## Key scripts (`scripts/`)
 

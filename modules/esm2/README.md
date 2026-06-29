@@ -13,8 +13,7 @@ predicted target).
 `prepare` splits the UniProt FASTA into chunks, incremental by default (only accessions not
 already in the collection; `--full` for the whole set); `embed` runs ESM-2 650M (GPU via the
 pod, very slow on CPU); `insert` upserts the 1280-d vectors into Qdrant, keyed by hashed
-`protein_id`. The scheduled refresh runs as the `esm2-update` Enju workflow
-(`workflows/esm2-update/`).
+`protein_id`. Incremental refresh: `./bioyoda.sh build proteins all --delta` (bash; the Enju DAG was retired).
 
 ## Key scripts (`scripts/`)
 

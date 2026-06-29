@@ -13,8 +13,7 @@ chemistry + targets).
 
 `chunk` parses the NCBI PubMed XML (baseline + updatefiles) into MedCPT input shards,
 incremental by PMID-delta (`--full` for the full corpus); `embed` runs MedCPT-Article (GPU via
-the pod); `insert` upserts into Qdrant. The scheduled refresh runs as the `pubmed-update` Enju
-workflow (`workflows/pubmed-update/`).
+the pod); `insert` upserts into Qdrant. Incremental refresh: `./bioyoda.sh build text all --delta` (bash; the Enju DAG was retired).
 
 ## Key scripts (`scripts/`)
 

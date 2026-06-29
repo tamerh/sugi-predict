@@ -24,8 +24,8 @@ full-text overlay): the patent compounds and the patent text.
   ./bioyoda.sh build patents-text <stage>   # prepare | embed | insert | all
   ```
 
-The incremental USPTO full-text gap-fill runs as the `patents-text-update` Enju workflow
-(`workflows/patents-text-update/`); the monthly compound refresh as `patents-compound-update`.
+Incremental refresh is `./bioyoda.sh build patents-text|compounds <stage> --delta` (the old Enju
+`*-update` DAGs were retired; bash `build` is the orchestrator now).
 
 ## Key scripts (`scripts/`)
 
