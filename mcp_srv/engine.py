@@ -205,13 +205,20 @@ def epo_apply(prov, max_per=20):
             from modules.patents import epo_enrich
         except Exception:
             return prov
+    import concurrent.futures
+    try: epo_enrich._token()        # pre-warm the OAuth token so parallel workers reuse it (no fetch stampede)
+    except Exception: pass
+    def _one(pt):
+        num = pt.get("number")
+        if not num: return (None, True)
+        try: return epo_enrich.enrich_state(num)
+        except Exception: return (None, False)
     for v in prov.values():
+        pats = v.get("patents", [])[:max_per]
         pending = False
-        for pt in v.get("patents", [])[:max_per]:
-            num = pt.get("number")
-            if not num:
-                continue
-            data, resolved = epo_enrich.enrich_state(num)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+            results = list(ex.map(_one, pats))
+        for pt, (data, resolved) in zip(pats, results):
             if data:
                 if data.get("priority_date"): pt["priority_date"] = data["priority_date"]
                 if data.get("filing_date"):   pt["filing_date"] = data["filing_date"]
