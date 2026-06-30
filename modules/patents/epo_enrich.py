@@ -13,11 +13,17 @@ so the parser is defensive.
   enrich("US-20260146232-A1")   -> {"priority_date","filing_date","applicants",...}  or None on miss
   python epo_enrich.py US-20260146232-A1 EP-0564409-A1    # CLI test
 """
-import os, json, base64, time, re, urllib.request, urllib.error, pathlib
+import os, sys, json, base64, time, re, urllib.request, urllib.error, pathlib
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]      # /data/bioyoda
+ROOT = pathlib.Path(os.environ.get("BIOYODA_ROOT") or pathlib.Path(__file__).resolve().parents[2])  # /data/bioyoda
 CONFIG = ROOT / "config" / "epo.json"
-CACHE = ROOT / "work" / "epo_cache"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+try:
+    from modules.paths import WORK as _WORK          # honors config.yaml base_dir (e.g. out_prod/work)
+    CACHE = pathlib.Path(_WORK) / "epo_cache"
+except Exception:
+    CACHE = ROOT / "work" / "epo_cache"              # legacy fallback
 OPS = "https://ops.epo.org/3.2"
 _tok = {"value": None, "exp": 0.0}
 
@@ -95,7 +101,10 @@ def enrich(patent, force=False):
             headers={"Authorization": f"Bearer {_token()}", "Accept": "application/json"})
         data = json.load(urllib.request.urlopen(r, timeout=30))
     except urllib.error.HTTPError as e:
-        json.dump({"error": e.code}, open(cf, "w"))
+        if e.code == 404:                       # genuine not-found: cache a permanent miss
+            json.dump({"error": 404}, open(cf, "w"))
+        return None                             # quota (403/429), 5xx, etc.: transient, do NOT cache (retry later)
+    except Exception:                           # missing creds, network (URLError), timeout: transient, do NOT cache
         return None
     try:
         ed = data["ops:world-patent-data"]["exchange-documents"]["exchange-document"]
@@ -119,6 +128,18 @@ def enrich(patent, force=False):
         return None
     json.dump(out, open(cf, "w"))
     return out
+
+
+def enrich_state(patent):
+    """(data_or_None, resolved): resolved=True when we have a definitive answer (real data or a genuine
+    not-found, both cached); False when a transient failure (quota/network) left nothing cached, so the
+    caller should retry on a later view rather than treat it as a permanent miss. Never raises."""
+    cf = CACHE / f"{_to_epodoc(patent)}.json"
+    try:
+        data = enrich(patent)        # may do one live call; caches only real data or a genuine 404
+    except Exception:
+        return None, False
+    return data, cf.exists()         # after enrich, a cache file exists iff the answer is definitive
 
 
 if __name__ == "__main__":

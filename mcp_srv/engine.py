@@ -191,6 +191,37 @@ def provenance(ids, max_per=8):
     return {f"SCHEMBL{k}": v for k, v in out.items()}
 
 
+def epo_apply(prov, max_per=20):
+    """Lazily enrich the top patents of each compound's provenance with EPO OPS priority/filing dates and a
+    normalized applicant (per-patent cache; bounded; never raises). Sets per-compound 'epo_pending'=True when a
+    transient failure (quota/network) leaves some patents unresolved, so a caller can avoid caching a partial
+    result. Blocking on cache misses; call off the event loop."""
+    try:
+        from modules.patents import epo_enrich
+    except Exception:
+        try:
+            import sys, pathlib
+            sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+            from modules.patents import epo_enrich
+        except Exception:
+            return prov
+    for v in prov.values():
+        pending = False
+        for pt in v.get("patents", [])[:max_per]:
+            num = pt.get("number")
+            if not num:
+                continue
+            data, resolved = epo_enrich.enrich_state(num)
+            if data:
+                if data.get("priority_date"): pt["priority_date"] = data["priority_date"]
+                if data.get("filing_date"):   pt["filing_date"] = data["filing_date"]
+                if data.get("applicants"):    pt["applicant_norm"] = data["applicants"][0]
+            if not resolved:
+                pending = True
+        v["epo_pending"] = pending
+    return prov
+
+
 # --------------------------------------------------------------------------- patent-text support (the badge)
 # Serve-time corroboration: does a compound's full-text patent BODY independently rank its chemistry-predicted
 # target high? Validated in the pilot (recall@10 ~0.19 overall, ~0.40 at conf>=0.8; collapses to ~0.02 under a

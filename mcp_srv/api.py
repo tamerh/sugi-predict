@@ -69,10 +69,16 @@ async def api_predict(smiles: str = Query(...), top: int = Query(20), human_only
 
 @router.get("/provenance")
 async def api_provenance(ids: str = Query(..., description="comma-separated SureChEMBL ids"),
-                         max_per: int = Query(8)):
-    """Patent provenance for SureChEMBL id(s)."""
+                         max_per: int = Query(8), epo: int = Query(1)):
+    """Patent provenance for SureChEMBL id(s). With epo=1 (default) the top patents are lazily enriched with
+    EPO OPS priority/filing dates and a normalized applicant; enrichment is bounded, cached per patent, run off
+    the event loop, and never blocks the baked result on EPO availability."""
     try:
-        return E.provenance([i.strip() for i in ids.split(",") if i.strip()], max_per=max_per)
+        prov = E.provenance([i.strip() for i in ids.split(",") if i.strip()], max_per=max_per)
+        if epo:
+            import asyncio
+            await asyncio.to_thread(E.epo_apply, prov, 20)
+        return prov
     except Exception as e:
         return _err(e)
 
