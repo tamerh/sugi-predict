@@ -1,0 +1,50 @@
+### LARGE APPROVED-DRUG PANEL — per-target-CLASS recall
+reference: 1,248,456 ligands, 6,960 genes
+panel: 1556 drugs (SMILES + >=1 mechanism gene in reference)
+prediction: FPSim2 k-NN (k=20, Tanimoto>=0.15), GENERIC Bemis-Murcko scaffold held out (same as headline run)
+class source: ChEMBL protein classification (chembl_targets.jsonl protein_classes hierarchy);
+  6247 human genes classed (Kinase/Protease/Other-enzyme split out of /Enzyme,
+  GPCR split out of /Membrane receptor, Nuclear receptor split out of /Transcription factor).
+
+OVERALL (drug-level: any mechanism gene recovered), n=1556
+  recall@1  533/1556 = 34.3%  95% CI [31.9%,36.6%]
+  recall@5  841/1556 = 54.0%  95% CI [51.6%,56.5%]
+  recall@10 946/1556 = 60.8%  95% CI [58.3%,63.2%]
+
+(B) DRUG-CLASS view [HEADLINE] — a drug counts ONCE per class; hit = ANY gene of that class recovered
+class                            n         recall@1         recall@5        recall@10   (unit: (drug, class) pairs)
+------------------------------------------------------------------------------------------------------
+GPCR                           472  35.2% [31%,40%]  60.8% [56%,65%]  72.2% [68%,76%]
+Other enzyme                   259  31.7% [26%,38%]  51.7% [46%,58%]  57.1% [51%,63%]
+Other/unclassified             205  10.7% [7%,16%]  22.4% [17%,29%]  25.9% [20%,32%]
+Ion channel                    195  14.4% [10%,20%]  20.0% [15%,26%]  23.1% [18%,29%]
+Nuclear receptor               185  43.8% [37%,51%]  66.5% [59%,73%]  71.9% [65%,78%]
+Kinase                         121  66.9% [58%,75%]  85.1% [78%,90%]  86.8% [80%,92%]
+Transporter                     90  26.7% [19%,37%]  53.3% [43%,63%]  62.2% [52%,72%]
+Protease                        43  74.4% [60%,85%]  88.4% [76%,95%]  90.7% [78%,96%]
+Other (classified)              17  23.5% [10%,47%]  47.1% [26%,69%]  58.8% [36%,78%]
+Membrane receptor (other)       13  38.5% [18%,64%]  61.5% [36%,82%]  69.2% [42%,87%]
+Epigenetic regulator             9  77.8% [45%,94%]  77.8% [45%,94%]  77.8% [45%,94%]
+Transcription factor (other)     2  50.0% [9%,91%]  50.0% [9%,91%]  100.0% [34%,100%]
+------------------------------------------------------------------------------------------------------
+(all drug-class pairs)        1611
+
+(A) GENE-PAIR view [raw] — one row per (drug, mechanism-gene); protein-complex targets (e.g. GABA-A,
+    nicotinic AChR) explode to many subunit genes the FP model can't resolve -> depresses sparse classes
+class                            n         recall@1         recall@5        recall@10   (unit: (drug, gene) pairs)
+------------------------------------------------------------------------------------------------------
+Other/unclassified            2277   1.0% [1%,1%]   5.4% [5%,6%]  10.8% [10%,12%]
+Ion channel                   1864   1.5% [1%,2%]   4.6% [4%,6%]   6.7% [6%,8%]
+GPCR                           964  17.2% [15%,20%]  41.6% [39%,45%]  53.1% [50%,56%]
+Other enzyme                   588  13.9% [11%,17%]  32.8% [29%,37%]  37.1% [33%,41%]
+Kinase                         335  24.2% [20%,29%]  52.8% [47%,58%]  62.1% [57%,67%]
+Nuclear receptor               228  35.5% [30%,42%]  60.5% [54%,67%]  65.8% [59%,72%]
+Other (classified)             225   1.8% [1%,4%]   9.8% [7%,14%]  24.4% [19%,30%]
+Protease                       160  20.0% [15%,27%]  30.6% [24%,38%]  39.4% [32%,47%]
+Transporter                    134  17.9% [12%,25%]  46.3% [38%,55%]  58.2% [50%,66%]
+Epigenetic regulator            55  12.7% [6%,24%]  45.5% [33%,58%]  74.5% [62%,84%]
+Membrane receptor (other)       17  29.4% [13%,53%]  58.8% [36%,78%]  70.6% [47%,87%]
+Transcription factor (other)     2  50.0% [9%,91%]  50.0% [9%,91%]  100.0% [34%,100%]
+------------------------------------------------------------------------------------------------------
+(all gene-pairs)              6849
+

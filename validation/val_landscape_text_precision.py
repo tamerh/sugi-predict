@@ -33,7 +33,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny
 
 QDRANT = os.environ.get("BIOYODA_QDRANT_URL", "http://localhost:6333")
-NPZ = "/data/bioyoda/work/patent_text_support/target_query_emb.npz"
+NPZ = "/data/bioyoda/out_prod/work/patent_text_support/target_query_emb.npz"
 PC = "patent_compounds_v2"          # alias target of patent_compounds
 PT = "patents_text_medcpt"          # alias target of patents_text
 

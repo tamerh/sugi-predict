@@ -1,0 +1,17 @@
+loading uncapped reference index + labels + years…
+  1,248,456 molecules total, 939,044 with a year (75%)
+  cutoff 2018: train(<=) 668,055  |  test(>) 270,989
+
+### TEMPORAL VALIDATION — train year<= 2018, test year> 2018
+### 2000 post-cutoff queries, deployed ranking, neighbours restricted to pre-cutoff reference
+
+condition                           recall@1  recall@5
+TEMPORAL split (year>2018)            40.8%     55.7%   <- generalization-over-time
+popularity baseline (pre-cutoff)       0.4%      3.9%
+random baseline                        0.0%      0.1%
+
+recall@1 by top-neighbour Tanimoto (to nearest pre-cutoff ligand):
+  ≥0.7      76.0%  (n=250)
+  0.5-0.7   55.1%  (n=746)
+  0.3-0.5   22.4%  (n=943)
+  <0.3       6.6%  (n=61)

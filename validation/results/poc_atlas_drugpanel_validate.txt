@@ -1,0 +1,53 @@
+reference: 1,248,456 ligands, 7,929 targets
+
+drug           class            known         in ref? @1  @5   top-5 predicted genes
+gefitinib      kinase           EGFR          yes     Y   Y   EGFR, BRAF, KDR, EPHB4, EPHA2
+erlotinib      kinase           EGFR          yes     Y   Y   EGFR, GAK, PTGS1, PTGS2, ERBB2
+imatinib       kinase           ABL1/KIT/PDGFRByes     Y   Y   ABL1, BCR, KIT, ABL2, PDGFRA
+nilotinib      kinase           ABL1          yes     Y   Y   ABL1, KIT, PCSK9, LDLR, PDGFRB
+vemurafenib    kinase           BRAF          yes     .   .   CYP2C19, CYP2C9, CLK2, CSF1R, TESK1
+dabrafenib     kinase           BRAF          yes     Y   Y   BRAF, NR1I2, HDAC6, HDAC1, EIF2AK3
+crizotinib     kinase           ALK/MET       yes     Y   Y   MET, JAK2, ALK, MAP4K3, INSR
+ibrutinib      kinase           BTK           yes     Y   Y   BTK, EGFR, ITK, ERBB2
+palbociclib    kinase           CDK4/CDK6     yes     Y   Y   CDK4, CCND1, CCND3, CCND2, CCNA2
+lapatinib      kinase           EGFR/ERBB2    yes     .   Y   ABCB11, EGFR, ERBB2, P08659, MEN1
+propranolol    GPCR             ADRB1/ADRB2   yes     .   Y   Adrb2, ADRB2, ADRB1, ADRB3, CYP2D6
+atenolol       GPCR             ADRB1         yes     .   .   NPY2R, PMP22, NPY1R, NPSR1, TDP1
+losartan       GPCR             AGTR1         yes     .   Y   Agtr1b, Agtr1, Agtr2, AGTR1, AGTR2
+candesartan    GPCR             AGTR1         yes     Y   Y   AGTR1, NAE1, AGTR2, ABCG2, HPGD
+fexofenadine   GPCR             HRH1          yes     .   Y   gyrA, gyrB, CYP2J2, HRH1, CYP2C9
+loratadine     GPCR             HRH1          yes     .   .   MGLL, Hrh1, FNTA, FNTB, SLC6A15
+montelukast    GPCR             CYSLTR1       yes     Y   Y   CYSLTR1, CYSLTR2
+ondansetron    ion channel      HTR3A         yes     .   .   Htr3b, Htr3a, Htr2a, Oprm1, Chrm1
+sumatriptan    GPCR             HTR1B/HTR1D   yes     .   Y   HTR1A, HTR1D, HTR1B, HTR2A, KCNH2
+captopril      protease/enzyme  ACE           yes     .   Y   blaNDM-1, ACE, Ace
+enalapril      protease/enzyme  ACE           yes     Y   Y   ACE, ABCB11, MEN1, KMT2A, LMNA
+lisinopril     protease/enzyme  ACE           yes     Y   Y   ACE, Ace, F2
+sitagliptin    protease/enzyme  DPP4          yes     Y   Y   DPP4, DPP8, DPP7, DPP9
+saxagliptin    protease/enzyme  DPP4          yes     Y   Y   DPP4, DPP8, DPP9
+tamoxifen      nuclear receptor ESR1          yes     .   Y   ABCG2, KDM1A, PSMB1, PSMB5, ESR1
+raloxifene     nuclear receptor ESR1          yes     Y   Y   ESR1, ESR2, NR5A2
+dexamethasone  nuclear receptor NR3C1         yes     Y   Y   NR3C1, MMP1, PGR, Rorc, LMNA
+spironolactone nuclear receptor NR3C2         yes     .   .   ALDH1A1, PGR, NR3C1, Ar, MEN1
+finasteride    enzyme           SRD5A2        yes     .   Y   SRD5A1, SRD5A2, Srd5a2, Srd5a1
+sildenafil     enzyme           PDE5A         yes     Y   Y   PDE5A, KMT2A, KDM4E, HDAC1, HDAC2
+tadalafil      enzyme           PDE5A         yes     Y   Y   PDE5A, PDE6D, PDE6B, PDE6H, PDE6A
+atorvastatin   enzyme           HMGCR         yes     .   .   Hmgcr, SLCO1B1, SLCO1B3, ABCC3, ABCC4
+simvastatin    enzyme           HMGCR         yes     .   Y   Hmgcr, HMGCR, SLCO1B1, Cacna1c, HDAC2
+celecoxib      enzyme           PTGS2         yes     .   Y   PDPK1, PTGS2, Ptgs2, PTGS1, CYP2C9
+methotrexate   enzyme           DHFR          yes     .   Y   Dhfr, DHFR, folA, NCOA3, thyA
+allopurinol    enzyme           XDH           yes     .   .   MKNK1, ffp, ALDH1A1, Pnp, fba
+acetazolamide  enzyme           CA2           yes     Y   Y   CA2, CA1, CA4, CA9, CA7
+amlodipine     ion channel      CACNA1C       yes     .   .   ffp, CYP3A4, ampC, Rorc, NR1I2
+nifedipine     ion channel      CACNA1C       yes     .   Y   ADORA3, Adora1, CACNA1C, Cacna1d, CACNA1B
+
+=== summary (drugs whose target is in the reference: 39/39) ===
+  top-1 (gene): 19/39 = 49%
+  top-5 (gene): 31/39 = 79%
+  by class:
+    GPCR              top-1 2/8 · top-5 6/8
+    enzyme            top-1 3/9 · top-5 7/9
+    ion channel       top-1 0/3 · top-5 1/3
+    kinase            top-1 8/10 · top-5 9/10
+    nuclear receptor  top-1 2/4 · top-5 3/4
+    protease/enzyme   top-1 4/5 · top-5 5/5

@@ -1,0 +1,71 @@
+# human targets in text-ranking vocab: N=4885
+# TEXT_RANK_HIT = 10  (X in text top-10 == corroborated); DISAGREE_RANK = 50
+
+EGFR   P00533 [kinase          ] landscape= 841,765  full-text n= 400  precision=67.2%  null= 0.2%  disagree=19.0%  median_rank=   2  (clean n=393, noise n=7)
+ABL1   P00519 [kinase          ] landscape= 448,948  full-text n= 400  precision=21.2%  null= 0.2%  disagree=53.5%  median_rank=  62  (clean n=396, noise n=4)
+FGFR1  P11362 [kinase          ] landscape= 319,715  full-text n= 400  precision=16.2%  null= 0.0%  disagree=68.0%  median_rank= 146  (clean n=397, noise n=3)
+ADRB2  P07550 [GPCR            ] landscape= 276,089  full-text n= 400  precision=80.0%  null= 0.0%  disagree= 4.2%  median_rank=   1  (clean n=399, noise n=1)
+DRD2   P14416 [GPCR            ] landscape= 758,281  full-text n= 400  precision=25.0%  null= 0.5%  disagree=74.2%  median_rank=  57  (clean n=399, noise n=1)
+HTR2A  P28223 [GPCR            ] landscape= 804,889  full-text n= 400  precision=64.0%  null= 0.2%  disagree=36.0%  median_rank=   4  (clean n=400, noise n=0)
+KCNH2  Q12809 [ion-channel     ] landscape=1,692,800  full-text n= 400  precision= 1.8%  null= 0.2%  disagree=91.5%  median_rank= 176  (clean n=400, noise n=0)
+SCN5A  Q14524 [ion-channel     ] landscape= 173,014  full-text n= 400  precision= 3.5%  null= 0.2%  disagree=87.2%  median_rank=  52  (clean n=400, noise n=0)
+F2     P00734 [protease        ] landscape= 311,590  full-text n= 400  precision=59.5%  null= 0.0%  disagree=33.8%  median_rank=   3  (clean n=397, noise n=3)
+ELANE  P08246 [protease        ] landscape= 223,168  full-text n= 400  precision=23.8%  null= 0.0%  disagree=75.0%  median_rank=1598  (clean n=400, noise n=0)
+ESR1   P03372 [nuclear-receptor] landscape= 728,313  full-text n= 400  precision=98.0%  null= 0.0%  disagree= 1.5%  median_rank=   4  (clean n=395, noise n=5)
+AR     P10275 [nuclear-receptor] landscape= 409,373  full-text n= 400  precision=97.5%  null= 0.2%  disagree= 2.2%  median_rank=   1  (clean n=400, noise n=0)
+
+====================================================================================================
+PER-TARGET LANDSCAPE PRECISION (independent signal = patent body text)
+====================================================================================================
+target class              landscape  FT n  PRECISION    null   lift  disagree  med-rank
+---------------------------------------------------------------------------------------
+EGFR   kinase               841,765   400      67.2%    0.2% 269.0x     19.0%         2
+ABL1   kinase               448,948   400      21.2%    0.2%  85.0x     53.5%        62
+FGFR1  kinase               319,715   400      16.2%    0.0%   infx     68.0%       146
+ADRB2  GPCR                 276,089   400      80.0%    0.0%   infx      4.2%         1
+DRD2   GPCR                 758,281   400      25.0%    0.5%  50.0x     74.2%        57
+HTR2A  GPCR                 804,889   400      64.0%    0.2% 256.0x     36.0%         4
+KCNH2  ion-channel        1,692,800   400       1.8%    0.2%   7.0x     91.5%       176
+SCN5A  ion-channel          173,014   400       3.5%    0.2%  14.0x     87.2%        52
+F2     protease             311,590   400      59.5%    0.0%   infx     33.8%         3
+ELANE  protease             223,168   400      23.8%    0.0%   infx     75.0%      1598
+ESR1   nuclear-receptor     728,313   400      98.0%    0.0%   infx      1.5%         4
+AR     nuclear-receptor     409,373   400      97.5%    0.2% 390.0x      2.2%         1
+---------------------------------------------------------------------------------------
+OVERALL(micro)                     4800      46.5%    0.2% 278.9x     45.5%
+
+OVERALL precision (all full-text landscape compounds):        46.5%   (n=4800)
+OVERALL precision EXCLUDING noise/tool compounds (served set): 46.4%   (n=4776)
+NULL baseline (random human target, same patents):             0.2%
+DISAGREEMENT rate (text strongly points elsewhere):           45.5%
+MACRO precision (mean over targets):                          46.5%
+
+======================================================================
+STRATIFICATION BY SUPPORT  (is support a trustworthy landscape knob?)
+   [from PASS 2: full-text compounds sampled ACROSS the support range, not just the top]
+======================================================================
+support bucket     precision        n
+1                       5.7%     1722
+2-3                     8.8%     1080
+4-7                    13.2%      431
+8+                     38.7%      367
+
+======================================================================
+STRATIFICATION BY CONFIDENCE BAND
+======================================================================
+conf band          precision        n
+high>=0.5              17.2%     1501
+mod 0.4-0.5             6.8%     1549
+low 0.3-0.4             5.3%      550
+
+====================================================================================================
+CAVEATS
+====================================================================================================
+- FULL-TEXT SUBSET: only ~1.4% of patents have full text. This precision is measured ON THAT SUBSET,
+  not the whole landscape. The other ~98.6% of landscape compounds have no independent text signal here.
+- PARTIAL INDEPENDENCE: inventors design AND describe the molecule, so 'corroborated' means the patent
+  is ABOUT X -- evidence the compound is an X-program molecule -- NOT a ground-truth binding assay.
+- NOISE/TOOL COMPOUNDS: served badges suppress prov.noise compounds (incidental mentions). The
+  'EXCLUDING noise' row is the precision of what users actually see.
+- NULL is non-zero (0.2%) because a random target lands in top-10 of 4885 ~ 0.2%
+  of the time by chance; precision must beat NULL to mean anything (see 'lift').

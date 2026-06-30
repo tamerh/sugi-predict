@@ -1,0 +1,18 @@
+loading ChEMBL reference index…
+  1,248,456 reference fps
+sampling 10500 patent compounds across 7 chunks…
+
+### COVERAGE — best Tanimoto of 10498 random patent compounds to the ChEMBL reference (dropped 2)
+
+  best Tanimoto band       count  % of sample  cumulative ≥
+  ≥ 0.7                     1119       10.7%        10.7%
+  ≥ 0.5                     2950       28.1%        38.8%
+  ≥ 0.4                     2991       28.5%        67.3%
+  ≥ 0.3                     2600       24.8%        92.0%
+  ≥ 0.2                      751        7.2%        99.2%
+  < 0.2 (no confident neighbor)  87        0.8%
+
+  median best-Tanimoto = 0.453   mean = 0.485
+
+READ: '≥0.5' ≈ high-confidence annotation (~90% accurate), '0.3-0.5' moderate, '<0.3' low/none.
+This is the fraction of the 30.9M patent corpus the atlas can confidently target-annotate.

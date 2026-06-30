@@ -53,7 +53,7 @@ from rdkit.Chem import AllChem, DataStructs
 from rdkit import RDLogger; RDLogger.DisableLog("rdApp.*")
 import numpy as np
 
-REF = "/data/bioyoda/work/chembl_reference"
+REF = "/data/bioyoda/out_prod/work/chembl_reference"
 H5 = f"{REF}/chembl_reference_morgan_r2_2048.h5"
 
 # ----- protocol constants (match poc_atlas_temporal_validate.py) -----

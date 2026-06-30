@@ -36,6 +36,9 @@ data_local
 **/node_modules2/
 .claude/
 results*
+# keep validation result logs (reproducibility of the preprint numbers)
+!validation/results/
+!validation/results/**
 logs/pids/
 tieri_snakemakes
 .snakemake

@@ -1,0 +1,11 @@
+loading uncapped reference index + labels…
+  1,248,456 molecules
+
+### LANDSCAPE PRECISION — 2000 scaffold-held-out queries (lower bound; ChEMBL labels incomplete)
+
+confidence cut     precision (micro)   precision (macro)   surfaced-recall
+  conf >= 0.5                 20.0%               26.4%             79.3%   (17,514 surfaced assignments)
+  conf >= 0.7                 51.9%               56.2%             42.9%   (3,642 surfaced assignments)
+
+micro = over all surfaced (compound,target) assignments; macro = averaged over targets with >=3 surfaced;
+surfaced-recall = fraction of a compound's true targets that the landscape surfaces at that confidence.

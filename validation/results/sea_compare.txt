@@ -1,0 +1,25 @@
+loading uncapped reference index + labels…
+  1,248,456 molecules, 7,929 targets
+  SEA background @THR=0.4: p_hit=1.377e-04  E[s|hit]=0.496  mu_per=6.828e-05  sd_per=5.922e-03
+
+### HEAD-TO-HEAD — 2000 held-out queries, among 7,929 targets  (SEA_THR=0.4)
+
+split         method                recall@1  recall@5
+loo           deployed max-Tan        83.0%     92.4%
+loo           SEA set-size z          67.3%     84.2%
+scaffold      deployed max-Tan        77.0%     87.8%
+scaffold      SEA set-size z          62.3%     79.7%
+
+(scaffold split = HONEST generalization number; deployed scaffold should reproduce ~77%/88%)
+
+scaffold-split recall@1 by top-neighbour Tanimoto (deployed | SEA):
+  ≥0.7     deployed  89.3%  SEA  76.6%  (n=1153)
+  0.5-0.7  deployed  63.9%  SEA  45.6%  (n=761)
+  0.3-0.5  deployed  25.9%  SEA  18.8%  (n=85)
+  <0.3     deployed 100.0%  SEA   0.0%  (n=1)
+
+### SANITY CHECK — known drugs (no leak filter); top-3 targets each method
+  gefitinib   expect~EGFR P00533    deployed=['P00533', 'P35968', 'P15056']  SEA=['P29317', 'P54760', 'P00533']
+  imatinib    expect~ABL1 P00519    deployed=['P00519', 'P11274', 'P10721']  SEA=['P11274', 'P00519', 'P42684']
+  captopril   expect~ACE P12821     deployed=['P12822', 'P12821', 'C7C422']  SEA=['P47820', 'P12821', 'P12822']
+  sildenafil  expect~PDE5A O76074   deployed=['O76074', 'Q01066', 'Q63421']  SEA=['O76074', 'P22571', 'P04972']
