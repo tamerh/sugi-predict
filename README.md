@@ -17,23 +17,6 @@ a web app, a REST API, and an MCP server over Qdrant.
 Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas · Enju · Sugi Predict.
 
 
-## Use it
-
-- **Browse** — the web app at **[sugi.bio/predict](https://sugi.bio/predict)** (no setup).
-
-## Build it — `bioyoda.sh`
-
-Every collection rebuilds from source via plain bash `bioyoda.sh build`:
-
-```bash
-conda env create -f environment.yml && conda activate bioyoda
-./bioyoda.sh test                      # small-data fixture tests (the pre-build gate)
-./bioyoda.sh build compounds all       # rebuild a collection (compounds·text·trials·reference·proteins)
-```
-
-Full command reference and the build sequence: [docs/cli.md](docs/cli.md) ·
-[docs/getting-started.md](docs/getting-started.md).
-
 ## Substrate
 
 Five served Qdrant collections (chemistry powers prediction; the rest is retrieval context):
@@ -46,18 +29,6 @@ Five served Qdrant collections (chemistry powers prediction; the rest is retriev
 | `clinical_trials_medcpt` | text | MedCPT (768-d) | ~4.5M |
 | `esm2` | protein | ESM-2 (1280-d) | ~0.57M |
 
-## Layout
-
-| Path | Role |
-|---|---|
-| `mcp_srv/` | the engine — REST API + MCP server over `query`/`predict`/`provenance` |
-| `modules/` | per-collection build code (compounds, patents, clinical_trials, esm2, qdrant) |
-| `scripts/` | `bioyoda.sh` command implementations + shared libs |
-| `workflows/` | one remaining Enju workflow: `diamond-update` (standalone DIAMOND protein-similarity data-prep) |
-| `config/` | engine + collection configuration |
-| `web/` | static assets served by the engine |
-| `tests/` | fixture pipeline + integration (collection-health) tests |
-| `docs/` | how-it-works, getting-started, API, CLI |
 
 ## Docs
 
