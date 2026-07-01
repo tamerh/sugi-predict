@@ -16,14 +16,10 @@ chemistry. Targets are predicted by chemical similarity, not measured; the suppo
 a web app, a REST API, and an MCP server over Qdrant.
 Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas · Enju · Sugi Predict.
 
-> **How the prediction works, the provenance join, the substrate, and the build all live in
-> [`docs/`](docs/)** — start with [docs/how-it-works.md](docs/how-it-works.md).
 
 ## Use it
 
 - **Browse** — the web app at **[sugi.bio/predict](https://sugi.bio/predict)** (no setup).
-- **API + agents** — a REST API under `/api` and an MCP server at `/mcp`, both over the same
-  three primitives (`query` / `predict` / `provenance`). See [docs/api.md](docs/api.md).
 
 ## Build it — `bioyoda.sh`
 
@@ -75,6 +71,5 @@ Five served Qdrant collections (chemistry powers prediction; the rest is retriev
 Preprint — *forthcoming*.
 
 ## License
-
-- **Code** — AGPL-3.0 ([LICENSE](LICENSE)). For on-premise deployment or other commercial terms, get in touch.
-- **Data** — built from public databases (ChEMBL, SureChEMBL, ClinicalTrials.gov, UniProt); reuse is subject to each source's terms (ChEMBL is CC-BY-SA 3.0).
+ 
+ AGPL-3.0 ([LICENSE](LICENSE)). For on-premise deployment or other commercial terms, get in touch.
