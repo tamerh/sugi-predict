@@ -1,7 +1,7 @@
 # Sugi Predict
 
 An open, reproducible **prediction of human protein targets across patent chemical space**,
-published at [sugi.bio/predict](https://sugi.bio/predict).
+published at **[sugi.bio/predict](https://sugi.bio/predict)**.
 
 ~30M SureChEMBL patent compounds are annotated with their likely human protein targets by
 chemical k-nearest-neighbour transfer from a ~1.25M-pair ChEMBL ligand→target reference,
@@ -12,8 +12,8 @@ patented chemistry is predicted against this target, and who claimed it?*
 Each prediction carries a `confidence` (best Tanimoto to a backing ChEMBL ligand) and a
 `support` count (n of 20 nearest neighbours agreeing); below ~0.3 Tanimoto is novel/whitespace
 chemistry. Targets are predicted by chemical similarity, not measured; the supporting substrate
-(patent text, clinical trials, proteins) is used as retrieval context. One engine (internal
-codename `bioyoda`) serves it as a web app, a REST API, and an MCP server over Qdrant.
+(patent text, clinical trials, proteins) is used as retrieval context. One engine serves it as
+a web app, a REST API, and an MCP server over Qdrant.
 Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas · Enju · Sugi Predict.
 
 > **How the prediction works, the provenance join, the substrate, and the build all live in
@@ -21,15 +21,13 @@ Part of the [sugi.bio](https://sugi.bio) family: BioBTree · Sugi Atlas · Enju 
 
 ## Use it
 
-- **Browse** — the web app at [sugi.bio/predict](https://sugi.bio/predict) (no setup).
-- **API + agents** — the engine runs on `:8011`: a REST API under `/api` and an MCP server at
-  `/mcp`, both over the same three primitives (`query` / `predict` / `provenance`). See
-  [docs/api.md](docs/api.md).
+- **Browse** — the web app at **[sugi.bio/predict](https://sugi.bio/predict)** (no setup).
+- **API + agents** — a REST API under `/api` and an MCP server at `/mcp`, both over the same
+  three primitives (`query` / `predict` / `provenance`). See [docs/api.md](docs/api.md).
 
 ## Build it — `bioyoda.sh`
 
-Every collection rebuilds from source via plain bash `bioyoda.sh build` (incremental with
-`--delta`; both Snakemake and the old `*-update` Enju DAGs are retired):
+Every collection rebuilds from source via plain bash `bioyoda.sh build`:
 
 ```bash
 conda env create -f environment.yml && conda activate bioyoda
@@ -37,12 +35,8 @@ conda env create -f environment.yml && conda activate bioyoda
 ./bioyoda.sh build compounds all       # rebuild a collection (compounds·text·trials·reference·proteins)
 ```
 
-GPU embed/predict stages auto push/run/pull on a pod when `POD_HOST`/`POD_PORT`/`POD_KEY` are
-set. Full command reference and the build sequence: [docs/cli.md](docs/cli.md) ·
+Full command reference and the build sequence: [docs/cli.md](docs/cli.md) ·
 [docs/getting-started.md](docs/getting-started.md).
-
-`bioyoda.sh` subcommands: `start` · `stop` · `build` · `compounds` · `qdrant` ·
-`status` · `validate` · `clean` · `test` · `push` · `pull`.
 
 ## Substrate
 
