@@ -39,7 +39,9 @@ Five served Qdrant collections (chemistry powers prediction; the rest is retriev
 
 ## Publication
 
-Preprint — *forthcoming*.
+Preprint
+- https://sugi.bio/predict/method
+- https://zenodo.org/records/21109920
 
 ## License
  
