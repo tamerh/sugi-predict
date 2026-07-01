@@ -90,10 +90,10 @@ def _build_filter(filt):
 
 
 # --------------------------------------------------------------------------- primitive 1: query
-def query(collection, text=None, smiles=None, accession=None, filter=None, limit=10, offset=None, ids=None,
+def query(collection, text=None, smiles=None, accession=None, text_target=None, filter=None, limit=10, offset=None, ids=None,
           with_names=False, with_known=False):
     """Retrieve from any collection: by point id(s) if `ids` given; else vector search if a query input
-    (text/smiles/accession) is given; else a pure payload filter (scroll). Returns
+    (text/smiles/accession/text_target) is given; else a pure payload filter (scroll). Returns
     {"hits": [...], "next": <pagination token or null>}. Vectors stripped."""
     if collection not in COLLECTIONS:
         raise ValueError(f"unknown collection '{collection}'. available: {sorted(COLLECTIONS)}")
@@ -129,6 +129,10 @@ def query(collection, text=None, smiles=None, accession=None, filter=None, limit
         qvec = embed_protein(accession)
         if qvec is None:
             raise ValueError(f"no stored vector for accession '{accession}' in esm2")
+    elif text_target is not None:
+        qvec = target_query_vec(text_target)      # precomputed MedCPT target-query vector (no model at serve time)
+        if qvec is None:
+            raise ValueError(f"no precomputed target-query vector for '{text_target}'")
 
     if qvec is not None:
         pts = qc().query_points(collection, query=qvec, query_filter=qf, limit=limit,
@@ -253,6 +257,15 @@ def _target_emb():
         gene = [str(g) for g in d["gene"][hmask]]
         _TGT_EMB = (emb, bg, acc, gene, {a: i for i, a in enumerate(acc)})
     return _TGT_EMB
+
+
+def target_query_vec(acc):
+    """The precomputed MedCPT-Query vector for a target accession (from target_query_emb.npz, the same matrix
+    patent-text uses). Lets text collections (e.g. clinical_trials) be queried 'about this target' without running
+    the MedCPT model at serve time. None if the accession isn't in the human target set."""
+    emb, _bg, _accs, _genes, acc2i = _target_emb()
+    i = acc2i.get(acc)
+    return emb[i].tolist() if i is not None else None
 
 
 # a predicted target counts as "patent-corroborated" when the body text ranks it within this many human targets.

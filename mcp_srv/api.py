@@ -25,7 +25,7 @@ async def api_query(body: dict = Body(...)):
     try:
         return E.query(
             collection=body["collection"], text=body.get("text"), smiles=body.get("smiles"),
-            accession=body.get("accession"), filter=body.get("filter"),
+            accession=body.get("accession"), text_target=body.get("text_target"), filter=body.get("filter"),
             limit=body.get("limit", 10), offset=body.get("offset"), ids=body.get("ids"),
             with_names=body.get("with_names", False), with_known=body.get("with_known", False),
         )
