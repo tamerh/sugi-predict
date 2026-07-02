@@ -97,24 +97,27 @@ qdrant_rebuild() {
 
 # --- Qdrant container lifecycle (docker compose: config/docker-compose.bioyoda.yml) ---
 QDRANT_COMPOSE="${COMMANDS_DIR}/../../config/docker-compose.bioyoda.yml"
+QDRANT_ENV="${COMMANDS_DIR}/../../config/qdrant.env"   # optional host-specific overrides (gitignored)
+# docker compose for the pipeline qdrant, adding the env-file only when it exists
+qdc() { local ef=(); [ -f "$QDRANT_ENV" ] && ef=(--env-file "$QDRANT_ENV"); docker compose -p bioyoda "${ef[@]}" -f "$QDRANT_COMPOSE" "$@"; }
 
 qdrant_start() {     # bring up the Qdrant container (data persists in the mounted volume out_prod/qdrant/storage)
     log_info "qdrant: docker compose up -d"
-    docker compose -p bioyoda -f "$QDRANT_COMPOSE" up -d qdrant && qdrant_status
+    qdc up -d qdrant && qdrant_status
 }
 
 qdrant_stop() {      # stop the container (data volume untouched)
     log_info "qdrant: docker compose stop"
-    docker compose -p bioyoda -f "$QDRANT_COMPOSE" stop qdrant
+    qdc stop qdrant
 }
 
 qdrant_restart() {   # restart (e.g. to clear a wedged optimizer); data persists
     log_info "qdrant: docker compose restart"
-    docker compose -p bioyoda -f "$QDRANT_COMPOSE" restart qdrant && qdrant_status
+    qdc restart qdrant && qdrant_status
 }
 
 qdrant_status() {    # container state + health + memory
-    docker compose -p bioyoda -f "$QDRANT_COMPOSE" ps qdrant 2>/dev/null
+    qdc ps qdrant 2>/dev/null
     docker stats --no-stream --format '  mem {{.MemUsage}}  cpu {{.CPUPerc}}' qdrant-bioyoda 2>/dev/null
     curl -sf http://localhost:6333/healthz >/dev/null 2>&1 && echo "  healthz: OK" || echo "  healthz: DOWN"
 }

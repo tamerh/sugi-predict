@@ -82,3 +82,6 @@ diary.md
 # internal strategy/competitive notes (not for publication)
 docs/internal/
 config/epo.json
+
+# host-specific qdrant overrides (not for the public repo)
+config/qdrant.env
