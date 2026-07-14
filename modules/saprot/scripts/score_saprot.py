@@ -74,7 +74,9 @@ def main():
             if a.limit and len(recs) >= a.limit:
                 break
     print("[score] %d proteins" % len(recs), flush=True)
-    os.makedirs(os.path.dirname(a.out), exist_ok=True)
+    out_dir = os.path.dirname(a.out)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     out = gzip.open(a.out, "wt")
     t0, nrows, done = time.time(), 0, 0
