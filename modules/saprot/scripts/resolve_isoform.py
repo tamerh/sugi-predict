@@ -69,6 +69,10 @@ def main():
     ap.add_argument("--canonical", required=True, help="uniprot_sprot.fasta(.gz) for the release")
     ap.add_argument("--varsplic", required=True, help="uniprot_sprot_varsplic.fasta(.gz) for the release")
     ap.add_argument("--out", default=None, help="output TSV (default: overwrite --manifest)")
+    ap.add_argument("--release", default=None,
+                    help="UniProt release label (e.g. 2026_03); stamped as a leading "
+                         "'# uniprot_release=<release>' comment, since isoform/verified are "
+                         "release-coupled")
     a = ap.parse_args()
     out = a.out or a.manifest
 
@@ -81,9 +85,12 @@ def main():
 
     rows = []
     with open(a.manifest) as f:
-        f.readline()  # header
         for line in f:
-            acc, length, c, m = line.rstrip("\n").split("\t")
+            if line.startswith("#"):          # tolerate a stamped comment line
+                continue
+            if line.startswith("uniprot_acc\t"):  # header
+                continue
+            acc, length, c, m = line.rstrip("\n").split("\t")[:4]
             base = acc.split("-", 1)[0]
             if "-" in acc:                              # suffixed key: isoform id is the key
                 ref = varsp.get(acc)
@@ -97,6 +104,8 @@ def main():
             rows.append((acc, length, c, m, isoform, verified))
 
     with open(out, "w") as g:
+        if a.release:
+            g.write("# uniprot_release=%s\n" % a.release)
         g.write("uniprot_acc\tlength\tcrc64\tmd5\tisoform\tverified\n")
         for r in rows:
             g.write("\t".join(r) + "\n")
